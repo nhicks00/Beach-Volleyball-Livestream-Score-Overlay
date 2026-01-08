@@ -528,8 +528,8 @@ final class AppViewModel: ObservableObject {
         let home = score?["home"] as? Int ?? 0
         let away = score?["away"] as? Int ?? 0
         
-        let name1 = (dict["homeTeam"] as? String) ?? (dict["team1Name"] as? String) ?? "Team A"
-        let name2 = (dict["awayTeam"] as? String) ?? (dict["team2Name"] as? String) ?? "Team B"
+        let name1 = (dict["team1_text"] as? String) ?? (dict["homeTeam"] as? String) ?? (dict["team1Name"] as? String) ?? "Team A"
+        let name2 = (dict["team2_text"] as? String) ?? (dict["awayTeam"] as? String) ?? (dict["team2Name"] as? String) ?? "Team B"
         
         let statusStr = (dict["status"] as? String) ?? "Pre-Match"
         let setNum = (dict["setNumber"] as? Int) ?? 1

@@ -342,6 +342,11 @@ struct WaitingForMatchView: View {
     
     /// Abbreviate team name: "Troy Field" -> "T. Field"
     private func abbreviateName(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("winner") || lower.contains("loser") || lower.contains("team ") || lower.contains("match ") || lower.contains("seed ") {
+            return name
+        }
+        
         let players = name.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
         
         let abbreviated = players.map { player -> String in
@@ -449,6 +454,11 @@ struct QueuePreview: View {
     
     /// Abbreviate team name: "Troy Field" -> "T. Field"
     private func abbreviateName(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("winner") || lower.contains("loser") || lower.contains("team ") || lower.contains("match ") || lower.contains("seed ") {
+            return name
+        }
+        
         let players = name.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
         
         let abbreviated = players.map { player -> String in
