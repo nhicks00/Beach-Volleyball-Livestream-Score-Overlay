@@ -306,8 +306,9 @@ final class WebSocketHub {
         
         // Dictionary format
         if let dict = obj as? [String: Any] {
-            let a = dict["homeTeam"] as? String ?? dict["team1Name"] as? String
-            let b = dict["awayTeam"] as? String ?? dict["team2Name"] as? String
+            // Favor bracket text (e.g. "Winner of Match 5") over generic "Team A" 
+            let a = dict["team1_text"] as? String ?? dict["homeTeam"] as? String ?? dict["team1Name"] as? String
+            let b = dict["team2_text"] as? String ?? dict["awayTeam"] as? String ?? dict["team2Name"] as? String
             return (a, b)
         }
         
@@ -734,6 +735,14 @@ function abbreviateName(teamName, maxLen = 30) {
   const players = teamName.split("/").map(p => p.trim());
   
   const abbreviated = players.map(player => {
+    // DO NOT abbreviate if it looks like a TBD placeholder
+    const lower = player.toLowerCase();
+    if (lower.includes("winner") || lower.includes("loser") || 
+        lower.includes("team ") || lower.includes("seed ") ||
+        lower.includes("match ")) {
+      return player;
+    }
+
     const parts = player.split(/\s+/);
     if (parts.length < 2) return player; // Single name, keep as is
     
