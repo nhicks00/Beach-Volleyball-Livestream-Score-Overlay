@@ -340,9 +340,17 @@ final class AppViewModel: ObservableObject {
             }
             
             
-            // Periodically refresh metadata for queued matches (every 15s)
+            // Periodically refresh metadata for ALL matches including current (every 15s)
             let lastRefresh = lastQueueRefreshTimes[courtId] ?? Date.distantPast
             if Date().timeIntervalSince(lastRefresh) > 15 {
+                // Update current match team names if they've changed (e.g., "Match 1 Winner" → actual names)
+                if snapshot.team1Name != matchItem.team1Name || snapshot.team2Name != matchItem.team2Name {
+                    print("🔄 Updated current match team names: \(snapshot.team1Name) vs \(snapshot.team2Name)")
+                    courts[idx].queue[activeIdx].team1Name = snapshot.team1Name
+                    courts[idx].queue[activeIdx].team2Name = snapshot.team2Name
+                }
+                
+                // Update queued matches
                 await refreshQueueMetadata(for: courtId)
                 lastQueueRefreshTimes[courtId] = Date()
             }
