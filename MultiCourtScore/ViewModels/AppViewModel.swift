@@ -27,6 +27,7 @@ final class AppViewModel: ObservableObject {
     private var pollingTimers: [Int: Timer] = [:]
     private var cancellables = Set<AnyCancellable>()
     private var lastQueueRefreshTimes: [Int: Date] = [:]
+    private var lastCourtChangeCheck: Date = .distantPast
     
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
@@ -345,6 +346,12 @@ final class AppViewModel: ObservableObject {
                 await refreshQueueMetadata(for: courtId)
                 lastQueueRefreshTimes[courtId] = Date()
             }
+            
+            // Periodically check for court reassignments (every 60s)
+            if Date().timeIntervalSince(lastCourtChangeCheck) > 60 {
+                await checkForCourtChanges()
+                lastCourtChangeCheck = Date()
+            }
 
             courts[idx].lastPollTime = Date()
             courts[idx].errorMessage = nil
@@ -394,6 +401,143 @@ final class AppViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Court Change Detection (60-second polling)
+    
+    /// Check all queued matches for court reassignments and move them to correct camera queues
+    private func checkForCourtChanges() async {
+        let mappingStore = CourtMappingStore.shared
+        var changesToProcess: [(matchId: UUID, fromCourt: Int, toCourt: Int, match: MatchItem)] = []
+        
+        // Scan all courts for matches with changed court assignments
+        for courtIdx in courts.indices {
+            for matchIdx in courts[courtIdx].queue.indices {
+                let match = courts[courtIdx].queue[matchIdx]
+                guard let physicalCourt = match.physicalCourt else { continue }
+                
+                // Check if this match should be on a different camera based on current mapping
+                if let correctCameraId = mappingStore.cameraId(for: physicalCourt) {
+                    let currentCameraId = courts[courtIdx].id
+                    
+                    if correctCameraId != currentCameraId {
+                        // This match needs to move!
+                        changesToProcess.append((
+                            matchId: match.id,
+                            fromCourt: currentCameraId,
+                            toCourt: correctCameraId,
+                            match: match
+                        ))
+                    }
+                }
+            }
+        }
+        
+        // Process court changes
+        for change in changesToProcess {
+            await processCourtChange(change)
+        }
+    }
+    
+    private func processCourtChange(_ change: (matchId: UUID, fromCourt: Int, toCourt: Int, match: MatchItem)) async {
+        guard let fromIdx = courtIndex(for: change.fromCourt),
+              let toIdx = courtIndex(for: change.toCourt) else { return }
+        
+        // Remove from source queue
+        courts[fromIdx].queue.removeAll { $0.id == change.matchId }
+        
+        // Adjust activeIndex if needed
+        if let active = courts[fromIdx].activeIndex, active >= courts[fromIdx].queue.count {
+            courts[fromIdx].activeIndex = max(0, courts[fromIdx].queue.count - 1)
+        }
+        
+        // Check if target camera has a live match
+        let targetIsLive = courts[toIdx].status == .live
+        
+        // Insert into target queue in proper order (by scheduledTime, then matchNumber)
+        var insertIndex = targetIsLive ? ((courts[toIdx].activeIndex ?? 0) + 1) : 0
+        
+        // Find correct position based on scheduled time
+        for i in insertIndex..<courts[toIdx].queue.count {
+            if compareMatchOrder(change.match, courts[toIdx].queue[i]) {
+                insertIndex = i
+                break
+            }
+            insertIndex = i + 1
+        }
+        
+        courts[toIdx].queue.insert(change.match, at: min(insertIndex, courts[toIdx].queue.count))
+        
+        // Log the change
+        let matchLabel = change.match.displayName
+        print("🔄 Court change: \(matchLabel) moved from \(CourtNaming.displayName(for: change.fromCourt)) to \(CourtNaming.displayName(for: change.toCourt))")
+        
+        // Send notification
+        // Check if this was the active match by comparing with activeIndex
+        let activeIdx = courts[fromIdx].activeIndex ?? -1
+        let isLiveMatch = activeIdx >= 0 && courts[fromIdx].status == .live &&
+                          activeIdx < courts[fromIdx].queue.count
+        
+        let event = CourtChangeEvent(
+            matchLabel: matchLabel,
+            oldCourt: change.match.physicalCourt ?? "Unknown",
+            newCourt: change.match.physicalCourt ?? "Unknown",
+            oldCamera: change.fromCourt,
+            newCamera: change.toCourt,
+            isLiveMatch: isLiveMatch,
+            timestamp: Date()
+        )
+        
+        await NotificationService.shared.sendCourtChangeAlert(event)
+    }
+    
+    /// Compare two matches for ordering: returns true if match1 should come before match2
+    private func compareMatchOrder(_ match1: MatchItem, _ match2: MatchItem) -> Bool {
+        // First compare by scheduled time
+        if let time1 = match1.scheduledTime, let time2 = match2.scheduledTime {
+            let comparison = compareTimeStrings(time1, time2)
+            if comparison != 0 {
+                return comparison < 0
+            }
+        }
+        
+        // Then by match number
+        if let num1 = extractMatchNumber(from: match1.matchNumber),
+           let num2 = extractMatchNumber(from: match2.matchNumber) {
+            return num1 < num2
+        }
+        
+        return false
+    }
+    
+    private func compareTimeStrings(_ a: String, _ b: String) -> Int {
+        let pattern = #"(\d{1,2}):(\d{2})\s*(AM|PM)"#
+        guard let regexA = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let regexB = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let matchA = regexA.firstMatch(in: a, range: NSRange(a.startIndex..., in: a)),
+              let matchB = regexB.firstMatch(in: b, range: NSRange(b.startIndex..., in: b)) else {
+            return 0
+        }
+        
+        let hourA = Int((a as NSString).substring(with: matchA.range(at: 1))) ?? 0
+        let minA = Int((a as NSString).substring(with: matchA.range(at: 2))) ?? 0
+        let ampmA = (a as NSString).substring(with: matchA.range(at: 3)).uppercased()
+        
+        let hourB = Int((b as NSString).substring(with: matchB.range(at: 1))) ?? 0
+        let minB = Int((b as NSString).substring(with: matchB.range(at: 2))) ?? 0
+        let ampmB = (b as NSString).substring(with: matchB.range(at: 3)).uppercased()
+        
+        let hour24A = (ampmA == "PM" && hourA != 12 ? hourA + 12 : (ampmA == "AM" && hourA == 12 ? 0 : hourA))
+        let hour24B = (ampmB == "PM" && hourB != 12 ? hourB + 12 : (ampmB == "AM" && hourB == 12 ? 0 : hourB))
+        
+        if hour24A != hour24B { return hour24A - hour24B }
+        return minA - minB
+    }
+    
+    private func extractMatchNumber(from matchNumber: String?) -> Int? {
+        guard let num = matchNumber else { return nil }
+        let digits = num.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
+    }
+
     private func determineStatus(from snapshot: ScoreSnapshot) -> CourtStatus {
         if snapshot.isFinal {
             return .finished
