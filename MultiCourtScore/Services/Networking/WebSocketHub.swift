@@ -444,7 +444,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Hide old seed element */
 .seed{ display: none; }
 
-.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px }
+.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px; margin-left:24px; }
 
 /* Service Indicator - Volleyball SVG */
 .serve-icon { width:18px; height:18px; display:none; filter: drop-shadow(0 0 4px rgba(255,215,0,0.4)); }
@@ -1025,13 +1025,21 @@ function applyData(d){
   const name1 = useAbbr ? (abbreviateName(cleanName(d.team1)) || 'Team 1') : (cleanName(d.team1) || 'Team 1');
   const name2 = useAbbr ? (abbreviateName(cleanName(d.team2)) || 'Team 2') : (cleanName(d.team2) || 'Team 2');
   
-  // Track current teams and detect match changes
-  const matchKey = d.team1 + '|' + d.team2;
-  const isNewMatch = matchKey !== lastMatchKey;
-  if (isNewMatch) {
-    lastMatchKey = matchKey;
-    currentTeam1 = d.team1;
-    currentTeam2 = d.team2;
+  // Update header next-badge - match the abbreviation logic
+  const nextTeams = document.getElementById('next-teams');
+  if (nextTeams && d.nextMatch) {
+    if (!useAbbr) {
+       // Spell everything out in prematch
+       applyText(nextTeams, d.nextMatch, 'fade');
+    } else {
+       // Abbreviate when live
+       const nextArr = d.nextMatch.split(/\s+vs\s+/);
+       if (nextArr.length === 2) {
+         applyText(nextTeams, abbreviateName(nextArr[0], 40) + ' vs ' + abbreviateName(nextArr[1], 40), 'fade');
+       } else {
+         applyText(nextTeams, abbreviateName(d.nextMatch, 80), 'fade');
+       }
+    }
   }
   
   // Update scorebug team names
@@ -1066,21 +1074,13 @@ function applyData(d){
     }
   }
   
-  // Update header next-badge
-  const nextTeams = document.getElementById('next-teams');
-  if (nextTeams && d.nextMatch) {
-    // Show full names if in prematch (0-0, Set 1) to match main bar
-    if (!useAbbr) {
-      applyText(nextTeams, d.nextMatch, 'fade');
-    } else {
-      // Abbreviate next match when live (limit 50 chars)
-      const nextArr = d.nextMatch.split(/\s+vs\s+/);
-      if (nextArr.length === 2) {
-        applyText(nextTeams, abbreviateName(nextArr[0], 25) + ' vs ' + abbreviateName(nextArr[1], 25), 'fade');
-      } else {
-        applyText(nextTeams, abbreviateName(d.nextMatch, 50), 'fade');
-      }
-    }
+  // Track current teams and detect match changes
+  const matchKey = d.team1 + '|' + d.team2;
+  const isNewMatch = matchKey !== lastMatchKey;
+  if (isNewMatch) {
+    lastMatchKey = matchKey;
+    currentTeam1 = d.team1;
+    currentTeam2 = d.team2;
   }
 
   // Scores (already handled above)
