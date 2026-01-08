@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHONPATH=\"/Users/nathanhicks/Library/Python/3.13/lib/python/site-packages\" python3 vbl_pool_scraper.py \"https://volleyballlife.com/event/23889/division/91805/round/168035/pools/198338\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,1063 @@
+//
+//  WebSocketHub.swift
+//  MultiCourtScore v2
+//
+//  Local HTTP server for OBS overlay endpoints
+//
+
+import Foundation
+import Vapor
+import Logging
+
+final class WebSocketHub: @unchecked Sendable {
+    static let shared = WebSocketHub()
+    
+    // App state reference
+    weak var appViewModel: AppViewModel?
+    
+    // Vapor app
+    private var app: Application?
+    public private(set) var isRunning = false
+    
+    // Score data cache for overlays
+    private var latestScoreData: [Int: Data] = [:]
+    
+    // Hold mechanism for showing final scores
+    private var holdQueue: [Int: (data: [String: Any], expires: Date)] = [:]
+    
+    private init() {}
+    
+    // MARK: - Lifecycle
+    
+    func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) {
+        guard !isRunning else { 
+            print("⚠️ Overlay server already running")
+            return 
+        }
+        appViewModel = viewModel
+        
+        // Ensure fresh app instance
+        if app != nil { stop() }
+        
+        // Initialize with explicit arguments to ignore Xcode/OS flags that crash Vapor
+        // Note: Using deprecated initializer because .make() is async and we need sync here
+        let env = Environment(name: "development", arguments: ["vapor"])
+        let newApp = Application(env)
+        self.app = newApp
+        
+        // Configure server
+        newApp.http.server.configuration.hostname = "127.0.0.1"
+        newApp.http.server.configuration.port = port
+        
+        // Use warning level to see start errors but reduce noise
+        newApp.logger.logLevel = Logger.Level.warning
+        
+        // Install routes
+        installRoutes(newApp)
+        
+        // Start server in background
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            do {
+                print("⏳ Starting overlay server on port \(port)...")
+                try newApp.start()
+                
+                // Update state on main thread
+                DispatchQueue.main.async {
+                    self?.isRunning = true
+                    print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
+                }
+            } catch {
+                print("❌ Failed to start overlay server: \(error)")
+                print("   Check if port \(port) is in use.")
+                
+                DispatchQueue.main.async {
+                    self?.isRunning = false
+                }
+            }
+        }
+    }
+    
+    func stop() {
+        app?.shutdown()
+        app = nil
+        isRunning = false
+        print("🛑 Overlay server stopped")
+    }
+    
+    // MARK: - Data Update
+    
+    func updateScore(courtId: Int, data: Data) {
+        latestScoreData[courtId] = data
+    }
+    
+    // MARK: - Routes
+    
+    private func installRoutes(_ app: Application) {
+        // Health check
+        app.get("health") { _ in "ok" }
+        
+        // Main overlay page
+        app.get("overlay", "court", ":id") { req -> Response in
+            guard let idStr = req.parameters.get("id") else {
+                return Response(status: .notFound)
+            }
+            let html = self.generateOverlayHTML(courtId: idStr)
+            let response = Response(status: .ok)
+            response.headers.contentType = .html
+            response.body = .init(string: html)
+            return response
+        }
+        
+        // Redirect without trailing slash
+        app.get("overlay", "court", ":id", "") { req -> Response in
+            guard let idStr = req.parameters.get("id") else {
+                return Response(status: .notFound)
+            }
+            let html = self.generateOverlayHTML(courtId: idStr)
+            let response = Response(status: .ok)
+            response.headers.contentType = .html
+            response.body = .init(string: html)
+            return response
+        }
+        
+        // Score JSON endpoint
+        app.get("overlay", "court", ":id", "score.json") { [weak self] req async throws -> Response in
+            // Execute on MainActor to safely access AppViewModel
+            return try await MainActor.run {
+                guard let self,
+                      let vm = self.appViewModel,
+                      let idStr = req.parameters.get("id"),
+                      let courtId = Int(idStr),
+                      let court = vm.court(for: courtId),
+                      let snapshot = court.lastSnapshot
+                else {
+                    // Return empty structure if not found
+                    return try Self.json([
+                        "team1": "", "team2": "", "score1": 0, "score2": 0,
+                        "set": 1, "status": "Waiting",
+                        "setsA": 0, "setsB": 0,
+                        "seed1": "", "seed2": "",
+                        "setHistory": [] as [String]
+                    ])
+                }
+                
+                // Build response
+                // Calculate current game score (from current/last set)
+                let currentGame = snapshot.setHistory.last
+                let gameScore1 = currentGame?.team1Score ?? 0
+                let gameScore2 = currentGame?.team2Score ?? 0
+                
+                let data: [String: Any] = [
+                    "team1": snapshot.team1Name,
+                    "team2": snapshot.team2Name,
+                    "score1": gameScore1,  // Current game score (what shows large)
+                    "score2": gameScore2,  // Current game score (what shows large)
+                    "setsWon1": snapshot.team1Score,  // Sets won by team 1
+                    "setsWon2": snapshot.team2Score,  // Sets won by team 2
+                    "set": snapshot.setNumber,
+                    "status": snapshot.status,
+                    "setsA": snapshot.totalSetsWon.team1,
+                    "setsB": snapshot.totalSetsWon.team2,
+                    "serve": snapshot.serve ?? "none",
+                    "setHistory": snapshot.setHistory.map { $0.displayString },
+                    
+                    // Fields added for seed support
+                    "seed1": snapshot.team1Seed ?? "",
+                    "seed2": snapshot.team2Seed ?? "",
+                    
+                    // Match format (for determining when match ends)
+                    "setsToWin": court.currentMatch?.setsToWin ?? 2,
+                    "pointsPerSet": court.currentMatch?.pointsPerSet ?? 21,
+                    "pointCap": court.currentMatch?.pointCap as Any,
+                    
+                    // Up Next
+                    "nextMatch": court.nextMatch?.displayName ?? "TBD"
+                ]
+                
+                return try Self.json(data)
+            }
+        }
+        
+        // Label endpoint
+        app.get("overlay", "court", ":id", "label.json") { [weak self] req async throws -> Response in
+            return try await MainActor.run {
+                guard let self,
+                      let vm = self.appViewModel,
+                      let idStr = req.parameters.get("id"),
+                      let courtId = Int(idStr),
+                      let courtIdx = vm.courtIndex(for: courtId)
+                else {
+                    return try Self.json(["label": NSNull()])
+                }
+                
+                var label = ""
+                if let activeIdx = vm.courts[courtIdx].activeIndex,
+                   activeIdx >= 0,
+                   activeIdx < vm.courts[courtIdx].queue.count {
+                    label = vm.courts[courtIdx].queue[activeIdx].label ?? ""
+                }
+                
+                return try Self.json(["label": label.isEmpty ? NSNull() : label])
+            }
+        }
+        
+        // Next match endpoint
+        app.get("overlay", "court", ":id", "next.json") { [weak self] req async throws -> Response in
+            guard let idStr = req.parameters.get("id"),
+                  let courtId = Int(idStr) else {
+                return try Self.json(["a": NSNull(), "b": NSNull(), "label": NSNull()])
+            }
+            
+            // Fetch match data on MainActor to satisfy concurrency requirements
+            let matchData = await MainActor.run { [weak self] () -> (url: URL, t1: String?, t2: String?, label: String?)? in
+                guard let self = self,
+                      let vm = self.appViewModel,
+                      let courtIdx = vm.courtIndex(for: courtId),
+                      let activeIdx = vm.courts[courtIdx].activeIndex
+                else { return nil }
+                
+                let nextIdx = activeIdx + 1
+                guard nextIdx < vm.courts[courtIdx].queue.count else { return nil }
+                
+                let m = vm.courts[courtIdx].queue[nextIdx]
+                return (m.apiURL, m.team1Name, m.team2Name, m.label)
+            }
+            
+            // If no match data, return empty
+            guard let data = matchData else {
+                return try Self.json(["a": NSNull(), "b": NSNull(), "label": NSNull()])
+            }
+            
+            // Fetch names from API (off MainActor)
+            do {
+                let (responseData, _) = try await URLSession.shared.data(from: data.url)
+                let (a, b) = Self.extractNames(from: responseData)
+                
+                return try Self.json([
+                    "a": a ?? NSNull(),
+                    "b": b ?? NSNull(),
+                    "label": data.label ?? NSNull()
+                ])
+            } catch {
+                return try Self.json([
+                    "a": data.t1 ?? NSNull(),
+                    "b": data.t2 ?? NSNull(),
+                    "label": data.label ?? NSNull()
+                ])
+            }
+        }
+
+    }
+    
+    // MARK: - Helpers
+    
+    private func cacheBusted(_ url: URL) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        var items = components.queryItems ?? []
+        items.append(URLQueryItem(name: "_t", value: String(Int(Date().timeIntervalSince1970 * 1000))))
+        components.queryItems = items
+        return components.url ?? url
+    }
+    
+    private static func json(_ dict: [String: Any]) throws -> Response {
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        var response = Response(status: .ok)
+        response.headers.contentType = .json
+        response.headers.cacheControl = .init(noStore: true)
+        response.body = .init(data: data)
+        return response
+    }
+    
+    private static func extractNames(from data: Data) -> (String?, String?) {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else {
+            return (nil, nil)
+        }
+        
+        // vMix array format
+        if let arr = obj as? [[String: Any]], arr.count >= 2 {
+            let a = arr[0]["teamName"] as? String
+            let b = arr[1]["teamName"] as? String
+            return (a, b)
+        }
+        
+        // Dictionary format
+        if let dict = obj as? [String: Any] {
+            let a = dict["homeTeam"] as? String ?? dict["team1Name"] as? String
+            let b = dict["awayTeam"] as? String ?? dict["team2Name"] as? String
+            return (a, b)
+        }
+        
+        return (nil, nil)
+    }
+    
+    // MARK: - Overlay HTML
+    
+    private func generateOverlayHTML(courtId: String) -> String {
+        var html = Self.bvmOverlayHTML
+        // Inject court-specific endpoints
+        html = html.replacingOccurrences(
+            of: #"const SRC = "/score.json"; const NEXT_SRC = "/next.json"; const LABEL_SRC = "/label.json";"#,
+            with: #"const SRC = "/overlay/court/\#(courtId)/score.json"; const NEXT_SRC = "/overlay/court/\#(courtId)/next.json"; const LABEL_SRC = "/overlay/court/\#(courtId)/label.json";"#
+        )
+        return html
+    }
+    
+    // MARK: - Embedded HTML (Restored from V1)
+    private static let bvmOverlayHTML: String = #"""
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BVM Scorebug Overlay</title>
+<style>
+:root{
+  --gold1:#ffd700; --gold2:#ffb300; --goldGlow:rgba(255,215,0,.25);
+  --bgTop:#141414; --bgBot:#1c1c1c; --text:#fff; --muted:rgba(255,255,255,.85);
+  --score-size:38px; --sets-size:14px; --maxw:1040px;
+}
+html,body{margin:0;background:transparent;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+.wrap{position:fixed; top:10px; left:0; right:0; pointer-events:none}
+.container{width:min(var(--maxw),96vw); margin:0 auto; display:grid; gap:10px}
+
+/* social (colors kept) */
+/* Social bar */
+.socialbar{
+  display:inline-grid; grid-auto-flow:column; gap:10px; align-items:center;
+  padding:6px 12px; margin:0 auto;
+  background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.65));
+  border:1px solid rgba(255,200,0,.45); border-radius:999px;
+  box-shadow:0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+}
+.handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
+
+/* Brand icon colors */
+svg.ig {}
+svg.ig defs linearGradient stop:nth-child(1){stop-color:#f58529}
+svg.ig defs linearGradient stop:nth-child(2){stop-color:#dd2a7b}
+svg.ig defs linearGradient stop:nth-child(3){stop-color:#8134af}
+svg.ig defs linearGradient stop:nth-child(4){stop-color:#515bd4}
+svg.yt{color:#ff0000}
+svg.fb{color:#1877f2}
+svg.vb{color:var(--gold1)} /* Volleyball icon color */
+
+/* Top header row: social bar + next up */
+.header-row {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* Social bar - inline with header */
+.socialbar{
+  display:inline-grid; grid-auto-flow:column; gap:10px; align-items:center;
+  padding:6px 12px;
+  background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.65));
+  border:1px solid rgba(255,200,0,.45); border-radius:999px;
+  box-shadow:0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+}
+.handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
+
+/* Next Up badge - inline with social bar */
+.next-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  background: linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.65));
+  border: 1px solid rgba(255,200,0,.35); border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  font-size: 11px; font-weight: 700; color: var(--muted);
+}
+.next-badge .next-label { color: var(--gold2); text-transform: uppercase; font-size: 10px; }
+.next-badge .next-teams { color: var(--text); font-weight: 800; }
+
+/* bug - main scoreboard */
+.bug{
+  position:relative;
+  display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; 
+  padding:0;
+  background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
+  border-radius:18px; border:1px solid rgba(255,200,0,.35);
+  box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+  overflow: visible; /* Allow seeds to show outside */
+}
+
+/* row layout - centered names with score */
+.row{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 18px;
+  position:relative;
+}
+.row.serving{ background: linear-gradient(90deg, rgba(255,215,0,0.1), transparent); }
+
+.info{ display:flex; flex-direction:column; justify-content:center; }
+.name{ font-size:24px; font-weight:900; line-height:1; letter-spacing:-.5px; text-transform:uppercase; display:flex; align-items:center; gap:8px }
+
+/* Edge-positioned seeds - positioned at the very edges of the scoreboard */
+.seed-edge {
+  position: absolute;
+  display: flex; flex-direction: column; align-items: center;
+  font-weight: 700; color: var(--gold2);
+  text-transform: uppercase; opacity: 0.9;
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.6);
+  border-radius: 6px;
+  z-index: 20;
+  white-space: nowrap;
+}
+.seed-edge .seed-label { font-size: 8px; opacity: 0.8; letter-spacing: 0.5px; }
+.seed-edge .seed-num { font-size: 12px; font-weight: 800; }
+.seed-edge.hidden { display: none; }
+/* Team 1 seed - left side outside scoreboard */
+#seed1-edge { 
+  left: 0; top: 50%; 
+  transform: translate(-110%, -50%);
+}
+/* Team 2 seed - right side outside scoreboard */
+#seed2-edge { 
+  right: 0; bottom: 50%; 
+  transform: translate(110%, 50%);
+}
+
+/* Hide old seed element */
+.seed{ display: none; }
+
+.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px }
+
+/* Service Indicator - Volleyball SVG */
+.serve-icon { width:18px; height:18px; display:none; filter: drop-shadow(0 0 4px rgba(255,215,0,0.4)); }
+.serving .serve-icon { display:inline-block; animation: fadeSlide 0.3s ease-out; }
+
+/* vertical divider */
+.divider{ width:1px; height:40px; background:rgba(255,255,255,0.15); margin:0 4px }
+
+/* Seeds sub-bubble - REMOVED, using edge-positioned seeds instead */
+
+/* set history — drawer style with slide animation */
+.setsline {
+  display: none; /* Hidden until JS shows it */
+  gap: 20px; justify-content: center;
+  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
+  padding: 12px 24px 8px;
+  margin: -14px auto 0;
+  width: max-content;
+  min-width: 200px;
+  
+  border: 1px solid rgba(255,200,0,.35);
+  border-top: none;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  
+  box-shadow: 0 10px 24px rgba(0,0,0,.5);
+  position: relative;
+  z-index: 1;
+  
+  /* Animation setup - starts hidden/above, slides down when visible */
+  opacity: 0;
+  transform: translateY(-30px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.setsline.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* Ensure bug is on top */
+.bug { z-index: 10; position: relative; }
+
+.set-item {
+  font-size: 16px; font-weight: 700; color: var(--muted);
+  display: flex; align-items: center; gap: 4px;
+}
+.set-lbl { color: var(--gold2); font-size: 12px; text-transform: uppercase; margin-right: 2px; opacity: 0.8; }
+.set-sc { color: #fff; font-variant-numeric: tabular-nums; }
+.set-sc.win { color: var(--gold1); border-bottom: 2px solid var(--gold1); padding-bottom: 1px; }
+
+/* Old next line - hidden, replaced by next-badge */
+.next{ display: none; }
+
+/* accent */
+.accent{height:3px; width:68%; margin:0 auto;
+  background:linear-gradient(90deg,transparent,var(--gold1),var(--gold2),transparent);
+  border-radius:3px; opacity:.9}
+
+/* animations */
+@keyframes flip { 0%{transform:rotateX(-90deg); opacity:0} 100%{transform:rotateX(0); opacity:1} }
+@keyframes fadeSlide { 0%{opacity:0; transform:translateY(-4px)} 100%{opacity:1; transform:translateY(0)} }
+@keyframes slideDown { 0%{opacity:0; transform:translateY(-20px)} 100%{opacity:1; transform:translateY(0)} }
+@keyframes fadeIn { 0%{opacity:0} 100%{opacity:1} }
+.flip{ animation:flip .22s ease-out }
+.fade{ animation:fadeSlide .18s ease-out }
+
+/* Pre-match mode - simple "Team A vs Team B" text */
+.prematch-bar {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 14px 28px;
+  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
+  border-radius: 18px; border: 1px solid rgba(255,200,0,.35);
+  box-shadow: 0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.prematch-bar .team-name {
+  font-size: 24px; font-weight: 900; text-transform: uppercase;
+  letter-spacing: -0.5px; color: var(--text);
+}
+.prematch-bar .vs {
+  font-size: 16px; font-weight: 700; color: var(--gold2);
+  text-transform: uppercase; opacity: 0.9;
+}
+
+/* Post-match "Next Up" banner */
+.postmatch-next {
+  text-align: center; padding: 10px 20px;
+  font-size: 14px; font-weight: 800; color: var(--gold1);
+  background: linear-gradient(180deg, rgba(20,20,20,0.95), rgba(28,28,28,0.95));
+  border: 1px solid rgba(255,200,0,.25); border-top: none;
+  border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+  margin: -10px auto 0; width: max-content; min-width: 280px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.4);
+  opacity: 0; transform: translateY(-10px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.postmatch-next.visible { opacity: 1; transform: translateY(0); }
+.postmatch-next .next-label { color: var(--muted); font-size: 11px; margin-right: 6px; }
+
+/* State transitions */
+.bug, .prematch-bar { transition: opacity 0.5s ease, transform 0.5s ease; }
+.bug.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; display: none; }
+.prematch-bar.hidden { opacity: 0; transform: translateY(-10px); display: none; }
+.bug.reveal { animation: slideDown 0.5s ease-out; }
+@media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
+</style>
+</head>
+<body>
+  <div class="wrap"><div class="container">
+
+<!-- Header Row: Social + Next Up -->
+<div class="header-row">
+  <!-- Social Bar -->
+  <div class="socialbar">
+    <!-- Instagram -->
+    <svg class="ig" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <defs>
+        <linearGradient id="iggrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"/><stop offset="40%"/><stop offset="70%"/><stop offset="100%"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#iggrad)"
+            d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.9.3 2.3.5.6.2 1 .5 1.5 1 .5.5.8.9 1 1.5.2.4.4 1.1.5 2.3.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.9-.5 2.3-.2.6-.5 1-1 1.5-.5.5-.9.8-1.5 1-.4.2-1.1.4-2.3.5-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.9-.3-2.3-.5a3.9 3.9 0 0 1-1.5-1c-.5-.5-.8-.9-1-1.5-.2-.4-.4-1.1-.5-2.3C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.9.5-2.3.2-.6.5-1 1-1.5.5-.5.9-.8 1.5-1 .4-.2 1.1-.4 2.3-.5C8.4 2.2 8.8 2.2 12 2.2Zm0 5.3a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm6.4-.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/>
+    </svg>
+
+    <!-- YouTube -->
+    <svg class="yt" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <path fill="currentColor"
+            d="M23 12s0-3.9-.5-5.7A3.1 3.1 0 0 0 20.8 4C18.9 3.6 12 3.6 12 3.6s-6.9 0-8.8.4A3.1 3.1 0 0 0 1.5 6.3C1 8.1 1 12 1 12s0 3.9.5 5.7c.2.9.9 1.6 1.7 1.9 1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4a3.1 3.1 0 0 0 1.7-1.9c.5-1.8.5-5.7.5-5.7ZM9.8 15.5V8.5l6 3.5-6 3.5Z"/>
+    </svg>
+
+    <!-- Facebook -->
+    <svg class="fb" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+      <path fill="currentColor"
+            d="M22 12a10 10 0 1 0-11.6 9.9v-7h-2.3V12h2.3V9.7c0-2.3 1.4-3.6 3.5-3.6 1 0 2 .2 2 .2v2.2h-1.1c-1.1 0-1.4.7-1.4 1.4V12h2.4l-.4 2.9h-2v7A10 10 0 0 0 22 12Z"/>
+    </svg>
+
+    <div class="handle">@BeachVolleyballMedia</div>
+  </div>
+  
+  <!-- Next Up Badge -->
+  <div id="next-badge" class="next-badge">
+    <span class="next-label">Next:</span>
+    <span id="next-teams" class="next-teams">TBD vs TBD</span>
+  </div>
+</div>
+
+<!-- Pre-match mode: Simple team names display (shown when score is 0-0) -->
+<div id="prematch" class="prematch-bar">
+  <span class="team-name" id="pm-t1">Team 1</span>
+  <span class="vs">vs</span>
+  <span class="team-name" id="pm-t2">Team 2</span>
+</div>
+
+    <div id="scorebug" class="bug hidden">
+    <!-- Team 1 -->
+    <div class="row" id="row1">
+       <div class="info">
+         <div class="name">
+             <span id="t1">NVL</span>
+             <!-- Volleyball Icon -->
+             <svg class="vb serve-icon" viewBox="0 0 24 24">
+               <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
+             </svg>
+         </div>
+         <div class="seed" id="sd1"></div>
+       </div>
+       <div class="score" id="sc1">0</div>
+    </div>
+
+    <!-- Divider -->
+    <div class="divider"></div>
+
+    <!-- Team 2 -->
+    <div class="row" id="row2">
+       <div class="info">
+         <div class="name">
+             <span id="t2">NVL</span>
+             <!-- Volleyball Icon -->
+             <svg class="vb serve-icon" viewBox="0 0 24 24">
+               <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
+             </svg>
+         </div>
+         <div class="seed" id="sd2"></div>
+       </div>
+       <div class="score" id="sc2">0</div>
+    </div>
+    
+    <!-- Edge-positioned seeds (outside rows, inside bug for proper positioning) -->
+    <span id="seed1-edge" class="seed-edge hidden">#1</span>
+    <span id="seed2-edge" class="seed-edge hidden">#2</span>
+    </div>
+
+
+    <div id="setsline" class="setsline"></div>
+    <!-- Removed old "next" div - now using header-row next-badge instead -->
+    <div class="accent"></div>
+
+<!-- Removed postmatch-next - next match info now in header-row -->
+
+  </div></div>
+
+<script>
+const SRC = "/score.json"; const NEXT_SRC = "/next.json"; const LABEL_SRC = "/label.json";
+const POLL_MS = 1000;
+const POSTMATCH_DELAY_MS = 3 * 60 * 1000; // 3 minutes after match ends
+
+/* Overlay State Machine: prematch | live | postmatch */
+let overlayState = 'prematch'; // Start in prematch mode
+let postmatchTimer = null;
+let isFirstLoad = true; // Detect mid-match join
+
+/* prev values + persistent server */
+let prev = { a:null, b:null, set:-1 };
+let lastServer = null; // 'A' | 'B' | null
+let lastSetLinesKey = "";
+let currentTeam1 = "";
+let currentTeam2 = "";
+let lastMatchKey = ""; // Track match changes
+
+/* helpers */
+async function fetchJSON(u){ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error(r.status); return r.json(); }
+function applyText(el, v, cls){ if(!el) return; const s=String(v ?? ''); if(el.textContent!==s){ el.textContent=s; if(cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); } } }
+function setWon(a,b,t){ return Math.max(a,b) >= t && Math.abs(a-b) >= 2; }
+function cleanName(n){ return (n||"").replace(/\s*\(.*?\)\s*/g," ").replace(/\s{2,}/g," ").trim(); }
+
+/* Smart truncate: abbreviates first names, keeps last names
+   Format: "T. Field" instead of "Troy F."
+   Handles same last names: "Ta. Crab / Tr. Crab" */
+function smartTruncate(teamName, maxLen = 30) {
+  if (!teamName || teamName.length <= maxLen) return teamName;
+  
+  // Split by "/" to get individual player names
+  const players = teamName.split("/").map(p => p.trim());
+  
+  // First pass: get all last names to detect duplicates
+  const lastNames = players.map(player => {
+    const parts = player.split(" ");
+    return parts.length >= 2 ? parts[parts.length - 1] : player;
+  });
+  
+  // Count occurrences of each last name
+  const lastNameCounts = {};
+  lastNames.forEach(ln => { lastNameCounts[ln] = (lastNameCounts[ln] || 0) + 1; });
+  
+  // Track which last names we've seen for disambiguation
+  const lastNameSeen = {};
+  
+  const abbreviated = players.map((player, idx) => {
+    const parts = player.split(" ");
+    if (parts.length < 2) return player; // Single name, can't abbreviate
+    
+    const firstName = parts[0];
+    const lastName = parts[parts.length - 1];
+    
+    // Check if this last name appears multiple times
+    if (lastNameCounts[lastName] > 1) {
+      // Need to use more letters from first name to disambiguate
+      // Use first 2 letters: "Ta." for Taylor, "Tr." for Trevor
+      const seen = lastNameSeen[lastName] || 0;
+      lastNameSeen[lastName] = seen + 1;
+      
+      // Find unique prefix length (at least 2 chars)
+      let prefixLen = 2;
+      const firstInitial = firstName.substring(0, prefixLen) + ".";
+      return firstInitial + " " + lastName;
+    } else {
+      // Standard case: first initial + last name
+      return firstName.charAt(0) + ". " + lastName;
+    }
+  });
+  
+  return abbreviated.join(" / ");
+}
+
+/* ==================== OVERLAY STATE MACHINE ==================== */
+
+// Get DOM elements
+function getOverlayElements() {
+  return {
+    prematch: document.getElementById('prematch'),
+    scorebug: document.getElementById('scorebug'),
+    pmT1: document.getElementById('pm-t1'),
+    pmT2: document.getElementById('pm-t2')
+    // postmatchNext and postmatchTeams removed - using header-row next-badge instead
+  };
+}
+
+// Transition to LIVE mode (shows full scoreboard)
+function transitionToLive(animate = true) {
+  if (overlayState === 'live') return;
+  console.log('[Overlay] Transition: ' + overlayState + ' → live');
+  
+  const els = getOverlayElements();
+  overlayState = 'live';
+  
+  // Hide prematch bar
+  if (els.prematch) {
+    els.prematch.classList.add('hidden');
+  }
+  
+  // Show scorebug with animation
+  if (els.scorebug) {
+    els.scorebug.classList.remove('hidden');
+    if (animate) {
+      els.scorebug.classList.add('reveal');
+      setTimeout(() => els.scorebug.classList.remove('reveal'), 500);
+    }
+  }
+  
+  // Clear any postmatch timer
+  if (postmatchTimer) {
+    clearTimeout(postmatchTimer);
+    postmatchTimer = null;
+  }
+}
+
+// Transition to POSTMATCH mode (keeps final score visible, waits for Swift to advance)
+function transitionToPostmatch(nextTeam1, nextTeam2) {
+  if (overlayState === 'postmatch') return;
+  console.log('[Overlay] Transition: ' + overlayState + ' → postmatch');
+  
+  overlayState = 'postmatch';
+  
+  // Keep scorebug visible with final score
+  // Next match info is shown in header-row next-badge
+  // Swift handles the 3-minute hold and queue advancement
+  
+  // Optional: Start a fallback timer in case Swift doesn't advance
+  postmatchTimer = setTimeout(() => {
+    console.log('[Overlay] Postmatch timeout - waiting for Swift to advance queue');
+  }, POSTMATCH_DELAY_MS);
+}
+
+// Transition to PREMATCH mode (shows only team names)
+function transitionToPrematch(team1, team2) {
+  console.log('[Overlay] Transition: ' + overlayState + ' → prematch');
+  
+  const els = getOverlayElements();
+  overlayState = 'prematch';
+  
+  // Update prematch bar with team names
+  if (els.pmT1) els.pmT1.textContent = smartTruncate(cleanName(team1)) || 'Team 1';
+  if (els.pmT2) els.pmT2.textContent = smartTruncate(cleanName(team2)) || 'Team 2';
+  
+  // Hide scorebug
+  if (els.scorebug) {
+    els.scorebug.classList.add('hidden');
+  }
+  
+  // Show prematch bar
+  if (els.prematch) {
+    els.prematch.classList.remove('hidden');
+  }
+  
+  // Clear timer
+  if (postmatchTimer) {
+    clearTimeout(postmatchTimer);
+    postmatchTimer = null;
+  }
+}
+
+// Check if match has ended (one team won required number of sets)
+function checkMatchEnd(setHistory, setsToWin = 2) {
+  if (!setHistory || !setHistory.length) return false;
+  
+  let team1Sets = 0, team2Sets = 0;
+  setHistory.forEach(score => {
+    const [a, b] = String(score).split('-').map(Number);
+    if (a > b) team1Sets++;
+    else if (b > a) team2Sets++;
+  });
+  
+  // Use setsToWin from match data (default 2 for best-of-3)
+  return team1Sets >= setsToWin || team2Sets >= setsToWin;
+}
+
+// Check if score is 0-0 (pre-match state)
+function isZeroZero(score1, score2) {
+  return (parseInt(score1) || 0) === 0 && (parseInt(score2) || 0) === 0;
+}
+
+function completedSetLines(A,B){
+  const a1=A.game1||0,b1=B.game1||0, a2=A.game2||0,b2=B.game2||0, a3=A.game3||0,b3=B.game3||0;
+  const out=[]; if(setWon(a1,b1,21)) out.push(`${a1}-${b1}`); if(setWon(a2,b2,21)) out.push(`${a2}-${b2}`); if(setWon(a3,b3,15)) out.push(`${a3}-${b3}`);
+  return out;
+}
+
+// Check if a set is actually completed (score reached target with win-by-2 or hit cap)
+function isSetComplete(scoreA, scoreB, pointsPerSet = 21, pointCap = null) {
+  const maxScore = Math.max(scoreA, scoreB);
+  const diff = Math.abs(scoreA - scoreB);
+  
+  // If there's a cap and someone hit it, set is complete
+  if (pointCap && maxScore >= pointCap) {
+    return true;
+  }
+  
+  // Otherwise, need to reach pointsPerSet AND have 2+ point lead
+  return maxScore >= pointsPerSet && diff >= 2;
+}
+
+// Filter setHistory to only include completed sets
+function filterCompletedSets(lines, pointsPerSet = 21, pointCap = null) {
+  if (!lines || !lines.length) return [];
+  
+  return lines.filter(scoreStr => {
+    const [as, bs] = String(scoreStr).split('-');
+    const a = parseInt(as) || 0;
+    const b = parseInt(bs) || 0;
+    return isSetComplete(a, b, pointsPerSet, pointCap);
+  });
+}
+
+function buildSetChips(lines, pointsPerSet = 21, pointCap = null, currentScore1 = 0, currentScore2 = 0){
+  const host=document.getElementById('setsline'); if(!host) return;
+  
+  // Debug: log what we're receiving
+  console.log('[SetChips] Raw lines:', lines, 'pointsPerSet:', pointsPerSet, 'pointCap:', pointCap, 'currentScores:', currentScore1, currentScore2);
+  
+  // Step 1: Filter out the CURRENT LIVE SET (if last entry matches current scores)
+  let filteredLines = lines ? [...lines] : [];
+  if (filteredLines.length > 0) {
+    const lastEntry = String(filteredLines[filteredLines.length - 1]);
+    const [as, bs] = lastEntry.split('-');
+    const a = parseInt(as) || 0;
+    const b = parseInt(bs) || 0;
+    // Check if last entry matches current scores (it's the live set)
+    if ((a === currentScore1 && b === currentScore2) || (a === currentScore2 && b === currentScore1)) {
+      console.log('[SetChips] Removing live set from history:', lastEntry);
+      filteredLines.pop(); // Remove the current live set
+    }
+  }
+  
+  // Step 2: Filter to only show COMPLETED sets (not live/in-progress)
+  const completedLines = filterCompletedSets(filteredLines, pointsPerSet, pointCap);
+  console.log('[SetChips] After filtering:', completedLines);
+  
+  // Hide if no completed sets
+  if(!completedLines || !completedLines.length){ 
+    if (host.classList.contains('visible')) {
+      host.classList.remove('visible');
+      // Hide display after transition completes
+      setTimeout(() => { host.style.display = 'none'; }, 500);
+    }
+    lastSetLinesKey=""; 
+    return; 
+  }
+  
+  const key = JSON.stringify(completedLines);
+  if(key === lastSetLinesKey) return;
+  
+  // Build the set chips HTML
+  host.innerHTML = completedLines.map((t,i)=>{ 
+    const [as,bs]=String(t).split('-'); 
+    const a=+as||0, b=+bs||0; 
+    const wa = a>b ? ' win' : '';
+    const wb = b>a ? ' win' : '';
+    return `<div class="set-item">
+      <span class="set-lbl">Set ${i+1}</span>
+      <span class="set-sc${wa}">${a}</span><span class="set-sc">-</span><span class="set-sc${wb}">${b}</span>
+    </div>`; 
+  }).join('<div style="width:1px;height:14px;background:rgba(255,255,255,0.15)"></div>');
+  
+  // Show with animation (slight delay for the transition to work)
+  host.style.display = 'flex';
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      host.classList.add('visible');
+    });
+  });
+  
+  lastSetLinesKey = key;
+}
+
+/* renderer */
+function applyData(d){
+  if(!d) return;
+  
+  // Safety check: ensure we have at least team names before updating
+  // This prevents the "white flash" where overlay renders empty/broken state
+  if (!d.team1 && !d.team2) {
+    console.log('[Overlay] Skipping update - missing team names');
+    return;
+  }
+
+  // Names - apply smart truncation for long names
+  const name1 = smartTruncate(cleanName(d.team1)) || 'Team 1';
+  const name2 = smartTruncate(cleanName(d.team2)) || 'Team 2';
+  
+  // Track current teams and detect match changes
+  const matchKey = d.team1 + '|' + d.team2;
+  const isNewMatch = matchKey !== lastMatchKey;
+  if (isNewMatch) {
+    lastMatchKey = matchKey;
+    currentTeam1 = d.team1;
+    currentTeam2 = d.team2;
+  }
+  
+  // Update scorebug team names
+  applyText(document.getElementById('t1'), name1, 'fade');
+  applyText(document.getElementById('t2'), name2, 'fade');
+  
+  // Update prematch bar team names
+  const els = getOverlayElements();
+  if (els.pmT1) els.pmT1.textContent = name1;
+  if (els.pmT2) els.pmT2.textContent = name2;
+  
+  // Seeds - update edge-positioned seeds in rows
+  const seed1Edge = document.getElementById('seed1-edge');
+  const seed2Edge = document.getElementById('seed2-edge');
+  const hasSeed1 = d.seed1 && d.seed1.toString().trim() !== '';
+  const hasSeed2 = d.seed2 && d.seed2.toString().trim() !== '';
+  
+  if (seed1Edge) {
+    if (hasSeed1) {
+      seed1Edge.innerHTML = `<span class="seed-label">Seed</span><span class="seed-num">#${d.seed1}</span>`;
+      seed1Edge.classList.remove('hidden');
+    } else {
+      seed1Edge.classList.add('hidden');
+    }
+  }
+  if (seed2Edge) {
+    if (hasSeed2) {
+      seed2Edge.innerHTML = `<span class="seed-label">Seed</span><span class="seed-num">#${d.seed2}</span>`;
+      seed2Edge.classList.remove('hidden');
+    } else {
+      seed2Edge.classList.add('hidden');
+    }
+  }
+  
+  // Update header next-badge
+  const nextTeams = document.getElementById('next-teams');
+  if (nextTeams && d.nextMatch) {
+    nextTeams.textContent = d.nextMatch;
+  }
+
+  // Scores
+  const score1 = d.score1 || 0;
+  const score2 = d.score2 || 0;
+  applyText(document.getElementById('sc1'), score1, 'flip');
+  applyText(document.getElementById('sc2'), score2, 'flip');
+
+  // Set History Drawer - pass pointsPerSet and current scores so we only show COMPLETED sets
+  const pointsPerSet = d.pointsPerSet || 21;
+  const pointCap = d.pointCap || null;
+  buildSetChips(d.setHistory, pointsPerSet, pointCap, score1, score2);
+  
+  // ==================== STATE MACHINE LOGIC ====================
+  
+  // First load: detect if joining mid-match
+  if (isFirstLoad) {
+    isFirstLoad = false;
+    if (!isZeroZero(score1, score2)) {
+      // Joining mid-match: show scoreboard immediately without animation
+      console.log('[Overlay] Mid-match join detected, showing scoreboard');
+      transitionToLive(false); // No animation
+    } else {
+      // Starting fresh: stay in prematch mode
+      console.log('[Overlay] Starting in prematch mode (0-0)');
+    }
+  }
+  
+  // In prematch mode: detect first point scored
+  if (overlayState === 'prematch') {
+    if (!isZeroZero(score1, score2)) {
+      // First point scored! Transition to live with animation
+      console.log('[Overlay] First point scored! Transitioning to live');
+      transitionToLive(true);
+    }
+  }
+  
+  // In live mode: check for match end
+  if (overlayState === 'live') {
+    // Use setsToWin from match data (default 2 for best-of-3)
+    const setsToWin = d.setsToWin || 2;
+    if (checkMatchEnd(d.setHistory, setsToWin)) {
+      // Match ended - get next match info if available
+      const nextTeam1 = d.nextTeam1 || 'TBD';
+      const nextTeam2 = d.nextTeam2 || 'TBD';
+      console.log('[Overlay] Match ended, transitioning to postmatch (setsToWin=' + setsToWin + ')');
+      transitionToPostmatch(nextTeam1, nextTeam2);
+    }
+  }
+  
+  // ==================== END STATE MACHINE ====================
+  
+  // Serve indicator
+  const srv = (d.serve||"").toLowerCase();
+  const r1 = document.getElementById('row1');
+  const r2 = document.getElementById('row2');
+  
+  if(r1 && r2) {
+      const isHome = srv.includes('home') || srv.includes('team1');
+      const isAway = srv.includes('away') || srv.includes('team2');
+      r1.classList.toggle('serving', isHome);
+      r2.classList.toggle('serving', isAway);
+  }
+}
+
+/* ticks */
+async function tick(){ 
+    try{ 
+        const d=await fetchJSON(SRC); 
+        if(d) applyData(d); 
+    }catch(e){
+        console.log(e);
+    } finally{ 
+        setTimeout(tick,POLL_MS); 
+    } 
+}
+
+// label (top‑left)
+async function tickLabel(){
+  try{
+    const o = await fetchJSON(LABEL_SRC);
+    const label = (o && typeof o.label === 'string') ? o.label.trim() : '';
+    const el = document.getElementById('label');
+    el.style.display = label ? '' : 'none';
+    if(label) applyText(el, label, 'fade');
+  }catch(_){} finally{ setTimeout(tickLabel, Math.max(POLL_MS*2, 1500)); }
+}
+
+// next (with label)
+async function tickNext(){
+  try{
+    const o = await fetchJSON(SRC); // We check score.json for nextMatch prop now too
+    if(o && o.nextMatch) {
+        applyText(document.getElementById('next'), `Next: ${o.nextMatch}`, 'fade');
+    }
+  }catch(_){} finally{ setTimeout(tickNext, Math.max(POLL_MS*2, 1500)); }
+}
+
+tick();
+tickLabel();
+tickNext();
+</script>
+</body>
+</html>
+"""#
+}

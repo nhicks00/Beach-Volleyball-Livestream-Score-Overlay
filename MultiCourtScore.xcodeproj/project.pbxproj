@@ -1,0 +1,576 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		521AA3252E5BC12C000D5B5F /* Vapor in Frameworks */ = {isa = PBXBuildFile; productRef = 521AA3242E5BC12C000D5B5F /* Vapor */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		521AA3072E5BBE5E000D5B5F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 521AA2F02E5BBE5D000D5B5F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 521AA2F72E5BBE5D000D5B5F;
+			remoteInfo = MultiCourtScore;
+		};
+		521AA3112E5BBE5E000D5B5F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 521AA2F02E5BBE5D000D5B5F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 521AA2F72E5BBE5D000D5B5F;
+			remoteInfo = MultiCourtScore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		521AA2F82E5BBE5D000D5B5F /* MultiCourtScore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MultiCourtScore.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		521AA3062E5BBE5E000D5B5F /* MultiCourtScoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCourtScoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		521AA3102E5BBE5E000D5B5F /* MultiCourtScoreUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCourtScoreUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		521AA2FA2E5BBE5D000D5B5F /* MultiCourtScore */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MultiCourtScore;
+			sourceTree = "<group>";
+		};
+		521AA3092E5BBE5E000D5B5F /* MultiCourtScoreTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MultiCourtScoreTests;
+			sourceTree = "<group>";
+		};
+		521AA3132E5BBE5E000D5B5F /* MultiCourtScoreUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MultiCourtScoreUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		521AA2F52E5BBE5D000D5B5F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				521AA3252E5BC12C000D5B5F /* Vapor in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA3032E5BBE5E000D5B5F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA30D2E5BBE5E000D5B5F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		521AA2EF2E5BBE5D000D5B5F = {
+			isa = PBXGroup;
+			children = (
+				521AA2FA2E5BBE5D000D5B5F /* MultiCourtScore */,
+				521AA3092E5BBE5E000D5B5F /* MultiCourtScoreTests */,
+				521AA3132E5BBE5E000D5B5F /* MultiCourtScoreUITests */,
+				521AA2F92E5BBE5D000D5B5F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		521AA2F92E5BBE5D000D5B5F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				521AA2F82E5BBE5D000D5B5F /* MultiCourtScore.app */,
+				521AA3062E5BBE5E000D5B5F /* MultiCourtScoreTests.xctest */,
+				521AA3102E5BBE5E000D5B5F /* MultiCourtScoreUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		521AA2F72E5BBE5D000D5B5F /* MultiCourtScore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 521AA31A2E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScore" */;
+			buildPhases = (
+				521AA2F42E5BBE5D000D5B5F /* Sources */,
+				521AA2F52E5BBE5D000D5B5F /* Frameworks */,
+				521AA2F62E5BBE5D000D5B5F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				521AA2FA2E5BBE5D000D5B5F /* MultiCourtScore */,
+			);
+			name = MultiCourtScore;
+			packageProductDependencies = (
+				521AA3242E5BC12C000D5B5F /* Vapor */,
+			);
+			productName = MultiCourtScore;
+			productReference = 521AA2F82E5BBE5D000D5B5F /* MultiCourtScore.app */;
+			productType = "com.apple.product-type.application";
+		};
+		521AA3052E5BBE5E000D5B5F /* MultiCourtScoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 521AA31D2E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScoreTests" */;
+			buildPhases = (
+				521AA3022E5BBE5E000D5B5F /* Sources */,
+				521AA3032E5BBE5E000D5B5F /* Frameworks */,
+				521AA3042E5BBE5E000D5B5F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				521AA3082E5BBE5E000D5B5F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				521AA3092E5BBE5E000D5B5F /* MultiCourtScoreTests */,
+			);
+			name = MultiCourtScoreTests;
+			packageProductDependencies = (
+			);
+			productName = MultiCourtScoreTests;
+			productReference = 521AA3062E5BBE5E000D5B5F /* MultiCourtScoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		521AA30F2E5BBE5E000D5B5F /* MultiCourtScoreUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 521AA3202E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScoreUITests" */;
+			buildPhases = (
+				521AA30C2E5BBE5E000D5B5F /* Sources */,
+				521AA30D2E5BBE5E000D5B5F /* Frameworks */,
+				521AA30E2E5BBE5E000D5B5F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				521AA3122E5BBE5E000D5B5F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				521AA3132E5BBE5E000D5B5F /* MultiCourtScoreUITests */,
+			);
+			name = MultiCourtScoreUITests;
+			packageProductDependencies = (
+			);
+			productName = MultiCourtScoreUITests;
+			productReference = 521AA3102E5BBE5E000D5B5F /* MultiCourtScoreUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		521AA2F02E5BBE5D000D5B5F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					521AA2F72E5BBE5D000D5B5F = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					521AA3052E5BBE5E000D5B5F = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 521AA2F72E5BBE5D000D5B5F;
+					};
+					521AA30F2E5BBE5E000D5B5F = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 521AA2F72E5BBE5D000D5B5F;
+					};
+				};
+			};
+			buildConfigurationList = 521AA2F32E5BBE5D000D5B5F /* Build configuration list for PBXProject "MultiCourtScore" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 521AA2EF2E5BBE5D000D5B5F;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				521AA3232E5BC12C000D5B5F /* XCRemoteSwiftPackageReference "vapor" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 521AA2F92E5BBE5D000D5B5F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				521AA2F72E5BBE5D000D5B5F /* MultiCourtScore */,
+				521AA3052E5BBE5E000D5B5F /* MultiCourtScoreTests */,
+				521AA30F2E5BBE5E000D5B5F /* MultiCourtScoreUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		521AA2F62E5BBE5D000D5B5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA3042E5BBE5E000D5B5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA30E2E5BBE5E000D5B5F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		521AA2F42E5BBE5D000D5B5F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA3022E5BBE5E000D5B5F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		521AA30C2E5BBE5E000D5B5F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		521AA3082E5BBE5E000D5B5F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 521AA2F72E5BBE5D000D5B5F /* MultiCourtScore */;
+			targetProxy = 521AA3072E5BBE5E000D5B5F /* PBXContainerItemProxy */;
+		};
+		521AA3122E5BBE5E000D5B5F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 521AA2F72E5BBE5D000D5B5F /* MultiCourtScore */;
+			targetProxy = 521AA3112E5BBE5E000D5B5F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		521AA3182E5BBE5E000D5B5F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		521AA3192E5BBE5E000D5B5F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		521AA31B2E5BBE5E000D5B5F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MultiCourtScore/MultiCourtScore.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScore;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		521AA31C2E5BBE5E000D5B5F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MultiCourtScore/MultiCourtScore.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScore;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		521AA31E2E5BBE5E000D5B5F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiCourtScore.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiCourtScore";
+			};
+			name = Debug;
+		};
+		521AA31F2E5BBE5E000D5B5F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiCourtScore.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiCourtScore";
+			};
+			name = Release;
+		};
+		521AA3212E5BBE5E000D5B5F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScoreUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = MultiCourtScore;
+			};
+			name = Debug;
+		};
+		521AA3222E5BBE5E000D5B5F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.NathanHicks.MultiCourtScoreUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = MultiCourtScore;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		521AA2F32E5BBE5D000D5B5F /* Build configuration list for PBXProject "MultiCourtScore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				521AA3182E5BBE5E000D5B5F /* Debug */,
+				521AA3192E5BBE5E000D5B5F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		521AA31A2E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				521AA31B2E5BBE5E000D5B5F /* Debug */,
+				521AA31C2E5BBE5E000D5B5F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		521AA31D2E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				521AA31E2E5BBE5E000D5B5F /* Debug */,
+				521AA31F2E5BBE5E000D5B5F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		521AA3202E5BBE5E000D5B5F /* Build configuration list for PBXNativeTarget "MultiCourtScoreUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				521AA3212E5BBE5E000D5B5F /* Debug */,
+				521AA3222E5BBE5E000D5B5F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		521AA3232E5BC12C000D5B5F /* XCRemoteSwiftPackageReference "vapor" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/vapor/vapor";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.115.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		521AA3242E5BC12C000D5B5F /* Vapor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 521AA3232E5BC12C000D5B5F /* XCRemoteSwiftPackageReference "vapor" */;
+			productName = Vapor;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 521AA2F02E5BBE5D000D5B5F /* Project object */;
+}

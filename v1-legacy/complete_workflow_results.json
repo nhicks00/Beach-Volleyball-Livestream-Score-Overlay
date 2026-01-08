@@ -1,0 +1,283 @@
+{
+  "url": "https://volleyballlife.com/event/23889/division/92261/round/168846/brackets",
+  "timestamp": "2025-10-04T11:25:37.887867",
+  "total_matches": 17,
+  "matches": [
+    {
+      "index": 0,
+      "match_number": "1",
+      "time": "9:00AM",
+      "court": "1",
+      "team_names": [
+        "Peter Connole / Steven Roschitz",
+        "Jayden Curtis / Samuel Piangerelli"
+      ],
+      "header_info": "Match 19:00AMSaturday Court 1",
+      "team1": "Peter Connole / Steven Roschitz",
+      "team2": "Jayden Curtis / Samuel Piangerelli",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196391/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 1,
+      "match_number": "21",
+      "time": "10:00AM",
+      "court": "1",
+      "team_names": [
+        "Josh Dailey / William Mota",
+        "Corbin Dewick / Cole Keeling"
+      ],
+      "header_info": "Match 210:00AMSaturday Court 1",
+      "team1": "Josh Dailey / William Mota",
+      "team2": "Corbin Dewick / Cole Keeling",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196398/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 2,
+      "match_number": "31",
+      "time": "10:00AM",
+      "court": "4",
+      "team_names": [
+        "Malachi Brewington / Titus Lance",
+        "George Black / Cody Sanders"
+      ],
+      "header_info": "Match 310:00AMSunday Court  4",
+      "team1": "Malachi Brewington / Titus Lance",
+      "team2": "George Black / Cody Sanders",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196396/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 3,
+      "match_number": "4",
+      "time": "9:00AM",
+      "court": "4",
+      "team_names": [
+        "William Grantham / Tyler Mackinnon",
+        "George Black / Cody Sanders"
+      ],
+      "header_info": "Match 49:00AMSunday Court  4",
+      "team1": "William Grantham / Tyler Mackinnon",
+      "team2": "George Black / Cody Sanders",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196401/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 4,
+      "match_number": "5",
+      "time": "9:00AM",
+      "court": "3",
+      "team_names": [
+        "Jackson Arnold / Alex Mortimer",
+        "Kyle Garahana / Nathan Hicks"
+      ],
+      "header_info": "Match 59:00AMSunday Court  3",
+      "team1": "Jackson Arnold / Alex Mortimer",
+      "team2": "Kyle Garahana / Nathan Hicks",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196418/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 5,
+      "match_number": "61",
+      "time": "10:00AM",
+      "court": "3",
+      "team_names": [
+        "Justin Beach / Mike Howard",
+        "Derek Strause / Daniel Wenger"
+      ],
+      "header_info": "Match 610:00AMSunday Court  3",
+      "team1": "Justin Beach / Mike Howard",
+      "team2": "Derek Strause / Daniel Wenger",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196419/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 6,
+      "match_number": "71",
+      "time": "10:00AM",
+      "court": "2",
+      "team_names": [
+        "Reid Malone / Blake Stewart",
+        "Justin Cagney / Andrew Pritchard"
+      ],
+      "header_info": "Match 710:00AMSunday Court  2",
+      "team1": "Reid Malone / Blake Stewart",
+      "team2": "Justin Cagney / Andrew Pritchard",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196415/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 7,
+      "match_number": "8",
+      "time": "9:00AM",
+      "court": "2",
+      "team_names": [
+        "Marvin Agosto / Nate Goodlin",
+        "Gage Basey / Caleb Kwekel"
+      ],
+      "header_info": "Match 89:00AMSunday Court  2",
+      "team1": "Marvin Agosto / Nate Goodlin",
+      "team2": "Gage Basey / Caleb Kwekel",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196414/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 8,
+      "match_number": "91",
+      "time": "2:00PM",
+      "court": "1",
+      "team_names": [
+        "Match 1 Winner",
+        "Match 2 Winner"
+      ],
+      "header_info": "Match 912:00PMSaturday Court 1",
+      "team1": "Match 1 Winner",
+      "team2": "Match 2 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196411/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 9,
+      "match_number": "10",
+      "time": "12:00PM",
+      "court": "4",
+      "team_names": [
+        "Match 3 Winner",
+        "Match 4 Winner"
+      ],
+      "header_info": "Match 1012:00PMSunday Court  4",
+      "team1": "Match 3 Winner",
+      "team2": "Match 4 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196395/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 10,
+      "match_number": "11",
+      "time": "12:00PM",
+      "court": "3",
+      "team_names": [
+        "Match 5 Winner",
+        "Match 6 Winner"
+      ],
+      "header_info": "Match 1112:00PMSunday Court  3",
+      "team1": "Match 5 Winner",
+      "team2": "Match 6 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196420/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 11,
+      "match_number": "12",
+      "time": "12:00PM",
+      "court": "2",
+      "team_names": [
+        "Match 7 Winner",
+        "Match 8 Winner"
+      ],
+      "header_info": "Match 1212:00PMSunday Court  2",
+      "team1": "Match 7 Winner",
+      "team2": "Match 8 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196416/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 12,
+      "match_number": "13",
+      "time": "1:00PM",
+      "court": "1",
+      "team_names": [
+        "Match 9 Winner",
+        "Match 10 Winner"
+      ],
+      "header_info": "Match 131:00PMSunday Court 1",
+      "team1": "Match 9 Winner",
+      "team2": "Match 10 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196410/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 13,
+      "match_number": "14",
+      "time": "1:00PM",
+      "court": "2",
+      "team_names": [
+        "Match 11 Winner",
+        "Match 12 Winner"
+      ],
+      "header_info": "Match 141:00PMSunday Court  2",
+      "team1": "Match 11 Winner",
+      "team2": "Match 12 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196417/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 14,
+      "match_number": "27",
+      "time": "3:00PM",
+      "court": "1",
+      "team_names": [
+        "Match 13 Winner",
+        "Match 25 Winner"
+      ],
+      "header_info": "Match 273:00PMSunday Court 1",
+      "team1": "Match 13 Winner",
+      "team2": "Match 25 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196409/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 15,
+      "match_number": "28",
+      "time": "5:00PM",
+      "court": "1",
+      "team_names": [
+        "Match 26 Winner",
+        "Match 14 Winner"
+      ],
+      "header_info": "Match 285:00PMSunday Court 1",
+      "team1": "Match 26 Winner",
+      "team2": "Match 14 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196399/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    },
+    {
+      "index": 16,
+      "match_number": "29",
+      "time": "6:00PM",
+      "court": "1",
+      "team_names": [
+        "Match 27 Winner",
+        "Match 28 Winner"
+      ],
+      "header_info": "Match 296:00PMSunday Court 1",
+      "team1": "Match 27 Winner",
+      "team2": "Match 28 Winner",
+      "api_url": "https://api.volleyballlife.com/api/v1.0/matches/196408/vmix?bracket=true",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    }
+  ],
+  "match_type": "Bracket Play",
+  "type_detail": "Main Bracket",
+  "login_performed": "Hhklja99",
+  "status": "success"
+}

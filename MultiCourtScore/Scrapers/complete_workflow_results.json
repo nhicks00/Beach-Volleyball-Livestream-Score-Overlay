@@ -1,0 +1,18 @@
+{
+  "urls_scanned": 1,
+  "total_matches": 0,
+  "results": [
+    {
+      "url": "https://volleyballlife.com/event/27644/division/104314/round/228004/brackets",
+      "timestamp": "2025-12-30T15:30:24.010385",
+      "total_matches": 0,
+      "matches": [],
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket",
+      "status": "error",
+      "error": "Login failed",
+      "login_performed": false
+    }
+  ],
+  "status": "partial"
+}

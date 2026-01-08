@@ -1,0 +1,152 @@
+{
+  "timestamp": "2025-10-04T11:24:31.324089",
+  "cookies": [
+    {
+      "name": "Version",
+      "value": "3",
+      "domain": "volleyballlife.com",
+      "path": "/",
+      "expires": 1759854266,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ARRAffinity",
+      "value": "bc88e07dec6a6c3304da2f999ca84f4a8771c15c39b6de8d774e06938005b7e6",
+      "domain": ".volleyballlife.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "ARRAffinitySameSite",
+      "value": "bc88e07dec6a6c3304da2f999ca84f4a8771c15c39b6de8d774e06938005b7e6",
+      "domain": ".volleyballlife.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.1103476811.1756713315",
+      "domain": ".volleyballlife.com",
+      "path": "/",
+      "expires": 1794155066,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga_2VD9XVHNKB",
+      "value": "GS2.1.s1759595064$o2$g1$t1759595066$j58$l0$h0",
+      "domain": ".volleyballlife.com",
+      "path": "/",
+      "expires": 1794155066,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga_EFQJ281GE7",
+      "value": "GS2.1.s1759595064$o2$g1$t1759595066$j58$l0$h0",
+      "domain": ".volleyballlife.com",
+      "path": "/",
+      "expires": 1794155066,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "None"
+    }
+  ],
+  "storage_state": {
+    "cookies": [
+      {
+        "name": "Version",
+        "value": "3",
+        "domain": "volleyballlife.com",
+        "path": "/",
+        "expires": 1759854266,
+        "httpOnly": false,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "ARRAffinity",
+        "value": "bc88e07dec6a6c3304da2f999ca84f4a8771c15c39b6de8d774e06938005b7e6",
+        "domain": ".volleyballlife.com",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "ARRAffinitySameSite",
+        "value": "bc88e07dec6a6c3304da2f999ca84f4a8771c15c39b6de8d774e06938005b7e6",
+        "domain": ".volleyballlife.com",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "_ga",
+        "value": "GA1.1.1103476811.1756713315",
+        "domain": ".volleyballlife.com",
+        "path": "/",
+        "expires": 1794155066,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+      },
+      {
+        "name": "_ga_2VD9XVHNKB",
+        "value": "GS2.1.s1759595064$o2$g1$t1759595066$j58$l0$h0",
+        "domain": ".volleyballlife.com",
+        "path": "/",
+        "expires": 1794155066,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+      },
+      {
+        "name": "_ga_EFQJ281GE7",
+        "value": "GS2.1.s1759595064$o2$g1$t1759595066$j58$l0$h0",
+        "domain": ".volleyballlife.com",
+        "path": "/",
+        "expires": 1794155066,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+      }
+    ],
+    "origins": [
+      {
+        "origin": "https://volleyballlife.com",
+        "localStorage": [
+          {
+            "name": "vuex",
+            "value": "{\"User\":{\"user\":null,\"lastLoginType\":null,\"lastPwSet\":null,\"magicLinkDt\":null,\"noHowTo\":false,\"noCollegeHowTo\":false,\"preferences\":{\"tournamentView\":null,\"courtManager\":{\"day\":null,\"divisions\":[],\"courts\":[],\"iMinutes\":30,\"iHeight\":32,\"iWidth\":200,\"showNames\":false,\"showPlayers\":false,\"color2\":false,\"autoS\":10}},\"unread\":0,\"notifications\":[],\"tokens\":[],\"teams\":[]},\"Cart\":{\"carts\":[],\"reservations\":[]},\"LiveScoring\":{\"matchProps\":{\"n\":null,\"id\":null,\"path\":null,\"key\":null}}}"
+          },
+          {
+            "name": "auth",
+            "value": "{\"accessToken\":\"eyJhbGciOiJodHRwOi8vd3d3LnczLm9yZy8yMDAxLzA0L3htbGRzaWctbW9yZSNobWFjLXNoYTI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmNGY0ZDBmNy0yMjdhLTRlOGMtOGZjOS1hNDRkYzBhMGVjNzUiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjM1MzgiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoibmF0aGFuaGlja3MyNUBnbWFpbC5jb20iLCJleHAiOjE3NjIxODcwNjksImlzcyI6Imh0dHBzOi8vdm9sbGV5YmFsbGxpZmUuY29tIiwiYXVkIjoiaHR0cHM6Ly92b2xsZXliYWxsbGlmZS5jb20ifQ.fgr-jq5iTwot5BcjEtLIEtYKSYiZZfy4wJkzV4zGg8E\"}"
+          },
+          {
+            "name": "user",
+            "value": "{\"_tournamentOrgCache\":{},\"userObj\":{\"id\":3538,\"userName\":\"nathanhicks25@gmail.com\",\"firstName\":\"Nathan\",\"lastName\":\"Hicks\",\"gender\":null,\"dob\":null,\"active\":false,\"phones\":[{\"id\":3649,\"number\":\"2196447336\",\"isPublic\":false,\"isVerified\":true,\"isPrimary\":false,\"isSMS\":true}],\"emails\":[{\"id\":3594,\"address\":\"nathanhicks25@gmail.com\",\"isPublic\":false,\"isVerified\":true,\"isPrimary\":true}],\"pages\":[{\"id\":12,\"name\":\"AVP\",\"username\":\"avp\",\"isPublic\":true,\"isActive\":true,\"pointsOnly\":false,\"ratingsOnly\":false,\"membership\":false,\"props\":[\"cartFees\",\"no-ratings\",\"no-player-list\",\"ps-33\",\"import\",\"TD\"],\"role\":\"Admin\",\"logo\":\"https://vblimages.blob.core.windows.net/images/97269daa-ad53-4668-82e9-1fe2274c87d7.png\"},{\"id\":496,\"name\":\"Marshall \",\"username\":\"marshall\",\"isPublic\":true,\"isActive\":true,\"pointsOnly\":false,\"ratingsOnly\":false,\"membership\":false,\"props\":[\"cartFees\",\"checklist\",\"TD\"],\"role\":\"Admin\",\"logo\":null},{\"id\":681,\"name\":\"SFVA Volleyball \",\"username\":\"sfva\",\"isPublic\":true,\"isActive\":true,\"pointsOnly\":false,\"ratingsOnly\":false,\"membership\":false,\"props\":[\"cartFees\",\"TD\"],\"role\":\"Admin\",\"logo\":\"https://vblimages.blob.core.windows.net/images/6cb4c102-a20d-4518-98de-b119e4ccc52c.png\"},{\"id\":875,\"name\":\"ATX Beach\",\"username\":\"atxbeach\",\"isPublic\":true,\"isActive\":true,\"pointsOnly\":false,\"ratingsOnly\":false,\"membership\":false,\"props\":[\"TD\",\"teamMerge\",\"reports\",\"TD\"],\"role\":\"Admin\",\"logo\":\"https://vblimages.blob.core.windows.net/images/f8303e94-7417-4591-95f8-285082c474d5.png\"},{\"id\":1130,\"name\":\"Beach Volleyball Media\",\"username\":\"beachvolleyballmedia\",\"isPublic\":false,\"isActive\":false,\"pointsOnly\":false,\"ratingsOnly\":false,\"membership\":false,\"props\":[],\"role\":\"Owner\",\"logo\":null}],\"additionalPages\":[],\"profiles\":[{\"owner\":true,\"approved\":true,\"relation\":\"Self\",\"profile\":{\"id\":15760,\"memberId\":null,\"name\":\"Nathan Hicks\",\"firstName\":\"Nathan\",\"profilePic\":\"https://vblimages.blob.core.windows.net/images/avatar-male.jpg\",\"male\":true,\"iProps\":[]}}],\"avatarUrl\":\"https://graph.facebook.com/5155916651106582/picture?height=200&width=200\",\"vbl\":false,\"roles\":[],\"pwResetTill\":null,\"member\":null,\"bookmarks\":[{\"id\":4456,\"name\":\"Spring 2022 Men/Women Doubles\",\"type\":\"tournament\",\"boardId\":null,\"index\":0}],\"props\":[],\"bidPrograms\":[{\"tournament\":\"AVP Juniors West Coast Championships 2025\",\"name\":\"East & West Coast Championship\",\"bidProgramId\":54},{\"tournament\":\"AVP Juniors East Coast Championships 2025\",\"name\":\"East & West Coast Championship\",\"bidProgramId\":54}]},\"userObjTrue\":null,\"lastLoginType\":null,\"lastPwSet\":null,\"magicLinkDt\":null,\"noHowTo\":false,\"noCollegeHowTo\":false,\"noMultiDivEditWarn\":false,\"noCollegeListHelp\":false,\"preferences\":{\"tournamentView\":null,\"courtManager\":{\"day\":null,\"slotHeight\":60,\"slotWidth\":120,\"ticksPerHour\":2,\"showNames\":false,\"showPlayers\":false,\"colorByGender\":false,\"autoS\":20}},\"unread\":0,\"notifications\":[],\"tokens\":[],\"teams\":[]}"
+          },
+          {
+            "name": "eventFilters",
+            "value": "{\"fSearch\":null,\"fPage\":1,\"fStatus\":[\"current\",\"future\"],\"fStatusType\":\"Current & Future\",\"fStatusOpts\":[\"Past\",\"Current & Future\",\"Featured\",\"My Events\"],\"fEventTypes\":[\"Tournament\",\"League\"],\"fSBodies\":[\"AAU\",\"AVP\",\"BVCA\",\"BVNE\",\"JVA\",\"p1440\",\"USAV\",\"Unsanctioned\"],\"fOthers\":[\"Featured\"],\"fHosts\":[],\"fUseCurrent\":true,\"fSearchAddress\":null,\"fSearchLatLong\":null,\"fMaxDistance\":999999,\"fStartDate\":null,\"fEndDate\":null,\"fAllEventTypes\":[\"Tournament\",\"League\",\"Camp\",\"Clinic\",\"Series\",\"Tryout\"],\"fAllSBodies\":[\"AAU\",\"AVP\",\"BVCA\",\"BVNE\",\"JVA\",\"p1440\",\"USAV\",\"Unsanctioned\"]}"
+          }
+        ]
+      }
+    ]
+  }
+}

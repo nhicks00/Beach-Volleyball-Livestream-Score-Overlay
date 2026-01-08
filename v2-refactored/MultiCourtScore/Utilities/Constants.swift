@@ -1,0 +1,140 @@
+//
+//  Constants.swift
+//  MultiCourtScore v2
+//
+//  Design system and application constants
+//
+
+import SwiftUI
+
+// MARK: - Design System Colors
+enum AppColors {
+    // Primary brand colors
+    static let primary = Color(hex: "#4F46E5")           // Indigo (slightly darker for visibility)
+    static let primaryLight = Color(hex: "#6366F1")
+    static let primaryDark = Color(hex: "#3730A3")
+    
+    // Status colors (slightly darker for outdoor visibility)
+    static let success = Color(hex: "#059669")           // Emerald green
+    static let successLight = Color(hex: "#10B981")
+    static let warning = Color(hex: "#D97706")           // Amber
+    static let warningLight = Color(hex: "#F59E0B")
+    static let error = Color(hex: "#DC2626")             // Red
+    static let errorLight = Color(hex: "#EF4444")
+    static let info = Color(hex: "#2563EB")              // Blue
+    
+    // Surface colors (LIGHT MODE - optimized for outdoor/sun)
+    static let background = Color(hex: "#FFFFFF")        // Pure white
+    static let surface = Color(hex: "#F9FAFB")           // Very light gray
+    static let surfaceElevated = Color(hex: "#F3F4F6")   // Light gray
+    static let surfaceHover = Color(hex: "#E5E7EB")      // Slightly darker on hover
+    
+    // Text colors (dark text on light background)
+    static let textPrimary = Color(hex: "#111827")       // Near black
+    static let textSecondary = Color(hex: "#4B5563")     // Dark gray
+    static let textMuted = Color(hex: "#6B7280")         // Medium gray
+    
+    // Status-specific backgrounds (light mode versions)
+    static let liveBackground = Color(hex: "#D1FAE5")    // Light green
+    static let waitingBackground = Color(hex: "#FEF3C7") // Light amber
+    static let finishedBackground = Color(hex: "#DBEAFE") // Light blue
+    static let idleBackground = Color(hex: "#F3F4F6")    // Light gray
+    static let errorBackground = Color(hex: "#FEE2E2")   // Light red
+}
+
+// MARK: - Layout Constants
+enum AppLayout {
+    static let cornerRadius: CGFloat = 12
+    static let cardCornerRadius: CGFloat = 16
+    static let buttonCornerRadius: CGFloat = 8
+    static let smallCornerRadius: CGFloat = 6
+    
+    static let cardPadding: CGFloat = 16
+    static let sectionPadding: CGFloat = 20
+    static let contentPadding: CGFloat = 24
+    
+    static let cardSpacing: CGFloat = 16
+    static let itemSpacing: CGFloat = 12
+    static let smallSpacing: CGFloat = 8
+    
+    static let borderWidth: CGFloat = 1.5
+    static let iconSize: CGFloat = 18
+}
+
+// MARK: - Typography
+enum AppTypography {
+    static let largeTitle = Font.system(size: 28, weight: .bold, design: .rounded)
+    static let title = Font.system(size: 22, weight: .semibold, design: .rounded)
+    static let headline = Font.system(size: 17, weight: .semibold, design: .default)
+    static let body = Font.system(size: 15, weight: .regular, design: .default)
+    static let callout = Font.system(size: 14, weight: .medium, design: .default)
+    static let caption = Font.system(size: 12, weight: .regular, design: .default)
+    static let scoreLarge = Font.system(size: 36, weight: .bold, design: .monospaced)
+    static let scoreMedium = Font.system(size: 24, weight: .bold, design: .monospaced)
+}
+
+// MARK: - Networking Constants
+enum NetworkConstants {
+    static let webSocketPort: Int = 8787
+    static let pollingInterval: TimeInterval = 2.5
+    static let pollingJitterMax: TimeInterval = 0.5
+    static let requestTimeout: TimeInterval = 10.0
+    static let cacheExpiration: TimeInterval = 1.0
+    static let maxRetries: Int = 3
+    static let retryDelay: TimeInterval = 1.0
+}
+
+// MARK: - App Configuration
+enum AppConfig {
+    static let maxCourts: Int = 10
+    static let maxQueuePreview: Int = 3
+    static let holdScoreDuration: TimeInterval = 180 // 3 minutes
+    static let appName = "MultiCourtScore"
+    static let version = "2.0.0"
+}
+
+// MARK: - Overlay Court Names
+enum CourtNaming {
+    static func displayName(for courtId: Int) -> String {
+        if courtId == 1 {
+            return "Core 1"
+        } else {
+            return "Mevo \(courtId - 1)"
+        }
+    }
+    
+    static func shortName(for courtId: Int) -> String {
+        if courtId == 1 {
+            return "C1"
+        } else {
+            return "M\(courtId - 1)"
+        }
+    }
+}
+
+// MARK: - Color Extension for Hex
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}

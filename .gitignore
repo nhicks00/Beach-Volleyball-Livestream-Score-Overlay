@@ -1,0 +1,31 @@
+.DS_Store
+*.swp
+*.lock
+*~
+
+# Xcode
+build/
+*.canvas
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Misc
+.idea/
+.vscode/
