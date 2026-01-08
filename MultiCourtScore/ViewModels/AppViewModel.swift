@@ -324,9 +324,12 @@ final class AppViewModel: ObservableObject {
                         courts[idx].status = .waiting
                         courts[idx].liveSince = nil
                         courts[idx].finishedAt = nil  // Reset for next match
-                        lastScoreSnapshot[courtId] = nil // Reset tracker for new match
                         lastScoreChangeTime[courtId] = nil
                         print("⏭️ Auto-advanced court \(courtId) to match \(nextIndex + 1)")
+                        
+                        // Trigger immediate metadata refresh for the new sequence
+                        await refreshQueueMetadata(for: courtId)
+                        lastQueueRefreshTimes[courtId] = Date()
                     }
                 }
             } else {
@@ -336,9 +339,9 @@ final class AppViewModel: ObservableObject {
             }
             
             
-            // Periodically refresh metadata for queued matches (every 60s)
+            // Periodically refresh metadata for queued matches (every 15s)
             let lastRefresh = lastQueueRefreshTimes[courtId] ?? Date.distantPast
-            if Date().timeIntervalSince(lastRefresh) > 60 {
+            if Date().timeIntervalSince(lastRefresh) > 15 {
                 await refreshQueueMetadata(for: courtId)
                 lastQueueRefreshTimes[courtId] = Date()
             }
