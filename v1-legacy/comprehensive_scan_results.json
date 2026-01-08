@@ -1,0 +1,231 @@
+{
+  "url": "https://volleyballlife.com/event/23889/division/92261/round/168846/brackets",
+  "timestamp": "2025-09-01T01:32:45.824785",
+  "methods": {
+    "page_analysis": {
+      "url": "https://volleyballlife.com/event/23889/division/92261/round/168846/brackets",
+      "title": "Volleyball Life",
+      "text_content_length": 431,
+      "api_calls": [
+        {
+          "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-EFQJ281GE7&gtm=45je58r1v9116967270za200zd9116967270&_p=1756708366519&gcd=13l3l3l3l1l1&npa=0&dma=0&tag_exp=101509157~102015666~103116026~103200004~103233427~104527906~104528501~104684208~104684211~104948813~105427542~105427544&cid=808463333.1756708367&ul=en-us&sr=1280x720&frm=0&pscdl=noapi&_eu=AAAAAAQ&_s=2&sid=1756708366&sct=1&seg=0&dl=https%3A%2F%2Fvolleyballlife.com%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&dt=Volleyball%20Life&en=user_engagement&_et=1650&tfd=2647",
+          "method": "POST",
+          "headers": {
+            "referer": "https://volleyballlife.com/",
+            "accept": "*/*",
+            "origin": "https://volleyballlife.com",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "pragma": "no-cache",
+            "cache-control": "no-cache"
+          },
+          "resource_type": "fetch"
+        },
+        {
+          "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-2VD9XVHNKB&gtm=45je58r1v9116967270za200zd9116967270&_p=1756708366519&gcd=13l3l3l3l1l1&npa=0&dma=0&tag_exp=101509157~102015666~103116026~103200004~103233427~104527906~104528501~104684208~104684211~104948813~105427542~105427544&cid=808463333.1756708367&ul=en-us&sr=1280x720&frm=0&pscdl=noapi&_eu=AAAAAAQ&dl=https%3A%2F%2Fvolleyballlife.com%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&sid=1756708366&sct=1&seg=1&dt=Volleyball%20Life&_s=2&tfd=2649",
+          "method": "POST",
+          "headers": {
+            "content-type": "text/plain;charset=UTF-8",
+            "referer": "https://volleyballlife.com/",
+            "accept": "*/*",
+            "origin": "https://volleyballlife.com",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "pragma": "no-cache",
+            "cache-control": "no-cache"
+          },
+          "resource_type": "fetch"
+        },
+        {
+          "url": "https://fonts.googleapis.com/css?family=Roboto:300,400,500,700",
+          "method": "GET",
+          "headers": {},
+          "resource_type": "stylesheet"
+        },
+        {
+          "url": "https://www.youtube.com/player_api",
+          "method": "GET",
+          "headers": {
+            "accept": "*/*",
+            "referer": "https://volleyballlife.com/",
+            "sec-fetch-dest": "script",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
+          },
+          "resource_type": "script"
+        },
+        {
+          "url": "https://api.volleyballlife.com/api/v1.0/Theme?v=2",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "origin": "https://volleyballlife.com",
+            "referer": "https://volleyballlife.com/",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
+          },
+          "resource_type": "xhr"
+        },
+        {
+          "url": "https://www.youtube.com/s/player/6742b2b9/www-widgetapi.vflset/www-widgetapi.js",
+          "method": "GET",
+          "headers": {},
+          "resource_type": "script"
+        },
+        {
+          "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-2VD9XVHNKB&gtm=45je58r1v9116967270za200zd9116967270&_p=1756708368535&gcd=13l3l3l3l1l1&npa=0&dma=0&tag_exp=101509157~102015666~103116026~103200004~103233427~104527906~104528501~104684208~104684211~104948813~105427542~105427544&cid=808463333.1756708367&ul=en-us&sr=1280x720&frm=0&pscdl=noapi&_eu=AEAAAAQ&_s=1&sid=1756708366&sct=1&seg=1&dl=https%3A%2F%2Fvolleyballlife.com%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&dt=Volleyball%20Life&en=scroll&epn.percent_scrolled=90&tfd=361",
+          "method": "POST",
+          "headers": {
+            "referer": "https://volleyballlife.com/",
+            "accept": "*/*",
+            "origin": "https://volleyballlife.com",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "pragma": "no-cache",
+            "cache-control": "no-cache"
+          },
+          "resource_type": "fetch"
+        },
+        {
+          "url": "https://volleyballlife.com/connect/authorize?client_id=js&redirect_uri=https%3A%2F%2Fvolleyballlife.com%2Fstatic%2Fsilent-renew.html&response_type=code&scope=openid%20profile%20api1&state=ee775bf0242445fca4f7833242dd5ec7&code_challenge=Eb5Un_AyOjC7qYh0CxMocVMGgsgKcch_Nnfydbpk6PY&code_challenge_method=S256&prompt=none&response_mode=query",
+          "method": "GET",
+          "headers": {
+            "referer": "https://volleyballlife.com/event/23889/division/92261/round/168846/brackets",
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "sec-fetch-dest": "iframe",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "same-origin",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
+          },
+          "resource_type": "document"
+        },
+        {
+          "url": "https://api.volleyballlife.com/live/negotiate?negotiateVersion=1",
+          "method": "POST",
+          "headers": {
+            "content-type": "text/plain;charset=UTF-8",
+            "origin": "https://volleyballlife.com",
+            "accept": "*/*",
+            "referer": "https://volleyballlife.com/",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "x-requested-with": "XMLHttpRequest"
+          },
+          "resource_type": "xhr"
+        },
+        {
+          "url": "https://api.volleyballlife.com/api/v1.0/Webhook/OnLoad?v=2",
+          "method": "POST",
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "origin": "https://volleyballlife.com",
+            "referer": "https://volleyballlife.com/",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
+          },
+          "resource_type": "xhr"
+        },
+        {
+          "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-EFQJ281GE7&gtm=45je58r1v9116967270za200zd9116967270&_p=1756708368535&gcd=13l3l3l3l1l1&npa=0&dma=0&tag_exp=101509157~102015666~103116026~103200004~103233427~104527906~104528501~104684208~104684211~104948813~105427542~105427544&cid=808463333.1756708367&ul=en-us&sr=1280x720&frm=0&pscdl=noapi&_eu=AAAAAAQ&_s=1&dp=%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&dl=https%3A%2F%2Fvolleyballlife.com%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&sid=1756708366&sct=1&seg=1&dt=Volleyball%20Life&en=page_view&_ee=1&_et=3&tfd=5360",
+          "method": "POST",
+          "headers": {
+            "referer": "https://volleyballlife.com/",
+            "accept": "*/*",
+            "origin": "https://volleyballlife.com",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "pragma": "no-cache",
+            "cache-control": "no-cache"
+          },
+          "resource_type": "fetch"
+        },
+        {
+          "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-2VD9XVHNKB&gtm=45je58r1v9116967270za200zd9116967270&_p=1756708368535&gcd=13l3l3l3l1l1&npa=0&dma=0&tag_exp=101509157~102015666~103116026~103200004~103233427~104527906~104528501~104684208~104684211~104948813~105427542~105427544&cid=808463333.1756708367&ul=en-us&sr=1280x720&frm=0&pscdl=noapi&_eu=AAAAAAQ&_s=2&dp=%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&dl=https%3A%2F%2Fvolleyballlife.com%2Fevent%2F23889%2Fdivision%2F92261%2Fround%2F168846%2Fbrackets&sid=1756708366&sct=1&seg=1&dt=Volleyball%20Life&en=page_view&_ee=1&_et=1&tfd=5362",
+          "method": "POST",
+          "headers": {
+            "referer": "https://volleyballlife.com/",
+            "accept": "*/*",
+            "origin": "https://volleyballlife.com",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "pragma": "no-cache",
+            "cache-control": "no-cache"
+          },
+          "resource_type": "fetch"
+        }
+      ],
+      "dom_elements": {
+        "[class*=\"round\"]": {
+          "count": 5,
+          "sample_text": ""
+        }
+      },
+      "potential_data_sources": [
+        {
+          "type": "potential_api_endpoint",
+          "url": "https://fonts.googleapis.com/css?family=Roboto:300,400,500,700"
+        },
+        {
+          "type": "potential_api_endpoint",
+          "url": "www-widgetapi-script"
+        },
+        {
+          "type": "potential_api_endpoint",
+          "url": "https://www.youtube.com/s/player/6742b2b9/www-widgetapi.vflset/www-widgetapi.js"
+        },
+        {
+          "type": "potential_api_endpoint",
+          "url": "https://www.youtube.com/player_api"
+        }
+      ]
+    },
+    "api_attempts": [
+      {
+        "endpoint": "https://volleyballlife.com/api/events/23889/divisions/92261/rounds/168846/matches",
+        "status": "no_data"
+      },
+      {
+        "endpoint": "https://volleyballlife.com/api/events/23889/divisions/92261/matches",
+        "status": "no_data"
+      },
+      {
+        "endpoint": "https://volleyballlife.com/api/events/23889/matches",
+        "status": "no_data"
+      },
+      {
+        "endpoint": "https://volleyballlife.com/api/rounds/168846/matches",
+        "status": "no_data"
+      },
+      {
+        "endpoint": "https://volleyballlife.com/api/divisions/92261/matches",
+        "status": "no_data"
+      }
+    ],
+    "dom_scraping": {
+      "matches_found": 0,
+      "matches": []
+    }
+  },
+  "summary": {
+    "total_matches_found": 0,
+    "successful_methods": [],
+    "status": "no_matches"
+  }
+}

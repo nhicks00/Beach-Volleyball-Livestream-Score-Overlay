@@ -1,0 +1,24 @@
+[0;34m🔨 Building project...[0m
+[0;32m✅ Build successful[0m
+
+[0;34m=== RUNNING UI TESTS ===[0m
+[0;34m🧪 Running UI tests...[0m
+[0;32m✅ UI tests completed successfully[0m
+
+[0;34m=== RUNNING FIX CYCLE ===[0m
+[0;34m🔄 Running automated fix-test cycle...[0m
+[0;32m✅ Fix-test cycle completed[0m
+
+[0;34m=== GENERATING REPORT ===[0m
+[0;34m📊 Generating test summary report...[0m
+[0;32m📝 Report generated: /Users/nathanhicks/NATHANS APPS/MultiCourtScore/TestResults/summary_report_20250829_191829.md[0m
+
+[0;34m=== TEST SUMMARY ===[0m
+✅ **PASSED** - Project built successfully
+❌ **FAILED** - Issues found in primary flow
+❌ **FAILED** - Monkey test did not complete
+🔄 **IN PROGRESS** - Some issues resolved, others may remain
+[0;34m📂 Opening results directory...[0m
+
+[0;32m🎯 Automated testing completed![0m
+Check the report and logs in: /Users/nathanhicks/NATHANS APPS/MultiCourtScore/TestResults

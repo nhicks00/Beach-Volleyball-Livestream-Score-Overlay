@@ -1,0 +1,205 @@
+{
+  "urls_scanned": 1,
+  "total_matches": 17,
+  "results": [
+    {
+      "url": "https://volleyballlife.com/event/27644/division/104314/round/228004/brackets",
+      "timestamp": "2025-12-30T15:40:31.923221",
+      "total_matches": 17,
+      "matches": [
+        {
+          "index": 0,
+          "match_number": "1",
+          "team1": "Mischa Freystaetter / Adam Hartmann",
+          "team2": null,
+          "court": "1",
+          "startTime": "3:15PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268589/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 1,
+          "match_number": "2",
+          "team1": "Andrew Dentler / Adam Roberts",
+          "team2": "Lars Basey / Ian Carlson",
+          "court": "5",
+          "startTime": "3:15PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268590/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 2,
+          "match_number": "3",
+          "team1": "Evan Cory / Troy Field",
+          "team2": "Mischa Freystaetter / Adam Hartmann",
+          "court": "S",
+          "startTime": "5:00PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268591/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 3,
+          "match_number": "4",
+          "team1": "Tim Bomgren / Eric Loeppky",
+          "team2": "Markus Koppke / Jeffery Samuels",
+          "court": "5",
+          "startTime": "4:15PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268592/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 4,
+          "match_number": "5",
+          "team1": "Wyatt Harrison / Charlie Siragusa",
+          "team2": "Kevin Coyle / Tj Jurko",
+          "court": "S",
+          "startTime": "4:00PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268593/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 5,
+          "match_number": "6",
+          "team1": "Bryce Mayer / Tyler Penberthy",
+          "team2": "Chase Frishman / Ian Satterfield",
+          "court": "7",
+          "startTime": "4:00PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268594/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 6,
+          "match_number": "7",
+          "team1": "Gage Basey / Thomas Hurst",
+          "team2": "Djordje Klasnic / Lev Priima",
+          "court": "1",
+          "startTime": "4:15PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268595/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 7,
+          "match_number": "8",
+          "team1": "Alexander Harthaller / Diego Perez",
+          "team2": null,
+          "court": "5",
+          "startTime": "5:15PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268596/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 8,
+          "match_number": "9",
+          "team1": "Derek Bradford / John Schwengel",
+          "team2": "Devon Burki / Jacob Landel",
+          "court": "6",
+          "startTime": "5:00PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268597/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 9,
+          "match_number": "1",
+          "team1": "Andrew Dentler / Adam Roberts",
+          "team2": "Peter Connole / Caleb Kwekel",
+          "court": "7",
+          "startTime": "05:00PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268598/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 10,
+          "match_number": "113",
+          "team1": "Evan Cory / Troy Field",
+          "team2": "Tim Bomgren / Eric Loeppky",
+          "court": "1",
+          "startTime": "13:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268599/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 11,
+          "match_number": "123",
+          "team1": "Wyatt Harrison / Charlie Siragusa",
+          "team2": "Bryce Mayer / Tyler Penberthy",
+          "court": "2",
+          "startTime": "23:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268600/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 12,
+          "match_number": "133",
+          "team1": "Gage Basey / Thomas Hurst",
+          "team2": "Alexander Harthaller / Diego Perez",
+          "court": "3",
+          "startTime": "33:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268601/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 13,
+          "match_number": "143",
+          "team1": "Derek Bradford / John Schwengel",
+          "team2": "Peter Connole / Caleb Kwekel",
+          "court": "S",
+          "startTime": "43:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268602/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 14,
+          "match_number": "155",
+          "team1": "Evan Cory / Troy Field",
+          "team2": "Wyatt Harrison / Charlie Siragusa",
+          "court": "S",
+          "startTime": "55:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268608/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 15,
+          "match_number": "165",
+          "team1": "Gage Basey / Thomas Hurst",
+          "team2": "Peter Connole / Caleb Kwekel",
+          "court": "2",
+          "startTime": "65:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268609/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        },
+        {
+          "index": 16,
+          "match_number": "177",
+          "team1": "Evan Cory / Troy Field",
+          "team2": "Peter Connole / Caleb Kwekel",
+          "court": "S",
+          "startTime": "77:30PM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/268610/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null
+        }
+      ],
+      "status": "success",
+      "error": null,
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    }
+  ],
+  "status": "success"
+}
