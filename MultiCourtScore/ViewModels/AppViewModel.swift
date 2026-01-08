@@ -117,6 +117,11 @@ final class AppViewModel: ObservableObject {
     // MARK: - Polling Control
     
     func startPolling(for courtId: Int) {
+        // Ensure services are running
+        if !webSocketHub.isRunning {
+             startServices()
+        }
+        
         guard let idx = courtIndex(for: courtId) else { return }
         guard !courts[idx].queue.isEmpty else { return }
         
