@@ -172,7 +172,12 @@ struct ScoreSnapshot: Codable {
     }
     
     var hasStarted: Bool {
-        return team1Score > 0 || team2Score > 0 || setNumber > 1
+        // Any match with points in the current set (or later sets) has started
+        if setNumber > 1 { return true }
+        if let firstSet = setHistory.first {
+            return firstSet.team1Score > 0 || firstSet.team2Score > 0
+        }
+        return false
     }
     
     var totalSetsWon: (team1: Int, team2: Int) {

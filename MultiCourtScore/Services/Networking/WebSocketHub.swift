@@ -9,7 +9,8 @@ import Foundation
 import Vapor
 import Logging
 
-final class WebSocketHub: @unchecked Sendable {
+@MainActor
+final class WebSocketHub {
     static let shared = WebSocketHub()
     
     // App state reference
@@ -29,59 +30,76 @@ final class WebSocketHub: @unchecked Sendable {
     
     // MARK: - Lifecycle
     
-    func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) {
+    func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) async {
         guard !isRunning else { 
             print("⚠️ Overlay server already running")
             return 
         }
+        
+        // Block further start calls immediately
+        isRunning = true
         appViewModel = viewModel
         
-        // Ensure fresh app instance
-        if app != nil { stop() }
+        // Ensure old app is cleaned up
+        if let oldApp = app { 
+            print("🧹 Cleaning up existing server instance...")
+            do {
+                try await oldApp.asyncShutdown()
+            } catch {
+                print("⚠️ Error shutting down old app: \(error)")
+            }
+            app = nil
+        }
         
         // Initialize with explicit arguments to ignore Xcode/OS flags that crash Vapor
-        // Note: Using deprecated initializer because .make() is async and we need sync here
         let env = Environment(name: "development", arguments: ["vapor"])
-        let newApp = Application(env)
-        self.app = newApp
-        
-        // Configure server
-        newApp.http.server.configuration.hostname = "127.0.0.1"
-        newApp.http.server.configuration.port = port
-        
-        // Use warning level to see start errors but reduce noise
-        newApp.logger.logLevel = Logger.Level.warning
-        
-        // Install routes
-        installRoutes(newApp)
-        
-        // Start server in background
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            do {
-                print("⏳ Starting overlay server on port \(port)...")
-                try newApp.start()
-                
-                // Update state on main thread
-                DispatchQueue.main.async {
-                    self?.isRunning = true
-                    print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
-                }
-            } catch {
-                print("❌ Failed to start overlay server: \(error)")
-                print("   Check if port \(port) is in use.")
-                
-                DispatchQueue.main.async {
-                    self?.isRunning = false
+        do {
+            let newApp = try await Application.make(env)
+            self.app = newApp
+            
+            // Configure server
+            newApp.http.server.configuration.hostname = "127.0.0.1"
+            newApp.http.server.configuration.port = port
+            newApp.logger.logLevel = Logger.Level.warning
+            
+            // Install routes
+            installRoutes(newApp)
+            
+            // Start server in background
+            Task.detached(priority: .utility) { [newApp] in
+                do {
+                    print("⏳ Starting overlay server on port \(port)...")
+                    try await newApp.startup()
+                    
+                    await MainActor.run {
+                        print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
+                    }
+                } catch {
+                    print("❌ Failed to start overlay server: \(error)")
+                    await MainActor.run {
+                        WebSocketHub.shared.isRunning = false
+                        WebSocketHub.shared.app = nil
+                    }
                 }
             }
+        } catch {
+            print("❌ Failed to initialize Vapor Application: \(error)")
+            self.isRunning = false
         }
     }
     
     func stop() {
-        app?.shutdown()
-        app = nil
-        isRunning = false
-        print("🛑 Overlay server stopped")
+        Task {
+            print("🛑 Stopping overlay server...")
+            do {
+                try await app?.asyncShutdown()
+            } catch {
+                print("⚠️ Error shutting down app: \(error)")
+            }
+            app = nil
+            isRunning = false
+            print("🛑 Overlay server stopped")
+        }
     }
     
     // MARK: - Data Update
@@ -97,35 +115,41 @@ final class WebSocketHub: @unchecked Sendable {
         app.get("health") { _ in "ok" }
         
         // Main overlay page
-        app.get("overlay", "court", ":id") { req -> Response in
-            guard let idStr = req.parameters.get("id") else {
-                return Response(status: .notFound)
+        app.get("overlay", "court", ":id") { req async throws -> Response in
+            return try await MainActor.run {
+                let hub = WebSocketHub.shared
+                guard let idStr = req.parameters.get("id") else {
+                    return Response(status: .notFound)
+                }
+                let html = hub.generateOverlayHTML(courtId: idStr)
+                let response = Response(status: .ok)
+                response.headers.contentType = .html
+                response.body = .init(string: html)
+                return response
             }
-            let html = self.generateOverlayHTML(courtId: idStr)
-            let response = Response(status: .ok)
-            response.headers.contentType = .html
-            response.body = .init(string: html)
-            return response
         }
         
         // Redirect without trailing slash
-        app.get("overlay", "court", ":id", "") { req -> Response in
-            guard let idStr = req.parameters.get("id") else {
-                return Response(status: .notFound)
+        app.get("overlay", "court", ":id", "") { req async throws -> Response in
+            return try await MainActor.run {
+                let hub = WebSocketHub.shared
+                guard let idStr = req.parameters.get("id") else {
+                    return Response(status: .notFound)
+                }
+                let html = hub.generateOverlayHTML(courtId: idStr)
+                let response = Response(status: .ok)
+                response.headers.contentType = .html
+                response.body = .init(string: html)
+                return response
             }
-            let html = self.generateOverlayHTML(courtId: idStr)
-            let response = Response(status: .ok)
-            response.headers.contentType = .html
-            response.body = .init(string: html)
-            return response
         }
         
         // Score JSON endpoint
-        app.get("overlay", "court", ":id", "score.json") { [weak self] req async throws -> Response in
+        app.get("overlay", "court", ":id", "score.json") { req async throws -> Response in
             // Execute on MainActor to safely access AppViewModel
             return try await MainActor.run {
-                guard let self,
-                      let vm = self.appViewModel,
+                let hub = WebSocketHub.shared
+                guard let vm = hub.appViewModel,
                       let idStr = req.parameters.get("id"),
                       let courtId = Int(idStr),
                       let court = vm.court(for: courtId),
@@ -179,10 +203,10 @@ final class WebSocketHub: @unchecked Sendable {
         }
         
         // Label endpoint
-        app.get("overlay", "court", ":id", "label.json") { [weak self] req async throws -> Response in
+        app.get("overlay", "court", ":id", "label.json") { req async throws -> Response in
             return try await MainActor.run {
-                guard let self,
-                      let vm = self.appViewModel,
+                let hub = WebSocketHub.shared
+                guard let vm = hub.appViewModel,
                       let idStr = req.parameters.get("id"),
                       let courtId = Int(idStr),
                       let courtIdx = vm.courtIndex(for: courtId)
@@ -202,16 +226,16 @@ final class WebSocketHub: @unchecked Sendable {
         }
         
         // Next match endpoint
-        app.get("overlay", "court", ":id", "next.json") { [weak self] req async throws -> Response in
+        app.get("overlay", "court", ":id", "next.json") { req async throws -> Response in
             guard let idStr = req.parameters.get("id"),
                   let courtId = Int(idStr) else {
                 return try Self.json(["a": NSNull(), "b": NSNull(), "label": NSNull()])
             }
             
             // Fetch match data on MainActor to satisfy concurrency requirements
-            let matchData = await MainActor.run { [weak self] () -> (url: URL, t1: String?, t2: String?, label: String?)? in
-                guard let self = self,
-                      let vm = self.appViewModel,
+            let matchData = await MainActor.run { () -> (url: URL, t1: String?, t2: String?, label: String?)? in
+                let hub = WebSocketHub.shared
+                guard let vm = hub.appViewModel,
                       let courtIdx = vm.courtIndex(for: courtId),
                       let activeIdx = vm.courts[courtIdx].activeIndex
                 else { return nil }
@@ -259,16 +283,16 @@ final class WebSocketHub: @unchecked Sendable {
         return components.url ?? url
     }
     
-    private static func json(_ dict: [String: Any]) throws -> Response {
+    private nonisolated static func json(_ dict: [String: Any]) throws -> Response {
         let data = try JSONSerialization.data(withJSONObject: dict)
-        var response = Response(status: .ok)
+        let response = Response(status: .ok)
         response.headers.contentType = .json
         response.headers.cacheControl = .init(noStore: true)
         response.body = .init(data: data)
         return response
     }
     
-    private static func extractNames(from data: Data) -> (String?, String?) {
+    private nonisolated static func extractNames(from data: Data) -> (String?, String?) {
         guard let obj = try? JSONSerialization.jsonObject(with: data) else {
             return (nil, nil)
         }
@@ -341,10 +365,10 @@ svg.yt{color:#ff0000}
 svg.fb{color:#1877f2}
 svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
-/* Top header row: social bar + next up */
+/* Top header row: social bar + next up - CENTERED over scoreboard */
 .header-row {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 20px;
+  margin-bottom: 8px; width: 100%;
 }
 
 /* Social bar - inline with header */
@@ -478,6 +502,29 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   background:linear-gradient(90deg,transparent,var(--gold1),var(--gold2),transparent);
   border-radius:3px; opacity:.9}
 
+/* Timeout Banner */
+#timeout-banner {
+  display: none;
+  background: rgba(255, 0, 0, 0.7);
+  color: white;
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 4px;
+  margin: -6px auto 0;
+  width: max-content;
+  z-index: 5;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.9; }
+}
+
 /* animations */
 @keyframes flip { 0%{transform:rotateX(-90deg); opacity:0} 100%{transform:rotateX(0); opacity:1} }
 @keyframes fadeSlide { 0%{opacity:0; transform:translateY(-4px)} 100%{opacity:1; transform:translateY(0)} }
@@ -520,9 +567,38 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .postmatch-next .next-label { color: var(--muted); font-size: 11px; margin-right: 6px; }
 
 /* State transitions */
-.bug, .prematch-bar { transition: opacity 0.5s ease, transform 0.5s ease; }
+.bug, .prematch-bar { 
+  transition: opacity 0.5s ease, transform 0.5s ease, max-width 0.8s cubic-bezier(0.2, 1, 0.3, 1); 
+  margin: 0 auto; 
+}
+
 .bug.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; display: none; }
 .prematch-bar.hidden { opacity: 0; transform: translateY(-10px); display: none; }
+
+/* Dynamic Expand Animation States */
+.bug.transition-init {
+  max-width: 380px; /* Approximate width of prematch bar */
+  overflow: hidden;
+}
+
+/* Hide contents during initial state so names slide together */
+.bug .score, .bug .divider, .bug .seed-edge {
+  transition: opacity 0.4s ease 0.4s, transform 0.4s ease 0.4s, max-width 0.4s ease 0.4s;
+}
+
+.bug.transition-init .score,
+.bug.transition-init .divider,
+.bug.transition-init .seed-edge {
+  opacity: 0;
+  transform: scale(0.8);
+  max-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Ensure names slide smoothly */
+.bug .name { transition: transform 0.8s cubic-bezier(0.2, 1, 0.3, 1); }
+
 .bug.reveal { animation: slideDown 0.5s ease-out; }
 @media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
 </style>
@@ -615,6 +691,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
 
     <div id="setsline" class="setsline"></div>
+    <div id="timeout-banner">In Timeout</div>
     <!-- Removed old "next" div - now using header-row next-badge instead -->
     <div class="accent"></div>
 
@@ -647,52 +724,32 @@ function setWon(a,b,t){ return Math.max(a,b) >= t && Math.abs(a-b) >= 2; }
 function cleanName(n){ return (n||"").replace(/\s*\(.*?\)\s*/g," ").replace(/\s{2,}/g," ").trim(); }
 
 /* Smart truncate: abbreviates first names, keeps last names
-   Format: "T. Field" instead of "Troy F."
-   Handles same last names: "Ta. Crab / Tr. Crab" */
-function smartTruncate(teamName, maxLen = 30) {
-  if (!teamName || teamName.length <= maxLen) return teamName;
+   Format: "W. Mota / D. Strauss"
+   If name is already short enough, it might still abbreviate if requested.
+   The user wants "abbreviate the first name with one letter and a period and then spell out the last name." */
+function abbreviateName(teamName, maxLen = 30) {
+  if (!teamName) return "";
   
-  // Split by "/" to get individual player names
+  // Split by "/" for partner teams
   const players = teamName.split("/").map(p => p.trim());
   
-  // First pass: get all last names to detect duplicates
-  const lastNames = players.map(player => {
-    const parts = player.split(" ");
-    return parts.length >= 2 ? parts[parts.length - 1] : player;
+  const abbreviated = players.map(player => {
+    const parts = player.split(/\s+/);
+    if (parts.length < 2) return player; // Single name, keep as is
+    
+    // Abbreviate all but the last part
+    const last = parts.pop();
+    const initials = parts.map(p => p.charAt(0).toUpperCase() + ".").join(" ");
+    return initials + " " + last;
   });
   
-  // Count occurrences of each last name
-  const lastNameCounts = {};
-  lastNames.forEach(ln => { lastNameCounts[ln] = (lastNameCounts[ln] || 0) + 1; });
+  let result = abbreviated.join(" / ");
   
-  // Track which last names we've seen for disambiguation
-  const lastNameSeen = {};
-  
-  const abbreviated = players.map((player, idx) => {
-    const parts = player.split(" ");
-    if (parts.length < 2) return player; // Single name, can't abbreviate
-    
-    const firstName = parts[0];
-    const lastName = parts[parts.length - 1];
-    
-    // Check if this last name appears multiple times
-    if (lastNameCounts[lastName] > 1) {
-      // Need to use more letters from first name to disambiguate
-      // Use first 2 letters: "Ta." for Taylor, "Tr." for Trevor
-      const seen = lastNameSeen[lastName] || 0;
-      lastNameSeen[lastName] = seen + 1;
-      
-      // Find unique prefix length (at least 2 chars)
-      let prefixLen = 2;
-      const firstInitial = firstName.substring(0, prefixLen) + ".";
-      return firstInitial + " " + lastName;
-    } else {
-      // Standard case: first initial + last name
-      return firstName.charAt(0) + ". " + lastName;
-    }
-  });
-  
-  return abbreviated.join(" / ");
+  // Final truncation check for extreme cases
+  if (result.length > maxLen) {
+    result = result.substring(0, maxLen - 3) + "...";
+  }
+  return result;
 }
 
 /* ==================== OVERLAY STATE MACHINE ==================== */
@@ -709,6 +766,7 @@ function getOverlayElements() {
 }
 
 // Transition to LIVE mode (shows full scoreboard)
+// Transition to Live: Dynamic slide/expand animation
 function transitionToLive(animate = true) {
   if (overlayState === 'live') return;
   console.log('[Overlay] Transition: ' + overlayState + ' → live');
@@ -719,14 +777,30 @@ function transitionToLive(animate = true) {
   // Hide prematch bar
   if (els.prematch) {
     els.prematch.classList.add('hidden');
+    setTimeout(() => { els.prematch.style.display = 'none'; }, 500);
   }
   
   // Show scorebug with animation
   if (els.scorebug) {
-    els.scorebug.classList.remove('hidden');
+    els.scorebug.style.display = ''; // Ensure display is not 'none'
     if (animate) {
-      els.scorebug.classList.add('reveal');
-      setTimeout(() => els.scorebug.classList.remove('reveal'), 500);
+      // 1. Start in "initial state" (small, like prematch bar, scores hidden)
+      els.scorebug.classList.add('transition-init');
+      els.scorebug.classList.remove('hidden');
+      
+      // 2. Force browser reflow to ensure start position is rendered
+      void els.scorebug.offsetWidth;
+      
+      // 3. Expand to full size (remove init state triggers CSS transition)
+      // Small delay to let prematch fade start
+      setTimeout(() => {
+        els.scorebug.classList.remove('transition-init');
+      }, 50);
+      
+    } else {
+      // No animation (mid-match join)
+      els.scorebug.classList.remove('hidden');
+      els.scorebug.classList.remove('transition-init');
     }
   }
   
@@ -734,6 +808,34 @@ function transitionToLive(animate = true) {
   if (postmatchTimer) {
     clearTimeout(postmatchTimer);
     postmatchTimer = null;
+  }
+}
+
+// Transition back to Prematch (for 0-0 resets in Set 1)
+function transitionToPrematch(animate = true) {
+  if (overlayState === 'prematch') return;
+  console.log('[Overlay] Transition: ' + overlayState + ' → prematch (Score Reset)');
+  
+  const els = getOverlayElements();
+  overlayState = 'prematch';
+  
+  if (els.scorebug) {
+    if (animate) {
+      els.scorebug.classList.add('transition-init');
+      setTimeout(() => {
+        els.scorebug.classList.add('hidden');
+        setTimeout(() => { els.scorebug.style.display = 'none'; }, 500);
+      }, 500);
+    } else {
+      els.scorebug.classList.add('hidden');
+      els.scorebug.style.display = 'none';
+    }
+  }
+  
+  if (els.prematch) {
+    els.prematch.style.display = '';
+    void els.prematch.offsetWidth;
+    els.prematch.classList.remove('hidden');
   }
 }
 
@@ -849,8 +951,14 @@ function buildSetChips(lines, pointsPerSet = 21, pointCap = null, currentScore1 
     const b = parseInt(bs) || 0;
     // Check if last entry matches current scores (it's the live set)
     if ((a === currentScore1 && b === currentScore2) || (a === currentScore2 && b === currentScore1)) {
-      console.log('[SetChips] Removing live set from history:', lastEntry);
-      filteredLines.pop(); // Remove the current live set
+      // Only remove if it's NOT a completed set yet
+      // If it IS complete, we want to show it in history now!
+      if (!isSetComplete(a, b, pointsPerSet, pointCap)) {
+        console.log('[SetChips] Removing live (incomplete) set from history:', lastEntry);
+        filteredLines.pop(); // Remove the current live set
+      } else {
+        console.log('[SetChips] Keeping live (completed) set in history:', lastEntry);
+      }
     }
   }
   
@@ -906,9 +1014,16 @@ function applyData(d){
     return;
   }
 
-  // Names - apply smart truncation for long names
-  const name1 = smartTruncate(cleanName(d.team1)) || 'Team 1';
-  const name2 = smartTruncate(cleanName(d.team2)) || 'Team 2';
+  // Scores - move up to determine naming logic
+  const score1 = d.score1 || 0;
+  const score2 = d.score2 || 0;
+  const isZero = isZeroZero(score1, score2);
+  const setNum = d.setNumber || 1;
+
+  // Names - show full names in prematch (0-0, Set 1), abbreviate once game starts
+  const useAbbr = !isZero || setNum > 1;
+  const name1 = useAbbr ? (abbreviateName(cleanName(d.team1)) || 'Team 1') : (cleanName(d.team1) || 'Team 1');
+  const name2 = useAbbr ? (abbreviateName(cleanName(d.team2)) || 'Team 2') : (cleanName(d.team2) || 'Team 2');
   
   // Track current teams and detect match changes
   const matchKey = d.team1 + '|' + d.team2;
@@ -954,12 +1069,21 @@ function applyData(d){
   // Update header next-badge
   const nextTeams = document.getElementById('next-teams');
   if (nextTeams && d.nextMatch) {
-    nextTeams.textContent = d.nextMatch;
+    // Show full names if in prematch (0-0, Set 1) to match main bar
+    if (!useAbbr) {
+      applyText(nextTeams, d.nextMatch, 'fade');
+    } else {
+      // Abbreviate next match when live (limit 50 chars)
+      const nextArr = d.nextMatch.split(/\s+vs\s+/);
+      if (nextArr.length === 2) {
+        applyText(nextTeams, abbreviateName(nextArr[0], 25) + ' vs ' + abbreviateName(nextArr[1], 25), 'fade');
+      } else {
+        applyText(nextTeams, abbreviateName(d.nextMatch, 50), 'fade');
+      }
+    }
   }
 
-  // Scores
-  const score1 = d.score1 || 0;
-  const score2 = d.score2 || 0;
+  // Scores (already handled above)
   applyText(document.getElementById('sc1'), score1, 'flip');
   applyText(document.getElementById('sc2'), score2, 'flip');
 
@@ -970,37 +1094,53 @@ function applyData(d){
   
   // ==================== STATE MACHINE LOGIC ====================
   
+  const timeoutBanner = document.getElementById('timeout-banner');
+
   // First load: detect if joining mid-match
   if (isFirstLoad) {
     isFirstLoad = false;
-    if (!isZeroZero(score1, score2)) {
-      // Joining mid-match: show scoreboard immediately without animation
+    if (!isZero) {
       console.log('[Overlay] Mid-match join detected, showing scoreboard');
-      transitionToLive(false); // No animation
+      transitionToLive(false); 
     } else {
-      // Starting fresh: stay in prematch mode
       console.log('[Overlay] Starting in prematch mode (0-0)');
+      if (els.scorebug) els.scorebug.style.display = 'none';
+      if (els.prematch) els.prematch.classList.remove('hidden');
     }
   }
   
-  // In prematch mode: detect first point scored
-  if (overlayState === 'prematch') {
-    if (!isZeroZero(score1, score2)) {
-      // First point scored! Transition to live with animation
-      console.log('[Overlay] First point scored! Transitioning to live');
+  // Handle 0-0 states
+  if (isZero) {
+    if (setNum === 1) {
+      // Revert to prematch if score is reset to 0-0 in Set 1
+      if (overlayState === 'live') {
+        transitionToPrematch(true);
+      }
+      if (timeoutBanner) timeoutBanner.style.display = 'none';
+    } else {
+      // In later sets, show Timeout banner if score is 0-0
+      if (timeoutBanner) {
+        timeoutBanner.textContent = `Set ${setNum} Timeout`;
+        timeoutBanner.style.display = 'block';
+      }
+    }
+  } else {
+    // Score is NOT 0-0: Hide timeout banner and ensure we are in live mode
+    if (timeoutBanner) timeoutBanner.style.display = 'none';
+    
+    if (overlayState === 'prematch') {
+      console.log('[Overlay] Point scored! Transitioning to live');
       transitionToLive(true);
     }
   }
   
   // In live mode: check for match end
   if (overlayState === 'live') {
-    // Use setsToWin from match data (default 2 for best-of-3)
     const setsToWin = d.setsToWin || 2;
     if (checkMatchEnd(d.setHistory, setsToWin)) {
-      // Match ended - get next match info if available
       const nextTeam1 = d.nextTeam1 || 'TBD';
       const nextTeam2 = d.nextTeam2 || 'TBD';
-      console.log('[Overlay] Match ended, transitioning to postmatch (setsToWin=' + setsToWin + ')');
+      console.log('[Overlay] Match ended, transitioning to postmatch');
       transitionToPostmatch(nextTeam1, nextTeam2);
     }
   }
