@@ -267,14 +267,23 @@ class BracketScraper(VBLScraperBase):
                 match.team1_seed = teams[0][0]
                 match.team1 = teams[0][1]
                 
-            # Fallback patterns if standard extraction failed (e.g. for "Match X Winner")
-            if not match.team1:
+            # Fallback patterns: Look for descriptive placeholders like "Match X Winner" or "Winner Match X"
+            if not match.team1 or match.team1.lower() in ["team a", "team b", "tbd"]:
                 full_text = await overlay.text_content() or ""
-                winner_pattern = r'Match\s+(\d+)\s+Winner'
-                winners = re.findall(winner_pattern, full_text, re.I)
-                if len(winners) >= 2:
-                    match.team1 = f"Match {winners[0]} Winner"
-                    match.team2 = f"Match {winners[1]} Winner"
+                # Look for "Match X Winner" or "Winner of Match X"
+                placeholders = re.findall(r'((?:Match\s+\d+|Winner|Loser)(?:\s+of)?\s+(?:Match\s+\d+|Winner|Loser)?)', full_text, re.I)
+                if len(placeholders) >= 1:
+                    # Clean up found placeholders
+                    valid = [p.strip() for p in placeholders if len(p.strip()) > 5]
+                    if len(valid) >= 2:
+                        match.team1 = valid[0]
+                        match.team2 = valid[1]
+                    elif len(valid) == 1:
+                        # If we only found one, and team1 was generic, assign it to team1
+                        if not match.team1 or match.team1.lower() in ["team a", "team b", "tbd"]:
+                            match.team1 = valid[0]
+                        elif not match.team2 or match.team2.lower() in ["team a", "team b", "tbd"]:
+                            match.team2 = valid[0]
                     
         except Exception as e:
             logger.debug(f"Error extracting card data: {e}")
