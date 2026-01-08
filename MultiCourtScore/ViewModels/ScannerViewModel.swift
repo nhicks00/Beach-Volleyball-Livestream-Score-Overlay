@@ -412,7 +412,10 @@ class ScannerViewModel: ObservableObject {
     // MARK: - Conversion to MatchItem
     
     func createMatchItems(from matches: [VBLMatch]) -> [MatchItem] {
-        return matches.compactMap { match -> MatchItem? in
+        // First, auto-number matches that need it
+        let numberedMatches = autoNumberMatches(matches)
+        
+        return numberedMatches.compactMap { match -> MatchItem? in
             guard let urlString = match.apiURL,
                   let url = URL(string: urlString) else {
                 return nil
@@ -430,12 +433,78 @@ class ScannerViewModel: ObservableObject {
                 scheduledTime: match.startTime,
                 matchNumber: match.matchNumber,
                 courtNumber: match.court,
+                physicalCourt: match.court,  // Track physical court for reassignment
                 setsToWin: match.setsToWin,
                 pointsPerSet: match.pointsPerSet,
                 pointCap: match.pointCap,
                 formatText: match.formatText
             )
         }
+    }
+    
+    /// Auto-number matches like "Semifinals", "Quarterfinals" by scheduled time
+    private func autoNumberMatches(_ matches: [VBLMatch]) -> [VBLMatch] {
+        // Group matches by their base label (e.g., "Semifinals", "Quarterfinals")
+        var labelGroups: [String: [VBLMatch]] = [:]
+        var otherMatches: [VBLMatch] = []
+        
+        for match in matches {
+            guard let matchNum = match.matchNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !matchNum.isEmpty else {
+                otherMatches.append(match)
+                continue
+            }
+            
+            // Check if this is a label that needs numbering (no existing number)
+            let needsNumbering = matchNum.lowercased().contains("semifinal") ||
+                                matchNum.lowercased().contains("quarterfinal") ||
+                                matchNum.lowercased().contains("final")
+            
+            // Only auto-number if there's no existing number
+            let hasNumber = matchNum.range(of: #"\d+"#, options: .regularExpression) != nil
+            
+            if needsNumbering && !hasNumber {
+                let baseLabel = matchNum
+                if labelGroups[baseLabel] == nil {
+                    labelGroups[baseLabel] = []
+                }
+                labelGroups[baseLabel]?.append(match)
+            } else {
+                otherMatches.append(match)
+            }
+        }
+        
+        // Auto-number each group by scheduled time
+        var result: [VBLMatch] = otherMatches
+        
+        for (baseLabel, groupMatches) in labelGroups {
+            // Sort by scheduled time
+            let sorted = groupMatches.sorted { a, b in
+                guard let timeA = a.startTime, let timeB = b.startTime else {
+                    return false
+                }
+                return compareTimeStrings(timeA, timeB) < 0
+            }
+            
+            // Assign numbers
+            for (index, match) in sorted.enumerated() {
+                // Use reflection to create a modified copy
+                // Since VBLMatch is a struct with let properties, we need to decode/encode
+                if let data = try? JSONEncoder().encode(match),
+                   var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    dict["matchNumber"] = "\(baseLabel) \(index + 1)"
+                    if let newData = try? JSONSerialization.data(withJSONObject: dict),
+                       let newMatch = try? JSONDecoder().decode(VBLMatch.self, from: newData) {
+                        result.append(newMatch)
+                        continue
+                    }
+                }
+                // Fallback: just append original
+                result.append(match)
+            }
+        }
+        
+        return result
     }
 }
 
