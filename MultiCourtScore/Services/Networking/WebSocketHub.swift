@@ -392,9 +392,13 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* bug - main scoreboard */
 .bug{
   position:relative;
-  display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; 
+  display:grid; 
+  grid-template-columns: 400px 100px 400px; /* Fixed columns - never flex */
+  align-items:center; 
   padding:0;
   width: 900px; /* Fixed width - never changes */
+  min-width: 900px; /* Prevent shrinking */
+  max-width: 900px; /* Prevent growing */
   background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
   border-radius:18px; border:1px solid rgba(255,200,0,.35);
   box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
