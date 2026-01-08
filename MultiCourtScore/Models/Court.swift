@@ -48,7 +48,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var typeDetail: String?     // "Pool A", "Winners Bracket"
     var scheduledTime: String?
     var matchNumber: String?    // "Match 1", "18", etc.
-    var courtNumber: String?
+    var courtNumber: String?    // Original court number from VBL
+    var physicalCourt: String?  // VBL court name for tracking reassignments (e.g., "Court 1", "Stadium Court")
     // Match format fields
     var setsToWin: Int?          // 1, 2, or 3 (nil defaults to 2)
     var pointsPerSet: Int?       // Points to win a set (usually 21)
@@ -67,6 +68,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         scheduledTime: String? = nil,
         matchNumber: String? = nil,
         courtNumber: String? = nil,
+        physicalCourt: String? = nil,
         setsToWin: Int? = nil,
         pointsPerSet: Int? = nil,
         pointCap: Int? = nil,
@@ -83,6 +85,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.scheduledTime = scheduledTime
         self.matchNumber = matchNumber
         self.courtNumber = courtNumber
+        self.physicalCourt = physicalCourt
         self.setsToWin = setsToWin
         self.pointsPerSet = pointsPerSet
         self.pointCap = pointCap
@@ -113,7 +116,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     
     // MARK: Codable Conformance
     enum CodingKeys: String, CodingKey {
-        case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed, matchType, typeDetail, scheduledTime, courtNumber
+        case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed, matchType, typeDetail, scheduledTime, courtNumber, physicalCourt
     }
     
     init(from decoder: Decoder) throws {
@@ -128,6 +131,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
         scheduledTime = try container.decodeIfPresent(String.self, forKey: .scheduledTime)
         courtNumber = try container.decodeIfPresent(String.self, forKey: .courtNumber)
+        physicalCourt = try container.decodeIfPresent(String.self, forKey: .physicalCourt)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
     }
 }

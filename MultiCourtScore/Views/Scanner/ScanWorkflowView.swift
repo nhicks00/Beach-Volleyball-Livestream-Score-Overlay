@@ -10,13 +10,15 @@ import SwiftUI
 enum ScanWorkflowStep: Int, CaseIterable {
     case enterURLs = 0
     case scanResults = 1
-    case assign = 2
+    case mapCourts = 2
+    case assign = 3
     
     var title: String {
         switch self {
         case .enterURLs: return "Enter URLs"
         case .scanResults: return "Review Results"
-        case .assign: return "Assign to Courts"
+        case .mapCourts: return "Map Courts"
+        case .assign: return "Assign to Cameras"
         }
     }
     
@@ -24,6 +26,7 @@ enum ScanWorkflowStep: Int, CaseIterable {
         switch self {
         case .enterURLs: return "link.badge.plus"
         case .scanResults: return "doc.text.magnifyingglass"
+        case .mapCourts: return "arrow.left.arrow.right"
         case .assign: return "arrow.triangle.branch"
         }
     }
@@ -60,8 +63,14 @@ struct ScanWorkflowView: View {
                 case .scanResults:
                     ScanResultsStep(
                         viewModel: viewModel,
-                        onProceed: { advanceToAssign() },
+                        onProceed: { advanceToMapCourts() },
                         onBack: { currentStep = .enterURLs }
+                    )
+                case .mapCourts:
+                    CourtMappingStep(
+                        groupedByCourt: groupedByCourt,
+                        onProceed: { advanceToAssign() },
+                        onBack: { currentStep = .scanResults }
                     )
                 case .assign:
                     AssignmentStep(
@@ -70,7 +79,7 @@ struct ScanWorkflowView: View {
                         assignments: $matchAssignments,
                         onAutoAssign: autoAssignMatches,
                         onImport: importAndClose,
-                        onBack: { currentStep = .scanResults }
+                        onBack: { currentStep = .mapCourts }
                     )
                 }
             }
@@ -89,6 +98,13 @@ struct ScanWorkflowView: View {
     
     private func advanceToResults() {
         currentStep = .scanResults
+    }
+    
+    private func advanceToMapCourts() {
+        // Update unmapped courts list
+        let allCourts = Array(groupedByCourt.keys)
+        CourtMappingStore.shared.updateUnmappedCourts(from: allCourts)
+        currentStep = .mapCourts
     }
     
     private func advanceToAssign() {
@@ -690,6 +706,250 @@ struct CourtAssignmentCard: View {
         .background(
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
                 .fill(AppColors.surface)
+        )
+    }
+}
+
+// MARK: - Step 2.5: Court Mapping
+
+struct CourtMappingStep: View {
+    let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
+    let onProceed: () -> Void
+    let onBack: () -> Void
+    
+    @StateObject private var mappingStore = CourtMappingStore.shared
+    @State private var selectedCourts: Set<String> = []
+    
+    private var sortedCourts: [String] {
+        Array(groupedByCourt.keys).sorted()
+    }
+    
+    private var unmappedCount: Int {
+        sortedCourts.filter { !mappingStore.isMapped($0) }.count
+    }
+    
+    private var matchesWithNoCourt: Int {
+        groupedByCourt["Unknown"]?.count ?? groupedByCourt[""]?.count ?? 0
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Action bar
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Map Courts to Cameras")
+                        .font(AppTypography.headline)
+                        .foregroundColor(AppColors.textPrimary)
+                    
+                    Text("\(sortedCourts.count) courts found • \(sortedCourts.count - unmappedCount) mapped")
+                        .font(AppTypography.caption)
+                        .foregroundColor(AppColors.textMuted)
+                }
+                
+                Spacer()
+                
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(AppTypography.callout)
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Auto-Map All") {
+                    mappingStore.autoMap(courts: sortedCourts)
+                }
+                .buttonStyle(.bordered)
+                .tint(AppColors.info)
+                
+                Button(action: onProceed) {
+                    HStack(spacing: 4) {
+                        Text("Continue")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppColors.success)
+            }
+            .padding(AppLayout.contentPadding)
+            .background(AppColors.surface)
+            
+            // Warnings
+            if unmappedCount > 0 || matchesWithNoCourt > 0 {
+                VStack(alignment: .leading, spacing: 8) {
+                    if unmappedCount > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(AppColors.warning)
+                            Text("\(unmappedCount) court\(unmappedCount == 1 ? "" : "s") not mapped to a camera")
+                                .font(AppTypography.caption)
+                                .foregroundColor(AppColors.warning)
+                        }
+                    }
+                    if matchesWithNoCourt > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundColor(AppColors.error)
+                            Text("\(matchesWithNoCourt) match\(matchesWithNoCourt == 1 ? "" : "es") have no court assigned in VBL")
+                                .font(AppTypography.caption)
+                                .foregroundColor(AppColors.error)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(AppLayout.itemSpacing)
+                .background(AppColors.surfaceElevated)
+            }
+            
+            // Court list
+            ScrollView {
+                LazyVStack(spacing: AppLayout.itemSpacing) {
+                    ForEach(sortedCourts, id: \.self) { courtName in
+                        CourtMappingCard(
+                            courtName: courtName,
+                            matchCount: groupedByCourt[courtName]?.count ?? 0,
+                            isSelected: selectedCourts.contains(courtName),
+                            onToggleSelect: {
+                                if selectedCourts.contains(courtName) {
+                                    selectedCourts.remove(courtName)
+                                } else {
+                                    selectedCourts.insert(courtName)
+                                }
+                            },
+                            onMapToCamera: { cameraId in
+                                if selectedCourts.isEmpty {
+                                    mappingStore.setMapping(courtNames: [courtName], to: cameraId)
+                                } else {
+                                    mappingStore.setMapping(courtNames: Array(selectedCourts), to: cameraId)
+                                    selectedCourts.removeAll()
+                                }
+                            }
+                        )
+                    }
+                }
+                .padding(AppLayout.contentPadding)
+            }
+            
+            // Multi-select action bar
+            if !selectedCourts.isEmpty {
+                HStack {
+                    Text("\(selectedCourts.count) courts selected")
+                        .font(AppTypography.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                    
+                    Spacer()
+                    
+                    Text("Assign all to:")
+                        .font(AppTypography.caption)
+                        .foregroundColor(AppColors.textMuted)
+                    
+                    Picker("Camera", selection: Binding(
+                        get: { 0 },
+                        set: { cameraId in
+                            if cameraId > 0 {
+                                mappingStore.setMapping(courtNames: Array(selectedCourts), to: cameraId)
+                                selectedCourts.removeAll()
+                            }
+                        }
+                    )) {
+                        Text("Select...").tag(0)
+                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
+                            Text(CourtNaming.displayName(for: id)).tag(id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
+                    
+                    Button("Clear") {
+                        selectedCourts.removeAll()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(AppLayout.contentPadding)
+                .background(AppColors.surface)
+            }
+        }
+    }
+}
+
+struct CourtMappingCard: View {
+    let courtName: String
+    let matchCount: Int
+    let isSelected: Bool
+    let onToggleSelect: () -> Void
+    let onMapToCamera: (Int) -> Void
+    
+    @StateObject private var mappingStore = CourtMappingStore.shared
+    
+    private var currentCameraId: Int {
+        mappingStore.cameraId(for: courtName) ?? 0
+    }
+    
+    private var isMapped: Bool {
+        currentCameraId > 0
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Selection checkbox
+            Button(action: onToggleSelect) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? AppColors.primary : AppColors.textMuted)
+            }
+            .buttonStyle(.plain)
+            
+            // Court info
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(courtName)
+                        .font(AppTypography.headline)
+                        .foregroundColor(AppColors.textPrimary)
+                    
+                    if !isMapped {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppColors.warning)
+                    }
+                }
+                
+                Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
+            }
+            
+            Spacer()
+            
+            // Camera picker
+            HStack(spacing: 8) {
+                if isMapped {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(AppColors.success)
+                }
+                
+                Picker("Camera", selection: Binding(
+                    get: { currentCameraId },
+                    set: { onMapToCamera($0) }
+                )) {
+                    Text("Not Assigned").tag(0)
+                    ForEach(1...AppConfig.maxCourts, id: \.self) { id in
+                        Text(CourtNaming.displayName(for: id)).tag(id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 140)
+            }
+        }
+        .padding(AppLayout.cardPadding)
+        .background(
+            RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
+                .fill(isSelected ? AppColors.primary.opacity(0.1) : AppColors.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
+                .stroke(isSelected ? AppColors.primary : (isMapped ? AppColors.success.opacity(0.3) : AppColors.warning.opacity(0.3)), lineWidth: isSelected ? 2 : 1)
         )
     }
 }
