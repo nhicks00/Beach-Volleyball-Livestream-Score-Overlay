@@ -346,13 +346,14 @@ html,body{margin:0;background:transparent;color:var(--text);font-family:system-u
 .container{width:min(var(--maxw),96vw); margin:0 auto; display:grid; gap:10px}
 
 /* social (colors kept) */
-/* Social bar */
+/* Social bar base style */
 .socialbar{
   display:inline-grid; grid-auto-flow:column; gap:10px; align-items:center;
-  padding:6px 12px; margin:0 auto;
+  padding:6px 12px;
   background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.65));
   border:1px solid rgba(255,200,0,.45); border-radius:999px;
   box-shadow:0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+  margin: 0; /* Let flex container handle positioning */
 }
 .handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
 
@@ -366,20 +367,13 @@ svg.yt{color:#ff0000}
 svg.fb{color:#1877f2}
 svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
-/* Top header row: social bar + next up - CENTERED over scoreboard */
+/* Top header row layout */
 .header-row {
-  display: flex; align-items: center; justify-content: center; gap: 20px;
+  display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 8px; width: 100%;
 }
-
-/* Social bar - inline with header */
-.socialbar{
-  display:inline-grid; grid-auto-flow:column; gap:10px; align-items:center;
-  padding:6px 12px;
-  background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.65));
-  border:1px solid rgba(255,200,0,.45); border-radius:999px;
-  box-shadow:0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
-}
+#social-header { margin-left: 0; }
+#next-header { margin-right: 0; }
 .handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
 
 /* Next Up badge - inline with social bar */
@@ -610,7 +604,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 <!-- Header Row: Social + Next Up -->
 <div class="header-row">
   <!-- Social Bar -->
-  <div class="socialbar">
+  <div id="social-header" class="socialbar">
     <!-- Instagram -->
     <svg class="ig" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
       <defs>
@@ -638,7 +632,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   </div>
   
   <!-- Next Up Badge -->
-  <div id="next-badge" class="next-badge">
+  <div id="next-header" class="next-badge">
     <span class="next-label">Next:</span>
     <span id="next-teams" class="next-teams">TBD vs TBD</span>
   </div>
