@@ -414,7 +414,20 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .row.serving{ background: linear-gradient(90deg, rgba(255,215,0,0.1), transparent); }
 
 .info{ display:flex; flex-direction:column; justify-content:center; }
-.name{ font-size:clamp(16px, 2.5vw, 24px); font-weight:900; line-height:1; letter-spacing:-.5px; text-transform:uppercase; display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px; }
+.name{ 
+  font-size:clamp(16px, 2.5vw, 24px); 
+  font-weight:900; 
+  line-height:1; 
+  letter-spacing:-.5px; 
+  text-transform:uppercase; 
+  display:flex; 
+  align-items:center; 
+  gap:8px; 
+  white-space:nowrap; 
+  overflow:hidden; 
+  text-overflow:ellipsis; 
+  max-width:280px; /* Reduced from 320px to ensure space for score */
+}
 
 /* Edge-positioned seeds - positioned at the very edges of the scoreboard */
 .seed-edge {
@@ -445,7 +458,15 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Hide old seed element */
 .seed{ display: none; }
 
-.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px; margin-left:auto; padding-left:16px; }
+.score{ 
+  font-variant-numeric:tabular-nums; 
+  font-size:32px; 
+  font-weight:800; 
+  letter-spacing:-1px; 
+  margin-left:auto; 
+  padding-left:32px; /* Increased from 16px for more separation */
+  min-width:50px; /* Ensure score always has space */
+}
 
 /* Service Indicator - Volleyball SVG */
 .serve-icon { width:18px; height:18px; display:none; filter: drop-shadow(0 0 4px rgba(255,215,0,0.4)); }
