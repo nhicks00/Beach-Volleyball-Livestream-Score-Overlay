@@ -26,6 +26,11 @@ final class AppViewModel: ObservableObject {
     // MARK: - Private State
     private var pollingTimers: [Int: Timer] = [:]
     private var cancellables = Set<AnyCancellable>()
+    private var lastQueueRefreshTimes: [Int: Date] = [:]
+    
+    // Inactivity tracking
+    private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
+    private var lastScoreChangeTime: [Int: Date] = [:]
     
     // MARK: - Initialization
     
@@ -42,8 +47,10 @@ final class AppViewModel: ObservableObject {
     // MARK: - Services Lifecycle
     
     func startServices() {
-        webSocketHub.start(with: self, port: NetworkConstants.webSocketPort)
-        print("🚀 MultiCourtScore v2 services started")
+        Task {
+            await webSocketHub.start(with: self, port: NetworkConstants.webSocketPort)
+            print("🚀 MultiCourtScore v2 services started")
+        }
     }
     
     func stopServices() {
@@ -258,6 +265,24 @@ final class AppViewModel: ObservableObject {
             // Pass matchItem to normalizeData to access seeds
             let snapshot = normalizeData(data, courtId: courtId, currentMatch: matchItem)
             
+            // Inactivity Check: Has score CHANGED (points OR sets) since last poll?
+            let currentS1 = snapshot.team1Score
+            let currentS2 = snapshot.team2Score
+            let currentP1 = snapshot.setHistory.last?.team1Score ?? 0
+            let currentP2 = snapshot.setHistory.last?.team2Score ?? 0
+            let prevData = lastScoreSnapshot[courtId]
+            
+            if prevData == nil || 
+               prevData?.pts1 != currentP1 || prevData?.pts2 != currentP2 ||
+               prevData?.s1 != currentS1 || prevData?.s2 != currentS2 {
+                // Point or set changed: update tracker
+                lastScoreSnapshot[courtId] = (pts1: currentP1, pts2: currentP2, s1: currentS1, s2: currentS2)
+                lastScoreChangeTime[courtId] = Date()
+            }
+            
+            let timeSinceLastScore = Date().timeIntervalSince(lastScoreChangeTime[courtId] ?? Date())
+            let isStale = timeSinceLastScore >= AppConfig.staleMatchTimeout // 15 mins
+            
             let previousStatus = courts[idx].status
             let newStatus = determineStatus(from: snapshot)
             
@@ -269,8 +294,12 @@ final class AppViewModel: ObservableObject {
                 courts[idx].liveSince = nil
             }
             
-            // Handle match completion - auto-advance
-            if snapshot.isFinal {
+            // Handle match completion OR Stale timeout
+            if snapshot.isFinal || isStale {
+                if isStale && !snapshot.isFinal {
+                    print("🚨 Court \(courtId) match is stale (no score change for 15m). Auto-advancing.")
+                }
+                
                 courts[idx].status = .finished
                 courts[idx].lastSnapshot = snapshot
                 
@@ -285,16 +314,18 @@ final class AppViewModel: ObservableObject {
                     let holdDuration = AppConfig.holdScoreDuration  // 3 minutes
                     let timeSinceFinish = Date().timeIntervalSince(courts[idx].finishedAt ?? Date())
                     
-                    // Advance if: hold time exceeded OR next match has started
+                    // Advance if: hold time exceeded OR next match has started OR match was stale
                     let holdExpired = timeSinceFinish >= holdDuration
                     let nextStarted = await nextMatchHasStarted(courts[idx].queue[nextIndex])
                     
-                    if holdExpired || nextStarted {
+                    if holdExpired || nextStarted || isStale {
                         // Advance to next match
                         courts[idx].activeIndex = nextIndex
                         courts[idx].status = .waiting
                         courts[idx].liveSince = nil
                         courts[idx].finishedAt = nil  // Reset for next match
+                        lastScoreSnapshot[courtId] = nil // Reset tracker for new match
+                        lastScoreChangeTime[courtId] = nil
                         print("⏭️ Auto-advanced court \(courtId) to match \(nextIndex + 1)")
                     }
                 }
@@ -304,6 +335,14 @@ final class AppViewModel: ObservableObject {
                 courts[idx].finishedAt = nil  // Clear if match is not final
             }
             
+            
+            // Periodically refresh metadata for queued matches (every 60s)
+            let lastRefresh = lastQueueRefreshTimes[courtId] ?? Date.distantPast
+            if Date().timeIntervalSince(lastRefresh) > 60 {
+                await refreshQueueMetadata(for: courtId)
+                lastQueueRefreshTimes[courtId] = Date()
+            }
+
             courts[idx].lastPollTime = Date()
             courts[idx].errorMessage = nil
             
@@ -316,11 +355,39 @@ final class AppViewModel: ObservableObject {
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {
         do {
-            let data = try await apiClient.fetchData(from: match.apiURL)
+            let data = try await apiClient.fetchData(from: match.apiURL) // Uses VBL match URL
             let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
             return snapshot.hasStarted
         } catch {
             return false
+        }
+    }
+    
+    // Refresh TBD names in the queue
+    private func refreshQueueMetadata(for courtId: Int) async {
+        guard let idx = courtIndex(for: courtId) else { return }
+        
+        // Iterate over future matches
+        let startIndex = (courts[idx].activeIndex ?? -1) + 1
+        guard startIndex < courts[idx].queue.count else { return }
+        
+        for i in startIndex..<courts[idx].queue.count {
+            let match = courts[idx].queue[i]
+            
+            do {
+                // Fetch fresh data for the queued match
+                let data = try await apiClient.fetchData(from: match.apiURL)
+                let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
+                
+                // Update names if changed
+                if snapshot.team1Name != match.team1Name || snapshot.team2Name != match.team2Name {
+                    print("🔄 Updated queue metadata for match \(i): \(snapshot.team1Name) vs \(snapshot.team2Name)")
+                    courts[idx].queue[i].team1Name = snapshot.team1Name
+                    courts[idx].queue[i].team2Name = snapshot.team2Name
+                }
+            } catch {
+                print("⚠️ Failed to refresh queue metadata: \(error.localizedDescription)")
+            }
         }
     }
     
@@ -531,7 +598,12 @@ actor ScoreCache {
             return cached.data
         }
         
-        let (data, _) = try await URLSession.shared.data(from: url)
+        // Force bypass of URLCache to ensure real-time data
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 10
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
         cache[url] = (data, Date())
         return data
     }

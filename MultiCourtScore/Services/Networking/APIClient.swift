@@ -29,7 +29,11 @@ actor APIClient {
         
         for attempt in 0..<maxRetries {
             do {
-                let (data, response) = try await session.data(from: url)
+                var request = URLRequest(url: url)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                request.timeoutInterval = 10
+                
+                let (data, response) = try await session.data(for: request)
                 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw APIError.invalidResponse
