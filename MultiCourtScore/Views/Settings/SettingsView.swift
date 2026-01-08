@@ -37,6 +37,12 @@ struct SettingsView: View {
                 Label("Credentials", systemImage: "key")
             }
             
+            // Notifications
+            NotificationSettingsView()
+                .tabItem {
+                    Label("Notifications", systemImage: "bell")
+                }
+            
             // About
             AboutTab()
                 .tabItem {
