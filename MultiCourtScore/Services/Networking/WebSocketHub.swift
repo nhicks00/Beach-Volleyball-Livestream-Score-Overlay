@@ -339,11 +339,11 @@ final class WebSocketHub {
 :root{
   --gold1:#ffd700; --gold2:#ffb300; --goldGlow:rgba(255,215,0,.25);
   --bgTop:#141414; --bgBot:#1c1c1c; --text:#fff; --muted:rgba(255,255,255,.85);
-  --score-size:38px; --sets-size:14px; --maxw:1040px;
+  --score-size:38px; --sets-size:14px; --maxw:900px; --bugw:900px;
 }
 html,body{margin:0;background:transparent;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
 .wrap{position:fixed; top:10px; left:0; right:0; pointer-events:none}
-.container{width:min(var(--maxw),96vw); margin:0 auto; display:grid; gap:10px}
+.container{width:var(--bugw); margin:0 auto; display:grid; gap:10px}
 
 /* social (colors kept) */
 /* Social bar base style */
@@ -384,6 +384,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   border: 1px solid rgba(255,200,0,.35); border-radius: 999px;
   box-shadow: 0 4px 12px rgba(0,0,0,.3);
   font-size: 11px; font-weight: 700; color: var(--muted);
+  transition: opacity 0.3s ease;
 }
 .next-badge .next-label { color: var(--gold2); text-transform: uppercase; font-size: 10px; }
 .next-badge .next-teams { color: var(--text); font-weight: 800; }
@@ -408,7 +409,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .row.serving{ background: linear-gradient(90deg, rgba(255,215,0,0.1), transparent); }
 
 .info{ display:flex; flex-direction:column; justify-content:center; }
-.name{ font-size:24px; font-weight:900; line-height:1; letter-spacing:-.5px; text-transform:uppercase; display:flex; align-items:center; gap:8px }
+.name{ font-size:clamp(16px, 2.5vw, 24px); font-weight:900; line-height:1; letter-spacing:-.5px; text-transform:uppercase; display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px; }
 
 /* Edge-positioned seeds - positioned at the very edges of the scoreboard */
 .seed-edge {
@@ -439,7 +440,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Hide old seed element */
 .seed{ display: none; }
 
-.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px; margin-left:24px; }
+.score{ font-variant-numeric:tabular-nums; font-size:32px; font-weight:800; letter-spacing:-1px; margin-left:auto; padding-left:16px; }
 
 /* Service Indicator - Volleyball SVG */
 .serve-icon { width:18px; height:18px; display:none; filter: drop-shadow(0 0 4px rgba(255,215,0,0.4)); }
@@ -594,6 +595,35 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Ensure names slide smoothly */
 .bug .name { transition: transform 0.8s cubic-bezier(0.2, 1, 0.3, 1); }
 
+/* Match-change slide-off animation */
+@keyframes slideOutLeft {
+  0% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(-120%); opacity: 0; }
+}
+@keyframes slideOutRight {
+  0% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+@keyframes slideInLeft {
+  0% { transform: translateX(-120%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideInRight {
+  0% { transform: translateX(120%); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+.bug.match-change .row {
+  clip-path: inset(0 0 0 0); /* Contain children within the row */
+}
+.bug.match-change #t1 { animation: slideOutLeft 0.4s ease-in forwards; }
+.bug.match-change #t2 { animation: slideOutRight 0.4s ease-in forwards; }
+.bug.match-change #sc1, .bug.match-change #sc2 { animation: fadeSlide 0.4s ease-in reverse forwards; }
+
+.bug.match-reveal #t1 { animation: slideInRight 0.4s ease-out 0.1s forwards; }
+.bug.match-reveal #t2 { animation: slideInLeft 0.4s ease-out 0.1s forwards; }
+.bug.match-reveal #sc1, .bug.match-reveal #sc2 { animation: fadeSlide 0.4s ease-out 0.1s forwards; }
+
 .bug.reveal { animation: slideDown 0.5s ease-out; }
 @media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
 </style>
@@ -718,10 +748,9 @@ function applyText(el, v, cls){ if(!el) return; const s=String(v ?? ''); if(el.t
 function setWon(a,b,t){ return Math.max(a,b) >= t && Math.abs(a-b) >= 2; }
 function cleanName(n){ return (n||"").replace(/\s*\(.*?\)\s*/g," ").replace(/\s{2,}/g," ").trim(); }
 
-/* Smart truncate: abbreviates first names, keeps last names
-   Format: "W. Mota / D. Strauss"
-   If name is already short enough, it might still abbreviate if requested.
-   The user wants "abbreviate the first name with one letter and a period and then spell out the last name." */
+/* Smart truncate: shows ONLY last names for scoreboard
+   Format: "MOTA / STRAUSS"
+   The user now wants only last names displayed on the main scoreboard. */
 function abbreviateName(teamName, maxLen = 30) {
   if (!teamName) return "";
   
@@ -740,10 +769,8 @@ function abbreviateName(teamName, maxLen = 30) {
     const parts = player.split(/\s+/);
     if (parts.length < 2) return player; // Single name, keep as is
     
-    // Abbreviate all but the last part
-    const last = parts.pop();
-    const initials = parts.map(p => p.charAt(0).toUpperCase() + ".").join(" ");
-    return initials + " " + last;
+    // Return ONLY the last name
+    return parts[parts.length - 1];
   });
   
   let result = abbreviated.join(" / ");
@@ -1030,18 +1057,34 @@ function applyData(d){
   
   // Update header next-badge - match the abbreviation logic
   const nextTeams = document.getElementById('next-teams');
-  if (nextTeams && d.nextMatch) {
-    if (!useAbbr) {
-       // Spell everything out in prematch
-       applyText(nextTeams, d.nextMatch, 'fade');
-    } else {
-       // Abbreviate when live
-       const nextArr = d.nextMatch.split(/\s+vs\s+/);
-       if (nextArr.length === 2) {
-         applyText(nextTeams, abbreviateName(nextArr[0], 40) + ' vs ' + abbreviateName(nextArr[1], 40), 'fade');
-       } else {
-         applyText(nextTeams, abbreviateName(d.nextMatch, 80), 'fade');
-       }
+  const nextHeader = document.getElementById('next-header');
+  
+  // Hide the entire 'Next' badge if there's no next match
+  if (!d.nextMatch || d.nextMatch.trim() === '' || d.nextMatch === 'TBD vs TBD') {
+    if (nextHeader) {
+      nextHeader.style.opacity = '0';
+      setTimeout(() => { nextHeader.style.display = 'none'; }, 300);
+    }
+  } else {
+    // Show the badge
+    if (nextHeader) {
+      nextHeader.style.display = '';
+      setTimeout(() => { nextHeader.style.opacity = '1'; }, 10);
+    }
+    
+    if (nextTeams) {
+      if (!useAbbr) {
+         // Spell everything out in prematch
+         applyText(nextTeams, d.nextMatch, 'fade');
+      } else {
+         // Abbreviate when live
+         const nextArr = d.nextMatch.split(/\s+vs\s+/);
+         if (nextArr.length === 2) {
+           applyText(nextTeams, abbreviateName(nextArr[0], 40) + ' vs ' + abbreviateName(nextArr[1], 40), 'fade');
+         } else {
+           applyText(nextTeams, abbreviateName(d.nextMatch, 80), 'fade');
+         }
+      }
     }
   }
   
@@ -1079,8 +1122,39 @@ function applyData(d){
   
   // Track current teams and detect match changes
   const matchKey = d.team1 + '|' + d.team2;
-  const isNewMatch = matchKey !== lastMatchKey;
-  if (isNewMatch) {
+  const isNewMatch = matchKey !== lastMatchKey && lastMatchKey !== "";
+  
+  if (isNewMatch && overlayState === 'live') {
+    // Trigger slide-off animation for old names
+    const scorebug = document.getElementById('scorebug');
+    if (scorebug) {
+      scorebug.classList.add('match-change');
+      
+      // After slide-out completes, update content and slide in
+      setTimeout(() => {
+        scorebug.classList.remove('match-change');
+        
+        // Now update the actual text content
+        applyText(document.getElementById('t1'), name1);
+        applyText(document.getElementById('t2'), name2);
+        applyText(document.getElementById('sc1'), score1);
+        applyText(document.getElementById('sc2'), score2);
+        
+        // Trigger slide-in animation
+        scorebug.classList.add('match-reveal');
+        setTimeout(() => {
+          scorebug.classList.remove('match-reveal');
+        }, 500);
+      }, 450);
+    }
+    
+    lastMatchKey = matchKey;
+    currentTeam1 = d.team1;
+    currentTeam2 = d.team2;
+    return; // Skip normal text update since animation handles it
+  }
+  
+  if (lastMatchKey === "") {
     lastMatchKey = matchKey;
     currentTeam1 = d.team1;
     currentTeam2 = d.team2;
