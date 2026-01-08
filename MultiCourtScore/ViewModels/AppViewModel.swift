@@ -573,8 +573,14 @@ final class AppViewModel: ObservableObject {
         let t1 = array[0]
         let t2 = array[1]
         
-        let name1 = (t1["teamName"] as? String) ?? "Team A"
-        let name2 = (t2["teamName"] as? String) ?? "Team B"
+        // Extract team names - prioritize 'players' field which contains placeholder text like "Match 1 Winner"
+        // Then fall back to 'teamName', and only use generic fallback if both are empty
+        let name1 = (t1["players"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    (t1["teamName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    "TBD"
+        let name2 = (t2["players"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    (t2["teamName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    "TBD"
         
         // Get format from match or use defaults
         let pointsPerSet = currentMatch?.pointsPerSet ?? 21
@@ -761,5 +767,14 @@ actor ScoreCache {
     
     func clearAll() {
         cache.removeAll()
+    }
+}
+
+// MARK: - String Extension
+
+extension String {
+    /// Returns nil if the string is empty, otherwise returns self
+    func nilIfEmpty() -> String? {
+        return self.isEmpty ? nil : self
     }
 }
