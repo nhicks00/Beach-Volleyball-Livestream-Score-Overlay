@@ -394,6 +394,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   position:relative;
   display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; 
   padding:0;
+  width: 900px; /* Fixed width - never changes */
   background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
   border-radius:18px; border:1px solid rgba(255,200,0,.35);
   box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
@@ -562,38 +563,17 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .postmatch-next.visible { opacity: 1; transform: translateY(0); }
 .postmatch-next .next-label { color: var(--muted); font-size: 11px; margin-right: 6px; }
 
-/* State transitions */
+/* State transitions - ONLY opacity and vertical position, NO width changes */
 .bug, .prematch-bar { 
-  transition: opacity 0.5s ease, transform 0.5s ease, max-width 0.8s cubic-bezier(0.2, 1, 0.3, 1); 
+  transition: opacity 0.5s ease, transform 0.5s ease; 
   margin: 0 auto; 
 }
 
 .bug.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; display: none; }
 .prematch-bar.hidden { opacity: 0; transform: translateY(-10px); display: none; }
 
-/* Dynamic Expand Animation States */
-.bug.transition-init {
-  max-width: 380px; /* Approximate width of prematch bar */
-  overflow: hidden;
-}
-
-/* Hide contents during initial state so names slide together */
-.bug .score, .bug .divider, .bug .seed-edge {
-  transition: opacity 0.4s ease 0.4s, transform 0.4s ease 0.4s, max-width 0.4s ease 0.4s;
-}
-
-.bug.transition-init .score,
-.bug.transition-init .divider,
-.bug.transition-init .seed-edge {
-  opacity: 0;
-  transform: scale(0.8);
-  max-width: 0;
-  margin: 0;
-  padding: 0;
-}
-
-/* Ensure names slide smoothly */
-.bug .name { transition: transform 0.8s cubic-bezier(0.2, 1, 0.3, 1); }
+/* Removed all transition-init and width animation states */
+/* Scoreboard is now permanently 900px wide */
 
 /* Match-change slide-off animation */
 @keyframes slideOutLeft {
@@ -814,23 +794,11 @@ function transitionToLive(animate = true) {
   if (els.scorebug) {
     els.scorebug.style.display = ''; // Ensure display is not 'none'
     if (animate) {
-      // 1. Start in "initial state" (small, like prematch bar, scores hidden)
-      els.scorebug.classList.add('transition-init');
+      // Simple fade-in, no width animation
       els.scorebug.classList.remove('hidden');
-      
-      // 2. Force browser reflow to ensure start position is rendered
-      void els.scorebug.offsetWidth;
-      
-      // 3. Expand to full size (remove init state triggers CSS transition)
-      // Small delay to let prematch fade start
-      setTimeout(() => {
-        els.scorebug.classList.remove('transition-init');
-      }, 50);
-      
     } else {
       // No animation (mid-match join)
       els.scorebug.classList.remove('hidden');
-      els.scorebug.classList.remove('transition-init');
     }
   }
   
@@ -850,16 +818,9 @@ function transitionToPrematch(animate = true) {
   overlayState = 'prematch';
   
   if (els.scorebug) {
-    if (animate) {
-      els.scorebug.classList.add('transition-init');
-      setTimeout(() => {
-        els.scorebug.classList.add('hidden');
-        setTimeout(() => { els.scorebug.style.display = 'none'; }, 500);
-      }, 500);
-    } else {
-      els.scorebug.classList.add('hidden');
-      els.scorebug.style.display = 'none';
-    }
+    // Simple fade-out, no width animation
+    els.scorebug.classList.add('hidden');
+    setTimeout(() => { els.scorebug.style.display = 'none'; }, 500);
   }
   
   if (els.prematch) {
