@@ -757,7 +757,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Centering Fix for Main Score */
 .main-score {
   display: grid;
-  grid-template-columns: 1fr 26px 1fr; /* Slightly wider center for spacing */
+  grid-template-columns: 1fr 24px 1fr; /* Fixed width for SVG colon */
   align-items: center;
   width: 100%;
 }
@@ -766,31 +766,38 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   font-weight: 900;
   letter-spacing: -2px;
   color: var(--text);
-  line-height: 1; /* Reset to 1 for better baseline alignment */
-  padding-bottom: 2px; /* Visual balance */
+  line-height: 1; 
+  padding-bottom: 2px;
 }
-.score-colon {
-  font-size: 36px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.5);
-  line-height: 1;
-  transform: translateY(2px); /* visual correction: move DOWN to center */
+.score-colon-svg {
+  width: 12px;
+  height: 32px;
+  fill: rgba(255,255,255,0.5);
+  display: block;
+  margin: 0 auto;
 }
 
 /* Set Count - Small Below Score */
 .set-count {
   display: grid;
-  grid-template-columns: 1fr 16px 1fr; /* Fixed width for colon */
+  grid-template-columns: 1fr 14px 1fr; /* Fixed width for SVG colon */
   align-items: center;
   width: 100%;
   opacity: 0.8;
-  margin-top: 0px; /* Tight against score */
+  margin-top: 0px; 
 }
 .set-count span {
   font-size: 11px;
   font-weight: 700;
   color: var(--text);
   line-height: 1;
+}
+.set-sep-svg {
+  width: 6px;
+  height: 12px;
+  fill: rgba(255,255,255,0.4);
+  display: block;
+  margin: 0 auto;
 }  white-space: nowrap;
 }
 .socialbar svg {
@@ -847,12 +854,20 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
       <div class="score-center">
         <div class="main-score">
           <span class="score-num" id="sc1">0</span>
-          <span class="score-colon">:</span>
+          <!-- SVG Colon for perfect centering -->
+          <svg class="score-colon-svg" viewBox="0 0 12 30">
+            <circle cx="6" cy="9" r="3" />
+            <circle cx="6" cy="21" r="3" />
+          </svg>
           <span class="score-num" id="sc2">0</span>
         </div>
         <div class="set-count" id="set-count">
           <span id="sets1">0</span>
-          <span class="set-sep">:</span>
+          <!-- SVG Colon for perfect centering -->
+          <svg class="set-sep-svg" viewBox="0 0 12 24">
+            <circle cx="6" cy="8" r="2.5" />
+            <circle cx="6" cy="16" r="2.5" />
+          </svg>
           <span id="sets2">0</span>
         </div>
       </div>
