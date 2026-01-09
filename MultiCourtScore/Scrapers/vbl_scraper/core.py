@@ -54,6 +54,11 @@ class VBLMatch:
     api_url: Optional[str] = None
     match_type: Optional[str] = None
     type_detail: Optional[str] = None
+    # Match format fields
+    sets_to_win: int = 2  # Default to best-of-3 (2 sets to win)
+    points_per_set: int = 21  # Points needed to win a set
+    point_cap: Optional[int] = None  # Point cap (e.g., 23), None means win by 2
+    format_text: Optional[str] = None  # Raw format text from page
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -67,7 +72,11 @@ class VBLMatch:
             'startTime': self.start_time,
             'api_url': self.api_url,
             'match_type': self.match_type,
-            'type_detail': self.type_detail
+            'type_detail': self.type_detail,
+            'setsToWin': self.sets_to_win,
+            'pointsPerSet': self.points_per_set,
+            'pointCap': self.point_cap,
+            'formatText': self.format_text
         }
 
 
@@ -150,6 +159,42 @@ class VBLScraperBase:
             await self.playwright.stop()
         logger.info("Browser closed")
     
+    async def extract_match_format(self) -> dict:
+        """
+        Extract match format info from page (v-alert banner).
+        Returns dict with sets_to_win, points_per_set, point_cap, format_text
+        """
+        from .parse_format import parse_format_text
+        
+        result = {
+            'sets_to_win': 2,
+            'points_per_set': 21,
+            'point_cap': None,
+            'format_text': None
+        }
+        
+        try:
+            # Look for v-alert content which contains format info
+            selector = 'div.v-alert__content'
+            element = self.page.locator(selector).first
+            
+            if await element.is_visible():
+                text = await element.text_content()
+                result['format_text'] = text.strip() if text else None
+                
+                if text:
+                    # Use parse_format module for robust parsing
+                    parsed = parse_format_text(text)
+                    result['sets_to_win'] = parsed['sets_to_win']
+                    result['points_per_set'] = parsed['points_per_set']
+                    result['point_cap'] = parsed['point_cap']
+                    
+                    logger.info(f"Parsed format: {result}")
+        except Exception as e:
+            logger.warning(f"Error extracting format: {e}")
+        
+        return result
+    
     def _capture_api_requests(self, request):
         """Capture API URLs from network requests"""
         url = request.url
@@ -159,6 +204,7 @@ class VBLScraperBase:
                 logger.debug(f"Captured API URL: {url}")
     
     # ==================== 4-PHASE LOGIN (from v1) ====================
+
     
     async def check_login_status(self) -> bool:
         """Check if already logged in by looking for profile indicators"""

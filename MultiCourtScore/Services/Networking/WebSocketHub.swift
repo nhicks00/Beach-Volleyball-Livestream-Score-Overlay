@@ -1118,6 +1118,9 @@ function applyData(d){
     }
   }
   
+  // Debug: Log what we're about to update
+  console.log('[Overlay] Updating team names:', { name1, name2, team1: d.team1, team2: d.team2 });
+  
   // Update scorebug team names
   applyText(document.getElementById('t1'), name1, 'fade');
   applyText(document.getElementById('t2'), name2, 'fade');
