@@ -689,10 +689,12 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   padding: 8px 16px;
   display: flex;
   align-items: center;
+  justify-content: center; /* Center content for symmetry */
   gap: 8px;
   z-index: 1; 
   border-radius: 999px; /* Fully rounded oval */
   transition: opacity 0.4s ease, transform 0.4s ease;
+  min-width: 220px; /* Enforce minimum width for visual balance */
 }
 
 .bug .socialbar {
@@ -703,6 +705,13 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .bug .next-badge {
   right: 20px; /* Aligned with right edge/padding */
   transform: none;
+  max-width: 320px; /* Prevent it from getting too wide */
+}
+
+/* Adjust visibility/animation for these sub-bubbles */
+.bug.hidden .socialbar, .bug.hidden .next-badge {
+  opacity: 0;
+  transform: translateY(-10px); /* Slide up slightly when hidden */
 }
 
 /* Centering Fix for Main Score */
@@ -751,11 +760,18 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   font-weight: 800;
   color: var(--gold1);
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden; /* Truncate if too long */
 }
 .next-badge .next-label {
   color: var(--muted);
   font-size: 11px;
   margin-right: 6px;
+  flex-shrink: 0; /* Keep label visible */
+}
+.next-badge .next-teams {
+  overflow: hidden;
+  text-overflow: ellipsis; /* Ellipsis for long names */
 }
 </style>
 </head>
