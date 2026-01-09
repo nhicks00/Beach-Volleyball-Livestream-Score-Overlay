@@ -1089,10 +1089,10 @@ function applyData(d){
   const isZero = isZeroZero(score1, score2);
   const setNum = d.setNumber || 1;
 
-  // Names - show full names in prematch (0-0, Set 1), abbreviate once game starts
-  const useAbbr = !isZero || setNum > 1;
-  const name1 = useAbbr ? (abbreviateName(cleanName(d.team1)) || 'Team 1') : (cleanName(d.team1) || 'Team 1');
-  const name2 = useAbbr ? (abbreviateName(cleanName(d.team2)) || 'Team 2') : (cleanName(d.team2) || 'Team 2');
+  // Names - ALWAYS show last names only as requested
+  // const useAbbr = !isZero || setNum > 1; // Old logic
+  const name1 = abbreviateName(cleanName(d.team1)) || 'Team 1';
+  const name2 = abbreviateName(cleanName(d.team2)) || 'Team 2';
   
   // Update header next-badge - match the abbreviation logic
   const nextTeams = document.getElementById('next-teams');
