@@ -59,6 +59,9 @@ class VBLMatch:
     points_per_set: int = 21  # Points needed to win a set
     point_cap: Optional[int] = None  # Point cap (e.g., 23), None means win by 2
     format_text: Optional[str] = None  # Raw format text from page
+    # Initial scores (if match is already live)
+    team1_score: int = 0
+    team2_score: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -76,7 +79,9 @@ class VBLMatch:
             'setsToWin': self.sets_to_win,
             'pointsPerSet': self.points_per_set,
             'pointCap': self.point_cap,
-            'formatText': self.format_text
+            'formatText': self.format_text,
+            'team1_score': self.team1_score,
+            'team2_score': self.team2_score
         }
 
 
