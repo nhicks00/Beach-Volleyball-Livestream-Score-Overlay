@@ -1367,7 +1367,8 @@ function applyData(d){
          // Split by 'vs' to stack them
          // Clean strings first
          const raw = d.nextMatch;
-         const split = raw.split(/\s+vs\.?\s+/i); // Handle 'vs' or 'vs.' case-insensitive
+         // Use RegExp constructor to avoid any literal parsing issues in raw strings
+         const split = raw.split(new RegExp("\\s+vs\\.?\\s+", "i"));
          
          if (split.length >= 2) {
            const t1 = abbreviateName(split[0], 40);
