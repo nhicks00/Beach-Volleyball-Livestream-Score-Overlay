@@ -914,9 +914,9 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
     <!-- Pre-match mode: Simple team names display -->
     <div id="prematch" class="prematch-bar">
-      <span class="team-name" id="pm-t1">Team 1</span>
+      <span class="team-name" id="pm-t1">Waiting...</span>
       <span class="vs">vs</span>
-      <span class="team-name" id="pm-t2">Team 2</span>
+      <span class="team-name" id="pm-t2">Waiting...</span>
     </div>
 
     <!-- Main Scoreboard -->
@@ -1327,6 +1327,17 @@ function applyData(d){
   // Update header next-badge - match the abbreviation logic
   const nextTeams = document.getElementById('next-teams');
   const nextHeader = document.getElementById('next-header');
+
+  // Update prematch bar team names
+  const els = getOverlayElements();
+  if (els.pmT1) {
+      console.log('[Overlay] Updating PM T1 to:', name1);
+      els.pmT1.textContent = name1;
+  }
+  if (els.pmT2) {
+      console.log('[Overlay] Updating PM T2 to:', name2);
+      els.pmT2.textContent = name2;
+  }
   
   // Check if we should show Next Match info
   // Rule: Show ONLY if match is over OR between sets (set finished or set start 0-0)
