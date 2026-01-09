@@ -276,7 +276,9 @@ final class WebSocketHub {
     // MARK: - Helpers
     
     private func cacheBusted(_ url: URL) -> URL {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url // Return original URL if parsing fails
+        }
         var items = components.queryItems ?? []
         items.append(URLQueryItem(name: "_t", value: String(Int(Date().timeIntervalSince1970 * 1000))))
         components.queryItems = items
@@ -880,8 +882,8 @@ function transitionToPrematch(team1, team2) {
   overlayState = 'prematch';
   
   // Update prematch bar with team names
-  if (els.pmT1) els.pmT1.textContent = smartTruncate(cleanName(team1)) || 'Team 1';
-  if (els.pmT2) els.pmT2.textContent = smartTruncate(cleanName(team2)) || 'Team 2';
+  if (els.pmT1) els.pmT1.textContent = abbreviateName(cleanName(team1)) || 'Team 1';
+  if (els.pmT2) els.pmT2.textContent = abbreviateName(cleanName(team2)) || 'Team 2';
   
   // Hide scorebug
   if (els.scorebug) {

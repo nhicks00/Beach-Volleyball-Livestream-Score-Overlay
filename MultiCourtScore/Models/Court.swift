@@ -116,7 +116,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
     
     // MARK: Codable Conformance
     enum CodingKeys: String, CodingKey {
-        case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed, matchType, typeDetail, scheduledTime, courtNumber, physicalCourt
+        case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed
+        case matchType, typeDetail, scheduledTime, matchNumber, courtNumber, physicalCourt
+        case setsToWin, pointsPerSet, pointCap, formatText
     }
     
     init(from decoder: Decoder) throws {
@@ -130,8 +132,13 @@ struct MatchItem: Codable, Hashable, Identifiable {
         matchType = try container.decodeIfPresent(String.self, forKey: .matchType)
         typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
         scheduledTime = try container.decodeIfPresent(String.self, forKey: .scheduledTime)
+        matchNumber = try container.decodeIfPresent(String.self, forKey: .matchNumber)
         courtNumber = try container.decodeIfPresent(String.self, forKey: .courtNumber)
         physicalCourt = try container.decodeIfPresent(String.self, forKey: .physicalCourt)
+        setsToWin = try container.decodeIfPresent(Int.self, forKey: .setsToWin)
+        pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
+        pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
+        formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
     }
 }
