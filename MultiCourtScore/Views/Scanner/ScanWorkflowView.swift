@@ -93,6 +93,7 @@ struct ScanWorkflowView: View {
         currentStep = .scanResults
     }
     
+    
     private func advanceToAssign() {
         // Update unmapped courts list (moved from advanceToMapCourts)
         let allCourts = Array(groupedByCourt.keys)
@@ -101,10 +102,9 @@ struct ScanWorkflowView: View {
         initializeAssignments()
         currentStep = .assign
     }
-
-    }
     
     // MARK: - Assignment Logic
+
     
     private func initializeAssignments() {
         for match in scanResults {
