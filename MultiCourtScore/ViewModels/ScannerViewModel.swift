@@ -369,15 +369,23 @@ class ScannerViewModel: ObservableObject {
                     process.waitUntilExit()
                     
                     let exitCode = process.terminationStatus
+                    print("📊 Exit code: \(exitCode)")
                     
                     // Read stderr for debugging
                     let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                     if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
+                        print("🔴 Python stderr:\n\(errorString)")
                         Task { @MainActor in
                             for line in errorString.split(separator: "\n").prefix(5) {
                                 self.addLog("Python: \(line)", type: .warning)
                             }
                         }
+                    }
+                    
+                    // Read stdout too
+                    let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+                    if !outputData.isEmpty, let outputString = String(data: outputData, encoding: .utf8) {
+                        print("📗 Python stdout:\n\(outputString)")
                     }
                     
                     if exitCode != 0 {
