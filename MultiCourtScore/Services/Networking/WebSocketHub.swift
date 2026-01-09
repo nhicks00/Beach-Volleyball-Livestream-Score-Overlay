@@ -464,44 +464,40 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   gap: 4px;
 }
 
-/* Main Score - Large and Prominent */
-.main-score {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-variant-numeric: tabular-nums;
-}
-.score-num {
-  font-size: clamp(42px, 5vw, 56px);
-  font-weight: 900;
-  letter-spacing: -2px;
-  color: var(--text);
-  line-height: 1;
-}
-.score-colon {
-  font-size: clamp(36px, 4.5vw, 48px);
-  font-weight: 700;
-  color: rgba(255,255,255,0.5);
-  line-height: 1;
-}
+  /* Centering Fix for Main Score */
+  .main-score {
+    display: grid;
+    grid-template-columns: 1fr 40px 1fr; /* Fixed width for colon, equal space for scores */
+    align-items: center;
+    width: 100%;
+    /* margin-bottom: 4px; */
+  }
+  .main-score .score-num {
+    text-align: right; /* Left score aligns right towards colon */
+  }
+  .main-score .score-num:last-child {
+    text-align: left; /* Right score aligns left towards colon */
+  }
+  .main-score .score-colon {
+    text-align: center;
+    width: 40px;
+    display: inline-block;
+  }
 
-/* Set Count - Small Below Score */
-.set-count {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.8;
-}
-.set-count span {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-}
-.set-sep {
-  font-size: 12px;
-  color: rgba(255,255,255,0.4);
-}
+  /* Centering Fix for Set Count */
+  .set-count {
+    display: grid;
+    grid-template-columns: 1fr 20px 1fr; /* Fixed width for colon */
+    align-items: center;
+    width: 100%;
+    opacity: 0.8;
+  }
+  .set-count span:first-child { text-align: right; }
+  .set-count span:last-child { text-align: left; }
+  .set-count .set-sep { text-align: center; width: 20px; display: inline-block; }
+
+  /* Set History Drawer - REMOVED */
+  .setsline { display: none !important; }
 
 /* Serve Indicators - Positioned Absolutely */
 .serve-indicator {
@@ -681,55 +677,87 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
 .bug.reveal { animation: slideDown 0.5s ease-out; }
 @media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
+
+/* Social Bar and Next Up Badge styles when inside .bug */
+.bug .socialbar, .bug .next-badge {
+  position: absolute; /* Position absolutely within the .bug container */
+  top: 100%; /* Position below the main scoreboard content */
+  margin-top: 10px; /* Space between main scoreboard and these elements */
+  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
+  border-radius: 12px;
+  border: 1px solid rgba(255,200,0,.35);
+  box-shadow: 0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1; /* Ensure they are above other elements if needed */
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.bug .socialbar {
+  left: 0; /* Position social bar to the left */
+  transform: translateX(-100%); /* Move it fully to the left, outside the bug's width */
+  border-top-right-radius: 0; /* Adjust border radius for "dangling" effect */
+  border-bottom-right-radius: 0;
+}
+
+.bug .next-badge {
+  right: 0; /* Position next badge to the right */
+  transform: translateX(100%); /* Move it fully to the right, outside the bug's width */
+  border-top-left-radius: 0; /* Adjust border radius for "dangling" effect */
+  border-bottom-left-radius: 0;
+}
+
+/* Adjust visibility/animation for these sub-bubbles */
+.bug.hidden .socialbar, .bug.hidden .next-badge {
+  opacity: 0;
+  transform: translateY(-10px); /* Slide up slightly when hidden */
+}
+
+/* Social Bar specific styles */
+.socialbar {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.socialbar svg {
+  vertical-align: middle;
+  margin-right: 2px;
+}
+.socialbar .ig stop:nth-child(1) { stop-color: #feda75; }
+.socialbar .ig stop:nth-child(2) { stop-color: #fa7e1e; }
+.socialbar .ig stop:nth-child(3) { stop-color: #d62976; }
+.socialbar .ig stop:nth-child(4) { stop-color: #962fbf; }
+.socialbar .yt { color: #FF0000; }
+.socialbar .fb { color: #1877F2; }
+
+/* Next Up Badge specific styles */
+.next-badge {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--gold1);
+  text-transform: uppercase;
+}
+.next-badge .next-label {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 6px;
+}
 </style>
 </head>
 <body>
   <div class="wrap"><div class="container">
 
-<!-- Header Row: Social + Next Up -->
-<div class="header-row">
-  <!-- Social Bar -->
-  <div id="social-header" class="socialbar">
-    <!-- Instagram -->
-    <svg class="ig" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <defs>
-        <linearGradient id="iggrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%"/><stop offset="40%"/><stop offset="70%"/><stop offset="100%"/>
-        </linearGradient>
-      </defs>
-      <path fill="url(#iggrad)"
-            d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.9.3 2.3.5.6.2 1 .5 1.5 1 .5.5.8.9 1 1.5.2.4.4 1.1.5 2.3.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.9-.5 2.3-.2.6-.5 1-1 1.5-.5.5-.9.8-1.5 1-.4.2-1.1.4-2.3.5-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.9-.3-2.3-.5a3.9 3.9 0 0 1-1.5-1c-.5-.5-.8-.9-1-1.5-.2-.4-.4-1.1-.5-2.3C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.9.5-2.3.2-.6.5-1 1-1.5.5-.5.9-.8 1.5-1 .4-.2 1.1-.4 2.3-.5C8.4 2.2 8.8 2.2 12 2.2Zm0 5.3a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm6.4-.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/>
-    </svg>
+    <!-- Pre-match mode: Simple team names display -->
+    <div id="prematch" class="prematch-bar">
+      <span class="team-name" id="pm-t1">Team 1</span>
+      <span class="vs">vs</span>
+      <span class="team-name" id="pm-t2">Team 2</span>
+    </div>
 
-    <!-- YouTube -->
-    <svg class="yt" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path fill="currentColor"
-            d="M23 12s0-3.9-.5-5.7A3.1 3.1 0 0 0 20.8 4C18.9 3.6 12 3.6 12 3.6s-6.9 0-8.8.4A3.1 3.1 0 0 0 1.5 6.3C1 8.1 1 12 1 12s0 3.9.5 5.7c.2.9.9 1.6 1.7 1.9 1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4a3.1 3.1 0 0 0 1.7-1.9c.5-1.8.5-5.7.5-5.7ZM9.8 15.5V8.5l6 3.5-6 3.5Z"/>
-    </svg>
-
-    <!-- Facebook -->
-    <svg class="fb" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path fill="currentColor"
-            d="M22 12a10 10 0 1 0-11.6 9.9v-7h-2.3V12h2.3V9.7c0-2.3 1.4-3.6 3.5-3.6 1 0 2 .2 2 .2v2.2h-1.1c-1.1 0-1.4.7-1.4 1.4V12h2.4l-.4 2.9h-2v7A10 10 0 0 0 22 12Z"/>
-    </svg>
-
-    <div class="handle">@BeachVolleyballMedia</div>
-  </div>
-  
-  <!-- Next Up Badge -->
-  <div id="next-header" class="next-badge">
-    <span class="next-label">Next:</span>
-    <span id="next-teams" class="next-teams">TBD vs TBD</span>
-  </div>
-</div>
-
-<!-- Pre-match mode: Simple team names display (shown when score is 0-0) -->
-<div id="prematch" class="prematch-bar">
-  <span class="team-name" id="pm-t1">Team 1</span>
-  <span class="vs">vs</span>
-  <span class="team-name" id="pm-t2">Team 2</span>
-</div>
-
+    <!-- Main Scoreboard -->
     <div id="scorebug" class="bug hidden">
       <!-- Left Team Section -->
       <div class="team-section left">
@@ -757,25 +785,48 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
         <div class="seed-badge" id="seed2-badge">#2</div>
       </div>
       
-      <!-- Serve Indicators (positioned absolutely) -->
+      <!-- Serve Indicators -->
       <svg class="serve-indicator left" id="serve-left" viewBox="0 0 24 24">
         <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
       </svg>
       <svg class="serve-indicator right" id="serve-right" viewBox="0 0 24 24">
         <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
       </svg>
-    </div>
-    
-        <!-- Edge-positioned seeds (outside rows, inside bug for proper positioning) -->
-    <span id="seed1-edge" class="seed-edge hidden">#1</span>
-    <span id="seed2-edge" class="seed-edge hidden">#2</span>
-    </div>
+      
+      <!-- SUB-BUBBLES: Social (Left) and Next (Right) - Dangling below -->
+      <div id="social-header" class="socialbar">
+        <!-- Instagram -->
+        <svg class="ig" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+          <defs>
+            <linearGradient id="iggrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%"/><stop offset="40%"/><stop offset="70%"/><stop offset="100%"/>
+            </linearGradient>
+          </defs>
+          <path fill="url(#iggrad)" d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.9.3 2.3.5.6.2 1 .5 1.5 1 .5.5.8.9 1 1.5.2.4.4 1.1.5 2.3.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.9-.5 2.3-.2.6-.5 1-1 1.5-.5.5-.9.8-1.5 1-.4.2-1.1.4-2.3.5-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.9-.3-2.3-.5a3.9 3.9 0 0 1-1.5-1c-.5-.5-.8-.9-1-1.5-.2-.4-.4-1.1-.5-2.3C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.9.5-2.3.2-.6.5-1 1-1.5.5-.5.9-.8 1.5-1 .4-.2 1.1-.4 2.3-.5C8.4 2.2 8.8 2.2 12 2.2Zm0 5.3a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm6.4-.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/>
+        </svg>
+        <svg class="yt" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M23 12s0-3.9-.5-5.7A3.1 3.1 0 0 0 20.8 4C18.9 3.6 12 3.6 12 3.6s-6.9 0-8.8.4A3.1 3.1 0 0 0 1.5 6.3C1 8.1 1 12 1 12s0 3.9.5 5.7c.2.9.9 1.6 1.7 1.9 1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4a3.1 3.1 0 0 0 1.7-1.9c.5-1.8.5-5.7.5-5.7ZM9.8 15.5V8.5l6 3.5-6 3.5Z"/>
+        </svg>
+        <svg class="fb" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+          <path fill="currentColor" d="M22 12a10 10 0 1 0-11.6 9.9v-7h-2.3V12h2.3V9.7c0-2.3 1.4-3.6 3.5-3.6 1 0 2 .2 2 .2v2.2h-1.1c-1.1 0-1.4.7-1.4 1.4V12h2.4l-.4 2.9h-2v7A10 10 0 0 0 22 12Z"/>
+        </svg>
+        <div class="handle">@BeachVolleyballMedia</div>
+      </div>
+  
+      <div id="next-header" class="next-badge">
+        <span class="next-label">Next:</span>
+        <span id="next-teams" class="next-teams">TBD vs TBD</span>
+      </div>
 
+      <!-- Edge-positioned seeds -->
+      <span id="seed1-edge" class="seed-edge hidden">#1</span>
+      <span id="seed2-edge" class="seed-edge hidden">#2</span>
+    </div>
 
     <div id="setsline" class="setsline"></div>
     <div id="timeout-banner">In Timeout</div>
     <!-- Removed old "next" div - now using header-row next-badge instead -->
-    <div class="accent"></div>
+    <!-- <div class="accent"></div> --> <!-- Removed -->
 
 <!-- Removed postmatch-next - next match info now in header-row -->
 
@@ -1213,10 +1264,10 @@ function applyData(d){
       applyText(document.getElementById('sc2'), score2, 'flip');
   }
 
-  // Set History Drawer - pass pointsPerSet and current scores so we only show COMPLETED sets
-  const pointsPerSet = d.pointsPerSet || 21;
-  const pointCap = d.pointCap || null;
-  buildSetChips(d.setHistory, pointsPerSet, pointCap, score1, score2);
+  // Set History Drawer - REMOVED logic
+  // const pointsPerSet = d.pointsPerSet || 21;
+  // const pointCap = d.pointCap || null;
+  // buildSetChips(d.setHistory, pointsPerSet, pointCap, score1, score2);
   
   // ==================== STATE MACHINE LOGIC ====================
   
