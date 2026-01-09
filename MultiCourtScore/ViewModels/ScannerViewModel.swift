@@ -257,24 +257,23 @@ class ScannerViewModel: ObservableObject {
     private func performScan() async {
         let basePath = getBasePath()
         
-        // V2 paths
-        let v2VenvPython = "\(basePath)/v2-refactored/Scrapers/venv/bin/python3"
-        let v2ScriptPath = "\(basePath)/v2-refactored/Scrapers/vbl_scraper/cli.py"
-        let v2WorkingDir = "\(basePath)/v2-refactored/Scrapers"
+        // Production scraper paths (current location)
+        let productionVenvPython = "\(basePath)/MultiCourtScore/Scrapers/venv/bin/python3"
+        let productionScriptPath = "\(basePath)/MultiCourtScore/Scrapers/vbl_scraper/cli.py"
+        let productionWorkingDir = "\(basePath)/MultiCourtScore/Scrapers"
         
-        // V1 fallback paths
-        let v1Python = "/usr/bin/python3"
-        let v1ScriptPath = "\(basePath)/v1-legacy/vbl_complete_login.py"
+        // Fallback to system Python if venv doesn't exist
+        let systemPython = "/usr/bin/python3"
         
-        // Determine which scraper to use
-        let useV2 = FileManager.default.fileExists(atPath: v2VenvPython) &&
-                    FileManager.default.fileExists(atPath: v2ScriptPath)
+        // Determine which Python to use
+        let useVenv = FileManager.default.fileExists(atPath: productionVenvPython) &&
+                      FileManager.default.fileExists(atPath: productionScriptPath)
         
-        let pythonPath = useV2 ? v2VenvPython : v1Python
-        let scriptPath = useV2 ? v2ScriptPath : v1ScriptPath
-        let workingDir = useV2 ? v2WorkingDir : basePath
+        let pythonPath = useVenv ? productionVenvPython : systemPython
+        let scriptPath = productionScriptPath
+        let workingDir = productionWorkingDir
         
-        addLog("Using \(useV2 ? "v2" : "v1") scraper", type: .info)
+        addLog("Using \(useVenv ? "venv" : "system") Python", type: .info)
         addLog("Python: \(pythonPath)", type: .info)
         addLog("Script: \(scriptPath)", type: .info)
         
