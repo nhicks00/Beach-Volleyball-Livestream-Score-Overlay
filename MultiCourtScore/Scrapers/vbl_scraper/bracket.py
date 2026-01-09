@@ -279,7 +279,8 @@ class BracketScraper(VBLScraperBase):
                 match.team1 = teams[0][1]
                 
             # Fallback patterns: Look for descriptive placeholders like "Match X Winner" or "Winner Match X"
-            if not match.team1 or match.team1.lower() in ["team a", "team b", "tbd"]:
+            # Only override if we got actual "TBD" or empty string
+            if not match.team1 or match.team1.strip().upper() == "TBD" or match.team1.strip() == "":
                 full_text = await overlay.text_content() or ""
                 # Look for "Match X Winner" or "Winner of Match X"
                 placeholders = re.findall(r'((?:Match\s+\d+|Winner|Loser)(?:\s+of)?\s+(?:Match\s+\d+|Winner|Loser)?)', full_text, re.I)
@@ -288,6 +289,7 @@ class BracketScraper(VBLScraperBase):
                     valid = [p.strip() for p in placeholders if len(p.strip()) > 5]
                     if len(valid) >= 2:
                         match.team1 = valid[0]
+
                         match.team2 = valid[1]
                     elif len(valid) == 1:
                         # If we only found one, and team1 was generic, assign it to team1
