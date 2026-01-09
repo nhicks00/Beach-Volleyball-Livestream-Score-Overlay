@@ -680,39 +680,53 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
 /* Social Bar and Next Up Badge styles when inside .bug */
 .bug .socialbar, .bug .next-badge {
-  position: absolute; /* Position absolutely within the .bug container */
-  top: 100%; /* Position below the main scoreboard content */
-  margin-top: 10px; /* Space between main scoreboard and these elements */
+  position: absolute;
+  top: 100%; /* Below scoreboard */
+  margin-top: -8px; /* Slight overlap/tuck to look attached */
   background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
-  border-radius: 12px;
   border: 1px solid rgba(255,200,0,.35);
-  box-shadow: 0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
-  padding: 8px 16px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.5);
+  padding: 8px 20px;
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 1; /* Ensure they are above other elements if needed */
+  z-index: 0; /* Behind the scoreboard slightly for the tucked look */
+  border-radius: 0 0 12px 12px; /* Rounded buttons */
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .bug .socialbar {
-  left: 0; /* Position social bar to the left */
-  transform: translateX(-100%); /* Move it fully to the left, outside the bug's width */
-  border-top-right-radius: 0; /* Adjust border radius for "dangling" effect */
-  border-bottom-right-radius: 0;
+  left: 20px; /* Aligned with left edge/padding */
+  transform: none;
+  border-radius: 0 0 15px 15px; /* Tapered look */
 }
 
 .bug .next-badge {
-  right: 0; /* Position next badge to the right */
-  transform: translateX(100%); /* Move it fully to the right, outside the bug's width */
-  border-top-left-radius: 0; /* Adjust border radius for "dangling" effect */
-  border-bottom-left-radius: 0;
+  right: 20px; /* Aligned with right edge/padding */
+  transform: none;
+  border-radius: 0 0 15px 15px; /* Tapered look */
 }
 
-/* Adjust visibility/animation for these sub-bubbles */
-.bug.hidden .socialbar, .bug.hidden .next-badge {
-  opacity: 0;
-  transform: translateY(-10px); /* Slide up slightly when hidden */
+/* Centering Fix for Main Score */
+.main-score {
+  display: grid;
+  grid-template-columns: 1fr 30px 1fr; /* Tighter colon */
+  align-items: center;
+  width: 100%;
+}
+.score-num {
+  font-size: 64px; /* Force large size */
+  font-weight: 900;
+  letter-spacing: -2px;
+  color: var(--text);
+  line-height: 1;
+}
+.score-colon {
+  font-size: 52px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  line-height: 1;
+  transform: translateY(-4px); /* Visual optical correction */
 }
 
 /* Social Bar specific styles */
@@ -817,10 +831,6 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
         <span class="next-label">Next:</span>
         <span id="next-teams" class="next-teams">TBD vs TBD</span>
       </div>
-
-      <!-- Edge-positioned seeds -->
-      <span id="seed1-edge" class="seed-edge hidden">#1</span>
-      <span id="seed2-edge" class="seed-edge hidden">#2</span>
     </div>
 
     <div id="setsline" class="setsline"></div>
