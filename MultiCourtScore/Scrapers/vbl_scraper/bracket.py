@@ -188,18 +188,31 @@ class BracketScraper(VBLScraperBase):
             # Wait for overlay with shorter timeout
             try:
                 await self.page.wait_for_selector('div.v-overlay-container', timeout=3000)
-                overlay = self.page.locator('div.v-overlay-container').first
                 
-                if not await overlay.is_visible():
-                    logger.warning(f"Match {index}: Overlay not visible after click")
-                    return match
+                # Find the overlay that contains a card (not tooltips)
+                # Look for an overlay with v-card inside it
+                all_overlays = await self.page.locator('div.v-overlay-container').all()
+                overlay = None
                 
-                # Extract data from card
-                match = await self._extract_card_data(overlay, match)
+                for ov in all_overlays:
+                    # Check if this overlay contains a v-card
+                    card_count = await ov.locator('div.v-card').count()
+                    if card_count > 0 and await ov.is_visible():
+                        overlay = ov
+                        logger.debug(f"Found card overlay ({card_count} cards)")
+                        break
                 
-                # Extract API URL
-                api_url = await self._extract_api_url()
-                match.api_url = api_url
+                if not overlay:
+                    logger.warning(f"Match {index}: No card overlay found")
+                    logger.info(f"Match {index}: Attempting direct extraction from container...")
+                    match = await self._extract_from_container(container, match)
+                else:
+                    # Extract data from card
+                    match = await self._extract_card_data(overlay, match)
+                    
+                    # Extract API URL
+                    api_url = await self._extract_api_url()
+                    match.api_url = api_url
                 
             except Exception as overlay_error:
                 logger.warning(f"Match {index}: Failed to open overlay - {type(overlay_error).__name__}: {overlay_error}")
@@ -211,6 +224,8 @@ class BracketScraper(VBLScraperBase):
             logger.warning(f"Match {index}: Error processing - {type(e).__name__}: {e}")
         
         return match
+
+
     
     async def _extract_card_data(self, overlay, match: VBLMatch) -> VBLMatch:
         """Extract match info from the card overlay using specific selectors"""
@@ -254,6 +269,13 @@ class BracketScraper(VBLScraperBase):
             
             name_cells = await overlay.locator('td.clickable').all()
             seed_cells = await overlay.locator('td.d-flex.align-center.justify-center').all()
+            
+            logger.debug(f"Found {len(name_cells)} name cells and {len(seed_cells)} seed cells")
+            
+            # If no cells found, dump overlay HTML for debugging
+            if len(name_cells) == 0:
+                overlay_html = await overlay.inner_html()
+                logger.debug(f"Overlay HTML (first 500 chars): {overlay_html[:500]}")
             
             teams = []
             
@@ -322,25 +344,23 @@ class BracketScraper(VBLScraperBase):
             text_content = await container.text_content() or ""
             logger.debug(f"Container text: {text_content[:200]}")
             
-            # Try to extract team names
-            # Look for text elements that might contain team names
-            team_elements = await container.locator('div, span').all()
-            potential_teams = []
+            # Try to extract team names using regex pattern
+            # Look for "Name / Name" pattern (team pairs)
+            team_pattern = r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*/\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+            team_matches = re.findall(team_pattern, text_content)
             
-            for elem in team_elements:
-                text = (await elem.text_content() or "").strip()
-                # Filter out empty, very short, or common non-team text
-                if text and len(text) > 3 and text not in ["Court", "AM", "PM", "Ref:", "Match"]:
-                    # Check if it looks like a team name (contains letters and possibly /)
-                    if any(c.isalpha() for c in text) and "/" in text:
-                        potential_teams.append(text)
-            
-            # Assign first two unique team names
-            unique_teams = list(dict.fromkeys(potential_teams))  # Remove duplicates while preserving order
-            if len(unique_teams) >= 2:
-                match.team1 = unique_teams[0]
-                match.team2 = unique_teams[1]
+            if len(team_matches) >= 2:
+                # Each match is a tuple of (firstname, lastname) for one player
+                # Team 1: match[0] + match[1]
+                # Team 2: match[2] + match[3]
+                match.team1 = f"{team_matches[0][0]} / {team_matches[0][1]}"
+                match.team2 = f"{team_matches[1][0]} / {team_matches[1][1]}"
+                
+                # Clean up common suffixes
+                match.team2 = re.sub(r'\s+Ref.*$', '', match.team2)
+                
                 logger.info(f"Extracted teams: {match.team1} vs {match.team2}")
+
             
             # Extract time (look for patterns like "9:00AM", "10:30 AM")
             time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM))', text_content, re.IGNORECASE)
@@ -348,8 +368,8 @@ class BracketScraper(VBLScraperBase):
                 match.start_time = time_match.group(1).replace(" ", "")
                 logger.info(f"Extracted time: {match.start_time}")
             
-            # Extract court number
-            court_match = re.search(r'Court[:\s]*(\d+|[A-Z0-9]+)', text_content, re.IGNORECASE)
+            # Extract court number - look for single digit after "Court:"
+            court_match = re.search(r'Court[:\s]*(\d)', text_content, re.IGNORECASE)
             if court_match:
                 match.court = court_match.group(1)
                 logger.info(f"Extracted court: {match.court}")
