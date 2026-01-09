@@ -1328,8 +1328,26 @@ function applyData(d){
   const nextTeams = document.getElementById('next-teams');
   const nextHeader = document.getElementById('next-header');
   
-  // Hide the entire 'Next' badge if there's no next match
-  if (!d.nextMatch || d.nextMatch.trim() === '' || d.nextMatch === 'TBD vs TBD') {
+  // Check if we should show Next Match info
+  // Rule: Show ONLY if match is over OR between sets (set finished or set start 0-0)
+  const setsToWin = d.setsToWin || 2;
+  const matchEnded = checkMatchEnd(d.setHistory, setsToWin);
+  
+  // Use points per set logic to detect if current set is "finished" in the eyes of the operator
+  // VBL usually holds the final score (e.g. 21-15) until they create the next set
+  const pps = d.pointsPerSet || 21;
+  const cap = d.pointCap || null;
+  const setJustFinished = isSetComplete(score1, score2, pps, cap);
+  
+  // Also waiting for next set if score is 0-0 but it's set 2 or 3
+  const waitingForNextSet = (setNum > 1 && isZeroZero(score1, score2));
+  
+  // Logic: Show if (Match Ended) OR (Between Sets)
+  const shouldShowNext = (matchEnded || setJustFinished || waitingForNextSet) && 
+                         (d.nextMatch && d.nextMatch.trim() !== '');
+  
+  // Hide the entire 'Next' badge if logic dictates, OR if empty string
+  if (!shouldShowNext) {
     if (nextHeader) {
       nextHeader.style.opacity = '0';
       setTimeout(() => { nextHeader.style.display = 'none'; }, 300);
@@ -1360,159 +1378,12 @@ function applyData(d){
              <div class="next-team-line">${t2}</div>
            `;
          } else {
-           // No 'vs' found, just show the line
+           // No 'vs' found, just show the line (e.g. "Match 2 Winner")
            nextTeams.innerHTML = `<div class="next-team-line">${abbreviateName(raw, 80)}</div>`;
          }
       }
     }
   }
-  
-  // Debug: Log what we're about to update
-  console.log('[Overlay] Updating team names:', { name1, name2, team1: d.team1, team2: d.team2 });
-  
-  // Update scorebug team names
-  applyText(document.getElementById('t1'), name1, 'fade');
-  applyText(document.getElementById('t2'), name2, 'fade');
-  
-  // Update prematch bar team names
-  const els = getOverlayElements();
-  if (els.pmT1) els.pmT1.textContent = name1;
-  if (els.pmT2) els.pmT2.textContent = name2;
-  
-  // Seeds - update seed badges
-  // Seeds - update seed labels (now below name)
-  const seed1Label = document.getElementById('seed1-label');
-  const seed2Label = document.getElementById('seed2-label');
-  const hasSeed1 = d.seed1 && d.seed1.toString().trim() !== '';
-  const hasSeed2 = d.seed2 && d.seed2.toString().trim() !== '';
-  
-  if (seed1Label) {
-    if (hasSeed1) {
-      seed1Label.textContent = `SEED ${d.seed1}`;
-      seed1Label.style.visibility = 'visible';
-    } else {
-      seed1Label.style.visibility = 'hidden';
-    }
-  }
-  if (seed2Label) {
-    if (hasSeed2) {
-      seed2Label.textContent = `SEED ${d.seed2}`;
-      seed2Label.style.visibility = 'visible';
-    } else {
-      seed2Label.style.visibility = 'hidden';
-    }
-  }
-  
-  // Set Count - update sets won
-  const sets1El = document.getElementById('sets1');
-  const sets2El = document.getElementById('sets2');
-  if (sets1El) sets1El.textContent = d.setsA || 0;
-  if (sets2El) sets2El.textContent = d.setsB || 0;
-  
-  // Track current teams and detect match changes
-  const matchKey = d.team1 + '|' + d.team2;
-  const isNewMatch = matchKey !== lastMatchKey && lastMatchKey !== "";
-  
-  if (isNewMatch && overlayState === 'live') {
-    // Trigger slide-off animation for old names
-    const scorebug = document.getElementById('scorebug');
-    if (scorebug) {
-      scorebug.classList.add('match-change');
-      
-      // After slide-out completes, update content and slide in
-      setTimeout(() => {
-        scorebug.classList.remove('match-change');
-        
-        // Now update the actual text content
-        applyText(document.getElementById('t1'), name1);
-        applyText(document.getElementById('t2'), name2);
-        applyText(document.getElementById('sc1'), score1);
-        applyText(document.getElementById('sc2'), score2);
-        
-        // Trigger slide-in animation
-        scorebug.classList.add('match-reveal');
-        setTimeout(() => {
-          scorebug.classList.remove('match-reveal');
-        }, 500);
-      }, 450);
-    }
-    
-    lastMatchKey = matchKey;
-    currentTeam1 = d.team1;
-    currentTeam2 = d.team2;
-    // Animation handles updates, so we skip the normal update below
-  } else {
-      // Normal update path
-      if (lastMatchKey === "") {
-        lastMatchKey = matchKey;
-        currentTeam1 = d.team1;
-        currentTeam2 = d.team2;
-      }
-    
-      // Scores (already handled above in animation path)
-      applyText(document.getElementById('sc1'), score1, 'flip');
-      applyText(document.getElementById('sc2'), score2, 'flip');
-  }
-
-  // Set History Drawer - REMOVED logic
-  // const pointsPerSet = d.pointsPerSet || 21;
-  // const pointCap = d.pointCap || null;
-  // buildSetChips(d.setHistory, pointsPerSet, pointCap, score1, score2);
-  
-  // ==================== STATE MACHINE LOGIC ====================
-  
-  const timeoutBanner = document.getElementById('timeout-banner');
-
-  // First load: detect if joining mid-match
-  if (isFirstLoad) {
-    isFirstLoad = false;
-    if (!isZero) {
-      console.log('[Overlay] Mid-match join detected, showing scoreboard');
-      transitionToLive(false); 
-    } else {
-      console.log('[Overlay] Starting in prematch mode (0-0)');
-      if (els.scorebug) els.scorebug.style.display = 'none';
-      if (els.prematch) els.prematch.classList.remove('hidden');
-    }
-  }
-  
-  // Handle 0-0 states
-  if (isZero) {
-    if (setNum === 1) {
-      // Revert to prematch if score is reset to 0-0 in Set 1
-      if (overlayState === 'live') {
-        transitionToPrematch(true);
-      }
-      if (timeoutBanner) timeoutBanner.style.display = 'none';
-    } else {
-      // In later sets, show Timeout banner if score is 0-0
-      if (timeoutBanner) {
-        timeoutBanner.textContent = `Set ${setNum} Timeout`;
-        timeoutBanner.style.display = 'block';
-      }
-    }
-  } else {
-    // Score is NOT 0-0: Hide timeout banner and ensure we are in live mode
-    if (timeoutBanner) timeoutBanner.style.display = 'none';
-    
-    if (overlayState === 'prematch') {
-      console.log('[Overlay] Point scored! Transitioning to live');
-      transitionToLive(true);
-    }
-  }
-  
-  // In live mode: check for match end
-  if (overlayState === 'live') {
-    const setsToWin = d.setsToWin || 2;
-    if (checkMatchEnd(d.setHistory, setsToWin)) {
-      const nextTeam1 = d.nextTeam1 || 'TBD';
-      const nextTeam2 = d.nextTeam2 || 'TBD';
-      console.log('[Overlay] Match ended, transitioning to postmatch');
-      transitionToPostmatch(nextTeam1, nextTeam2);
-    }
-  }
-  
-  // ==================== END STATE MACHINE ====================
   
   // Serve indicator - show on left or right
   const srv = (d.serve||"").toLowerCase();
