@@ -757,36 +757,37 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Centering Fix for Main Score */
 .main-score {
   display: grid;
-  grid-template-columns: 1fr 20px 1fr; /* Tighter colon space */
+  grid-template-columns: 1fr 26px 1fr; /* Slightly wider center for spacing */
   align-items: center;
   width: 100%;
 }
 .score-num {
-  font-size: 42px; /* Reduced from 48px */
+  font-size: 42px;
   font-weight: 900;
   letter-spacing: -2px;
   color: var(--text);
-  line-height: 0.9; /* Tight line height */
+  line-height: 1; /* Reset to 1 for better baseline alignment */
+  padding-bottom: 2px; /* Visual balance */
 }
 .score-colon {
-  font-size: 36px; /* Reduced from 40px */
+  font-size: 36px;
   font-weight: 700;
   color: rgba(255,255,255,0.5);
-  line-height: 0.9;
-  transform: translateY(-2px); 
+  line-height: 1;
+  transform: translateY(2px); /* visual correction: move DOWN to center */
 }
 
 /* Set Count - Small Below Score */
 .set-count {
   display: grid;
-  grid-template-columns: 1fr 14px 1fr; /* Fixed width for colon */
+  grid-template-columns: 1fr 16px 1fr; /* Fixed width for colon */
   align-items: center;
   width: 100%;
   opacity: 0.8;
-  margin-top: 2px; /* Slight separation from score */
+  margin-top: 0px; /* Tight against score */
 }
 .set-count span {
-  font-size: 11px; /* Reduced from 12px */
+  font-size: 11px;
   font-weight: 700;
   color: var(--text);
   line-height: 1;
