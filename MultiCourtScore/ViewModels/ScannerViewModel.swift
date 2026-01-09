@@ -321,6 +321,14 @@ class ScannerViewModel: ObservableObject {
                 let outputFile = URL(fileURLWithPath: workingDir)
                     .appendingPathComponent("scan_results_\(UUID().uuidString.prefix(8)).json")
                 
+                // Validate paths before running
+                Task { @MainActor in
+                    self.addLog("Validating paths...", type: .info)
+                    self.addLog("Python exists: \(FileManager.default.fileExists(atPath: pythonPath))", type: .info)
+                    self.addLog("Script exists: \(FileManager.default.fileExists(atPath: scriptPath))", type: .info)
+                    self.addLog("Working dir exists: \(FileManager.default.fileExists(atPath: workingDir))", type: .info)
+                }
+                
                 process.executableURL = URL(fileURLWithPath: pythonPath)
                 process.arguments = ["-m", "vbl_scraper.cli", url, "-o", outputFile.path]
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
@@ -334,6 +342,7 @@ class ScannerViewModel: ObservableObject {
                 
                 Task { @MainActor in
                     self.currentProcess = process
+                    self.addLog("Launching: \(pythonPath) -m vbl_scraper.cli \(url) -o \(outputFile.path)", type: .info)
                 }
                 
                 do {
@@ -384,7 +393,8 @@ class ScannerViewModel: ObservableObject {
                     }
                 } catch {
                     Task { @MainActor in
-                        self.addLog("Scan error: \(error.localizedDescription)", type: .error)
+                        self.addLog("Process launch error: \(error.localizedDescription)", type: .error)
+                        self.addLog("Error details: \(error)", type: .error)
                     }
                     continuation.resume(returning: [])
                 }
