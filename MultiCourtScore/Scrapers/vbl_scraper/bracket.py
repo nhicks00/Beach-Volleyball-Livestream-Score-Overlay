@@ -431,7 +431,8 @@ class BracketScraper(VBLScraperBase):
                 return None
             
             # Wait for API URL to appear
-            await asyncio.sleep(1.0)
+            # Increased wait time to 3.0s to ensure overlay loads
+            await asyncio.sleep(3.0)
             
             # Method 1: Look for API URL in page content
             content = await self.page.content()
@@ -445,6 +446,7 @@ class BracketScraper(VBLScraperBase):
                 if matches:
                     # Clean up the URL (remove any trailing junk)
                     url = matches[0].split()[0].split('<')[0].strip()
+                    logger.info(f"FOUND API URL (content): {url}")
                     return url
             
             # Method 2: Look for links
@@ -453,6 +455,7 @@ class BracketScraper(VBLScraperBase):
                 if await link.is_visible():
                     href = await link.get_attribute('href')
                     if href and 'vmix' in href:
+                        logger.info(f"FOUND API URL (link): {href}")
                         return href
             
             # Method 3: Check inputs
@@ -461,10 +464,12 @@ class BracketScraper(VBLScraperBase):
                 try:
                     val = await inp.get_attribute('value') or ""
                     if 'api.volleyballlife.com' in val:
+                        logger.info(f"FOUND API URL (input): {val}")
                         return val
                 except Exception:
                     continue
             
+            logger.warning("FAILED to find API URL after clicking vMix button")
             return None
             
         except Exception as e:
