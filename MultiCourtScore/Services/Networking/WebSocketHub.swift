@@ -1073,6 +1073,7 @@ function buildSetChips(lines, pointsPerSet = 21, pointCap = null, currentScore1 
 
 /* renderer */
 function applyData(d){
+  console.log('[Overlay] applyData called with:', JSON.stringify(d));
   if(!d) return;
   
   // Safety check: ensure we have at least team names before updating
