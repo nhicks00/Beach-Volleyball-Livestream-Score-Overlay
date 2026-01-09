@@ -10,15 +10,13 @@ import SwiftUI
 enum ScanWorkflowStep: Int, CaseIterable {
     case enterURLs = 0
     case scanResults = 1
-    case mapCourts = 2
-    case assign = 3
+    case assign = 2  // Combined: map courts to cameras + assign matches
     
     var title: String {
         switch self {
         case .enterURLs: return "Enter URLs"
         case .scanResults: return "Review Results"
-        case .mapCourts: return "Map Courts"
-        case .assign: return "Assign to Cameras"
+        case .assign: return "Assign Matches"
         }
     }
     
@@ -26,11 +24,11 @@ enum ScanWorkflowStep: Int, CaseIterable {
         switch self {
         case .enterURLs: return "link.badge.plus"
         case .scanResults: return "doc.text.magnifyingglass"
-        case .mapCourts: return "arrow.left.arrow.right"
         case .assign: return "arrow.triangle.branch"
         }
     }
 }
+
 
 struct ScanWorkflowView: View {
     @EnvironmentObject var appViewModel: AppViewModel
@@ -63,14 +61,8 @@ struct ScanWorkflowView: View {
                 case .scanResults:
                     ScanResultsStep(
                         viewModel: viewModel,
-                        onProceed: { advanceToMapCourts() },
-                        onBack: { currentStep = .enterURLs }
-                    )
-                case .mapCourts:
-                    CourtMappingStep(
-                        groupedByCourt: groupedByCourt,
                         onProceed: { advanceToAssign() },
-                        onBack: { currentStep = .scanResults }
+                        onBack: { currentStep = .enterURLs }
                     )
                 case .assign:
                     AssignmentStep(
@@ -79,10 +71,11 @@ struct ScanWorkflowView: View {
                         assignments: $matchAssignments,
                         onAutoAssign: autoAssignMatches,
                         onImport: importAndClose,
-                        onBack: { currentStep = .mapCourts }
+                        onBack: { currentStep = .scanResults }
                     )
                 }
             }
+
         }
         .frame(minWidth: 800, minHeight: 650)
         .background(AppColors.background)
@@ -100,16 +93,15 @@ struct ScanWorkflowView: View {
         currentStep = .scanResults
     }
     
-    private func advanceToMapCourts() {
-        // Update unmapped courts list
+    private func advanceToAssign() {
+        // Update unmapped courts list (moved from advanceToMapCourts)
         let allCourts = Array(groupedByCourt.keys)
         CourtMappingStore.shared.updateUnmappedCourts(from: allCourts)
-        currentStep = .mapCourts
-    }
-    
-    private func advanceToAssign() {
+        
         initializeAssignments()
         currentStep = .assign
+    }
+
     }
     
     // MARK: - Assignment Logic
