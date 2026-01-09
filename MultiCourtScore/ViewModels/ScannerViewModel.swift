@@ -262,21 +262,19 @@ class ScannerViewModel: ObservableObject {
         
         let basePath = getBasePath()
         
-        // Production scraper paths (current location)
-        let productionVenvPython = "\(basePath)/MultiCourtScore/Scrapers/venv/bin/python3"
-        let productionScriptPath = "\(basePath)/MultiCourtScore/Scrapers/vbl_scraper/cli.py"
-        let productionWorkingDir = "\(basePath)/MultiCourtScore/Scrapers"
+        // Venv is at project root (NOT in Scrapers folder - that causes Xcode build errors)
+        let venvPython = "\(basePath)/scraper_venv/bin/python3"
+        let scriptPath = "\(basePath)/MultiCourtScore/Scrapers/vbl_scraper/cli.py"
+        let workingDir = "\(basePath)/MultiCourtScore/Scrapers"
         
         // Fallback to system Python if venv doesn't exist
         let systemPython = "/usr/bin/python3"
         
         // Determine which Python to use
-        let useVenv = FileManager.default.fileExists(atPath: productionVenvPython) &&
-                      FileManager.default.fileExists(atPath: productionScriptPath)
+        let useVenv = FileManager.default.fileExists(atPath: venvPython) &&
+                      FileManager.default.fileExists(atPath: scriptPath)
         
-        let pythonPath = useVenv ? productionVenvPython : systemPython
-        let scriptPath = productionScriptPath
-        let workingDir = productionWorkingDir
+        let pythonPath = useVenv ? venvPython : systemPython
         
         addLog("Using \(useVenv ? "venv" : "system") Python", type: .info)
         addLog("Python: \(pythonPath)", type: .info)

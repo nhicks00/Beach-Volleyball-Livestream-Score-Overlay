@@ -29,4 +29,4 @@ venv/
 # Misc
 .idea/
 .vscode/
-MultiCourtScore/Scrapers/venv/
+scraper_venv/
