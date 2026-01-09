@@ -4,17 +4,17 @@
   "results": [
     {
       "url": "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
-      "timestamp": "2026-01-09T08:45:35.655714",
+      "timestamp": "2026-01-09T08:38:44.723750",
       "total_matches": 3,
       "matches": [
         {
           "index": 0,
           "match_number": null,
-          "team1": "Mota / Strause",
-          "team2": "Black / Wenger  Ref",
+          "team1": "Semifinals 9:00 AM Court: 11 Mota / Strause4 Black / Wenger  Ref: Hicks / Malone",
+          "team2": "1 Mota / Strause4 Black / Wenger",
           "team1_seed": null,
           "team2_seed": null,
-          "court": "1",
+          "court": "11",
           "startTime": "9:00AM",
           "api_url": null,
           "match_type": null,

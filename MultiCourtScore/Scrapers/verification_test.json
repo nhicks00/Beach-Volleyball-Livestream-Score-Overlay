@@ -4,18 +4,18 @@
   "results": [
     {
       "url": "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
-      "timestamp": "2026-01-09T08:45:35.655714",
+      "timestamp": "2026-01-09T08:10:48.018353",
       "total_matches": 3,
       "matches": [
         {
           "index": 0,
           "match_number": null,
-          "team1": "Mota / Strause",
-          "team2": "Black / Wenger  Ref",
+          "team1": null,
+          "team2": null,
           "team1_seed": null,
           "team2_seed": null,
-          "court": "1",
-          "startTime": "9:00AM",
+          "court": null,
+          "startTime": null,
           "api_url": null,
           "match_type": null,
           "type_detail": null,
