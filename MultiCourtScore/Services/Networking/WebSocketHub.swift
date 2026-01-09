@@ -1090,7 +1090,7 @@ function applyData(d){
   const setNum = d.setNumber || 1;
 
   // Names - ALWAYS show last names only as requested
-  // const useAbbr = !isZero || setNum > 1; // Old logic
+  const useAbbr = true;
   const name1 = abbreviateName(cleanName(d.team1)) || 'Team 1';
   const name2 = abbreviateName(cleanName(d.team2)) || 'Team 2';
   
