@@ -350,12 +350,22 @@ class ScannerViewModel: ObservableObject {
                     self.addLog("Launching: \(pythonPath) -m vbl_scraper.cli \(url) -o \(outputFile.path)", type: .info)
                 }
                 
+                // Synchronous validation before launching
+                print("📍 Python path: \(pythonPath)")
+                print("📍 Python exists: \(FileManager.default.fileExists(atPath: pythonPath))")
+                print("📍 Script path: \(scriptPath)")
+                print("📍 Script exists: \(FileManager.default.fileExists(atPath: scriptPath))")
+                print("📍 Working dir: \(workingDir)")
+                print("📍 Output file: \(outputFile.path)")
+                print("📍 About to call process.run()...")
+                
                 do {
                     Task { @MainActor in
                         self.addLog("Running Python process...", type: .info)
                     }
                     
                     try process.run()
+                    print("✅ process.run() succeeded")
                     process.waitUntilExit()
                     
                     let exitCode = process.terminationStatus
