@@ -298,6 +298,26 @@ class BracketScraper(VBLScraperBase):
                         seed = seed_text
                 
                 teams.append((seed, name))
+
+            # Score Extraction
+            # Scores are typically in TDs that contain only digits
+            # usually after the name cell in the same row
+            score_cells = await overlay.locator('td.text-center').all()
+            scores = []
+            
+            # Simple heuristic: look for cells with just numbers
+            for cell in score_cells:
+                text = await cell.text_content() or ""
+                text = text.strip()
+                if text.isdigit():
+                    scores.append(int(text))
+            
+            # If we found at least 2 scores, assume they correspond to team 1 and team 2
+            if len(scores) >= 2:
+                # Assuming top row is team 1, bottom row is team 2
+                match.team1_score = scores[0]
+                match.team2_score = scores[1]
+                logger.debug(f"Extracted scores: {match.team1_score} - {match.team2_score}")
             
             # Assign to match object
             if len(teams) >= 2:
