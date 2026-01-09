@@ -407,15 +407,25 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   overflow: visible; /* Allow seeds to show outside */
 }
 
-/* row layout - centered names with score */
+/* row layout - symmetrical with centered content */
 .row{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:12px 18px;
+  display:grid;
+  grid-template-columns: 1fr auto 1fr; /* Equal width columns for symmetry */
+  align-items:center;
+  padding:12px 24px; /* Increased horizontal padding for better spacing */
   position:relative;
+  gap: 16px; /* Consistent spacing between elements */
 }
 .row.serving{ background: linear-gradient(90deg, rgba(255,215,0,0.1), transparent); }
 
-.info{ display:flex; flex-direction:column; justify-content:center; }
+.info{ 
+  display:flex; 
+  flex-direction:column; 
+  justify-content:center;
+  align-items:center; /* Center align content */
+  text-align:center; /* Center text */
+}
+
 .name{ 
   font-size:clamp(16px, 2.5vw, 24px); 
   font-weight:900; 
@@ -424,11 +434,14 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   text-transform:uppercase; 
   display:flex; 
   align-items:center; 
+  justify-content:center; /* Center the name content */
   gap:8px; 
   white-space:nowrap; 
   overflow:hidden; 
   text-overflow:ellipsis; 
-  max-width:280px; /* Reduced from 320px to ensure space for score */
+  max-width:280px;
+  width:100%; /* Take full width of container */
+  text-align:center; /* Center text alignment */
 }
 
 /* Edge-positioned seeds - positioned at the very edges of the scoreboard */
@@ -465,8 +478,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   font-size:32px; 
   font-weight:800; 
   letter-spacing:-1px; 
-  margin-left:auto; 
-  padding-left:32px; /* Increased from 16px for more separation */
+  text-align:center; /* Center score in grid column */
   min-width:50px; /* Ensure score always has space */
 }
 
