@@ -1423,16 +1423,12 @@ async function tickLabel(){
 }
 
 // next (with label) - Updates every 5 sec to check for placeholder changes
+// function tickNext removed/cleaned
 async function tickNext(){
   try{
-    const o = await fetchJSON(SRC); 
-    // We reuse main loop for rendering, but this ensures dedicated polling logic if separated later
+    // const o = await fetchJSON(SRC); 
+    // Logic moved to main tick loop
   }catch(_){} finally{ setTimeout(tickNext, 5000); }
-}
-    if(o && o.nextMatch) {
-        applyText(document.getElementById('next'), `Next: ${o.nextMatch}`, 'fade');
-    }
-  }catch(_){} finally{ setTimeout(tickNext, Math.max(POLL_MS*2, 1500)); }
 }
 
 tick();
