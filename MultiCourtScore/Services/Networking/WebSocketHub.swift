@@ -678,11 +678,12 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .bug.reveal { animation: slideDown 0.5s ease-out; }
 @media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
 
-/* Social Bar and Next Up Badge styles when inside .bug */
-.bug .socialbar, .bug .next-badge {
+/* Social Bar specific styles - remains bottom left */
+.bug .socialbar {
   position: absolute;
   top: 100%; /* Below scoreboard */
-  margin-top: 8px; /* Separated from scoreboard - reduced slightly to match slim board */
+  margin-top: 8px; 
+  left: 20px;
   background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
   border: 1px solid rgba(255,200,0,.35);
   box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
@@ -697,21 +698,38 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   min-width: 200px;
 }
 
-.bug .socialbar {
-  left: 20px; /* Aligned with left edge/padding */
-  transform: none;
-}
-
+/* Next Up Badge - moved to RIGHT SIDE CAR */
 .bug .next-badge {
-  right: 20px; /* Aligned with right edge/padding */
-  transform: none;
-  max-width: 320px; /* Prevent it from getting too wide */
+  position: absolute;
+  left: 100%; /* Push to the right side */
+  top: 50%;   /* Vertically center */
+  transform: translateY(-50%);
+  margin-left: 15px; /* Gap from scoreboard */
+  
+  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
+  border: 1px solid rgba(255,200,0,.35);
+  box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+  padding: 8px 16px;
+  
+  display: flex;
+  align-items: center; /* Center label and block */
+  justify-content: flex-start;
+  gap: 12px;
+  z-index: 1; 
+  border-radius: 12px; /* Less rounded for side block? Or keep oval? User said "in the bubble that it has". Let's keep it rounded but maybe rectangular-ish for height */
+  border-radius: 20px; 
+  
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  min-width: 200px;
+  max-width: 300px;
 }
-
-/* Adjust visibility/animation for these sub-bubbles */
 .bug.hidden .socialbar, .bug.hidden .next-badge {
   opacity: 0;
-  transform: translateY(-10px); /* Slide up slightly when hidden */
+  transform: translateY(-10px); /* Just fade out for side */
+}
+.bug.hidden .next-badge {
+  transform: translateY(-50%) translateX(-10px); /* Slide in from left when hiding? or fade */
+  opacity: 0;
 }
 
 /* bug - main scoreboard with center-focused layout */
@@ -813,22 +831,40 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 
 /* Next Up Badge specific styles */
 .next-badge {
-  font-size: 14px;
+  /* Layout is set in .bug .next-badge above */
+  font-family: inherit;
+}
+.next-badge .next-label {
+  font-size: 11px;
   font-weight: 800;
   color: var(--gold1);
   text-transform: uppercase;
+  letter-spacing: 0.5px;
   white-space: nowrap;
-  overflow: hidden; /* Truncate if too long */
 }
-.next-badge .next-label {
-  color: var(--muted);
-  font-size: 11px;
-  margin-right: 6px;
-  flex-shrink: 0; /* Keep label visible */
+.next-badge .next-info-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center the stack */
+  justify-content: center;
+  line-height: 1.1;
 }
-.next-badge .next-teams {
+.next-team-line {
+  font-size: 11px; /* Same font size as requested */
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 200px;
   overflow: hidden;
-  text-overflow: ellipsis; /* Ellipsis for long names */
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+.next-vs-line {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: lowercase;
+  font-style: italic;
+  margin: 1px 0; /* Tiny breathing room */
 }
 </style>
 </head>
@@ -906,9 +942,15 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
         <div class="handle">@BeachVolleyballMedia</div>
       </div>
   
-      <div id="next-header" class="next-badge">
-        <span class="next-label">Next:</span>
-        <span id="next-teams" class="next-teams">TBD vs TBD</span>
+      <!-- Next Match Info (Side Car) -->
+      <div id="next-header" class="next-badge" style="display:none; opacity:0;">
+         <div class="next-label">NEXT MATCH</div>
+         <div class="next-info-box" id="next-teams">
+            <!-- JS will inject: -->
+            <!-- <div class="next-team-line">Team A</div> -->
+            <!-- <div class="next-vs-line">vs</div> -->
+            <!-- <div class="next-team-line">Team B</div> -->
+         </div>
       </div>
     </div>
 
@@ -1253,15 +1295,25 @@ function applyData(d){
     
     if (nextTeams) {
       if (!useAbbr) {
-         // Spell everything out in prematch
-         applyText(nextTeams, d.nextMatch, 'fade');
+         // Fallback if needed
+         nextTeams.innerHTML = `<div class="next-team-line">${d.nextMatch}</div>`;
       } else {
-         // Abbreviate when live
-         const nextArr = d.nextMatch.split(/\s+vs\s+/);
-         if (nextArr.length === 2) {
-           applyText(nextTeams, abbreviateName(nextArr[0], 40) + ' vs ' + abbreviateName(nextArr[1], 40), 'fade');
+         // Split by 'vs' to stack them
+         // Clean strings first
+         const raw = d.nextMatch;
+         const split = raw.split(/\s+vs\.?\s+/i); // Handle 'vs' or 'vs.' case-insensitive
+         
+         if (split.length >= 2) {
+           const t1 = abbreviateName(split[0], 40);
+           const t2 = abbreviateName(split[1], 40);
+           nextTeams.innerHTML = `
+             <div class="next-team-line">${t1}</div>
+             <div class="next-vs-line">vs</div>
+             <div class="next-team-line">${t2}</div>
+           `;
          } else {
-           applyText(nextTeams, abbreviateName(d.nextMatch, 80), 'fade');
+           // No 'vs' found, just show the line
+           nextTeams.innerHTML = `<div class="next-team-line">${abbreviateName(raw, 80)}</div>`;
          }
       }
     }
