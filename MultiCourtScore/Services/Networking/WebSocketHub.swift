@@ -682,29 +682,27 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .bug .socialbar, .bug .next-badge {
   position: absolute;
   top: 100%; /* Below scoreboard */
-  margin-top: -8px; /* Slight overlap/tuck to look attached */
+  margin-top: 12px; /* Separated from scoreboard */
   background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
   border: 1px solid rgba(255,200,0,.35);
-  box-shadow: 0 10px 24px rgba(0,0,0,.5);
-  padding: 8px 20px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+  padding: 8px 16px;
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 0; /* Behind the scoreboard slightly for the tucked look */
-  border-radius: 0 0 12px 12px; /* Rounded buttons */
+  z-index: 1; 
+  border-radius: 999px; /* Fully rounded oval */
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 
 .bug .socialbar {
   left: 20px; /* Aligned with left edge/padding */
   transform: none;
-  border-radius: 0 0 15px 15px; /* Tapered look */
 }
 
 .bug .next-badge {
   right: 20px; /* Aligned with right edge/padding */
   transform: none;
-  border-radius: 0 0 15px 15px; /* Tapered look */
 }
 
 /* Centering Fix for Main Score */
