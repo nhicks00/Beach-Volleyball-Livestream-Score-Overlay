@@ -682,19 +682,19 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .bug .socialbar, .bug .next-badge {
   position: absolute;
   top: 100%; /* Below scoreboard */
-  margin-top: 10px; /* Separated from scoreboard */
+  margin-top: 8px; /* Separated from scoreboard - reduced slightly to match slim board */
   background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
   border: 1px solid rgba(255,200,0,.35);
   box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
-  padding: 6px 14px; /* Reduced padding */
+  padding: 6px 14px;
   display: flex;
   align-items: center;
-  justify-content: center; /* Center content for symmetry */
+  justify-content: center;
   gap: 8px;
   z-index: 1; 
-  border-radius: 999px; /* Fully rounded oval */
+  border-radius: 999px;
   transition: opacity 0.4s ease, transform 0.4s ease;
-  min-width: 200px; /* Slightly reduced min-width */
+  min-width: 200px;
 }
 
 .bug .socialbar {
@@ -714,34 +714,83 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   transform: translateY(-10px); /* Slide up slightly when hidden */
 }
 
+/* bug - main scoreboard with center-focused layout */
+.bug{
+  position:relative;
+  display:grid; 
+  grid-template-columns: 1fr auto 1fr; /* Equal sides, auto center */
+  align-items:center; 
+  padding: 2px 24px; /* Ultra-slim padding */
+  width: 900px; 
+  min-width: 900px;
+  max-width: 900px;
+  background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
+  border-radius:16px; /* Slightly tighter radius */
+  border:1px solid rgba(255,200,0,.35);
+  box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+  overflow: visible; 
+  gap: 16px; /* Reduced gap between columns */
+}
+
+/* Team Sections */
+.team-name {
+  font-size: 16px; /* Reduced from 18px */
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  color: var(--text);
+}
+
+/* Center Score Section */
+.score-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0px; /* Removed gap */
+}
+
 /* Centering Fix for Main Score */
 .main-score {
   display: grid;
-  grid-template-columns: 1fr 24px 1fr; /* Tighter colon space */
+  grid-template-columns: 1fr 20px 1fr; /* Tighter colon space */
   align-items: center;
   width: 100%;
 }
 .score-num {
-  font-size: 48px; /* Reduced from 64px */
+  font-size: 42px; /* Reduced from 48px */
   font-weight: 900;
   letter-spacing: -2px;
   color: var(--text);
-  line-height: 1;
+  line-height: 0.9; /* Tight line height */
 }
 .score-colon {
-  font-size: 40px; /* Reduced from 52px */
+  font-size: 36px; /* Reduced from 40px */
   font-weight: 700;
   color: rgba(255,255,255,0.5);
-  line-height: 1;
-  transform: translateY(-3px); /* Visual optical correction */
+  line-height: 0.9;
+  transform: translateY(-2px); 
 }
 
-/* Social Bar specific styles */
-.socialbar {
-  font-size: 12px; /* Reduced font */
+/* Set Count - Small Below Score */
+.set-count {
+  display: grid;
+  grid-template-columns: 1fr 14px 1fr; /* Fixed width for colon */
+  align-items: center;
+  width: 100%;
+  opacity: 0.8;
+  margin-top: 2px; /* Slight separation from score */
+}
+.set-count span {
+  font-size: 11px; /* Reduced from 12px */
   font-weight: 700;
-  color: var(--muted);
-  white-space: nowrap;
+  color: var(--text);
+  line-height: 1;
+}  white-space: nowrap;
 }
 .socialbar svg {
   vertical-align: middle;
