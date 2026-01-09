@@ -119,7 +119,8 @@ class ScannerViewModel: ObservableObject {
         var hasAPIURL: Bool { apiURL != nil && !apiURL!.isEmpty }
         
         enum CodingKeys: String, CodingKey {
-            case index, team1, team2, team1_seed, team2_seed, matchNumber, court, startTime, startDate
+            case index, team1, team2, team1_seed, team2_seed, court, startTime, startDate
+            case matchNumber = "match_number"
             case apiURL = "api_url"
             case matchType = "match_type"
             case typeDetail = "type_detail"
