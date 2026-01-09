@@ -230,6 +230,7 @@ class ScannerViewModel: ObservableObject {
         errorMessage = nil
         scanProgress = "Initializing scan..."
         
+        print("🚀 START SCAN CALLED - URLs: \(allURLs)")
         addLog("Starting VBL scan for \(allURLs.count) URL(s)", type: .info)
         
         Task {
@@ -255,6 +256,10 @@ class ScannerViewModel: ObservableObject {
     // MARK: - Private Methods
     
     private func performScan() async {
+        Task { @MainActor in
+            self.addLog("🔍 performScan() called", type: .info)
+        }
+        
         let basePath = getBasePath()
         
         // Production scraper paths (current location)
