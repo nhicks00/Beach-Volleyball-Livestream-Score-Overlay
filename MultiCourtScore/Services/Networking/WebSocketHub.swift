@@ -1138,7 +1138,6 @@ function applyData(d){
   const els = getOverlayElements();
   if (els.pmT1) els.pmT1.textContent = name1;
   if (els.pmT2) els.pmT2.textContent = name2;
-  }
   
   // Seeds - update seed badges
   const seed1Badge = document.getElementById('seed1-badge');
@@ -1200,18 +1199,19 @@ function applyData(d){
     lastMatchKey = matchKey;
     currentTeam1 = d.team1;
     currentTeam2 = d.team2;
-    return; // Skip normal text update since animation handles it
+    // Animation handles updates, so we skip the normal update below
+  } else {
+      // Normal update path
+      if (lastMatchKey === "") {
+        lastMatchKey = matchKey;
+        currentTeam1 = d.team1;
+        currentTeam2 = d.team2;
+      }
+    
+      // Scores (already handled above in animation path)
+      applyText(document.getElementById('sc1'), score1, 'flip');
+      applyText(document.getElementById('sc2'), score2, 'flip');
   }
-  
-  if (lastMatchKey === "") {
-    lastMatchKey = matchKey;
-    currentTeam1 = d.team1;
-    currentTeam2 = d.team2;
-  }
-
-  // Scores (already handled above)
-  applyText(document.getElementById('sc1'), score1, 'flip');
-  applyText(document.getElementById('sc2'), score2, 'flip');
 
   // Set History Drawer - pass pointsPerSet and current scores so we only show COMPLETED sets
   const pointsPerSet = d.pointsPerSet || 21;
