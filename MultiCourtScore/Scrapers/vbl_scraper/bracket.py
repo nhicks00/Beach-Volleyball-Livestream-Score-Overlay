@@ -181,25 +181,34 @@ class BracketScraper(VBLScraperBase):
         
         try:
             # Click to open overlay
+            logger.debug(f"Clicking match container {index}...")
             await container.click()
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             
-            # Wait for overlay
-            await self.page.wait_for_selector('div.v-overlay-container', timeout=5000)
-            overlay = self.page.locator('div.v-overlay-container').first
-            
-            if not await overlay.is_visible():
-                return None
-            
-            # Extract data from card
-            match = await self._extract_card_data(overlay, match)
-            
-            # Extract API URL
-            api_url = await self._extract_api_url()
-            match.api_url = api_url
+            # Wait for overlay with shorter timeout
+            try:
+                await self.page.wait_for_selector('div.v-overlay-container', timeout=3000)
+                overlay = self.page.locator('div.v-overlay-container').first
+                
+                if not await overlay.is_visible():
+                    logger.warning(f"Match {index}: Overlay not visible after click")
+                    return match
+                
+                # Extract data from card
+                match = await self._extract_card_data(overlay, match)
+                
+                # Extract API URL
+                api_url = await self._extract_api_url()
+                match.api_url = api_url
+                
+            except Exception as overlay_error:
+                logger.warning(f"Match {index}: Failed to open overlay - {type(overlay_error).__name__}: {overlay_error}")
+                # Try to extract data directly from container as fallback
+                logger.info(f"Match {index}: Attempting direct extraction from container...")
+                match = await self._extract_from_container(container, match)
             
         except Exception as e:
-            logger.debug(f"Error processing match {index}: {e}")
+            logger.warning(f"Match {index}: Error processing - {type(e).__name__}: {e}")
         
         return match
     
@@ -303,7 +312,55 @@ class BracketScraper(VBLScraperBase):
             
         return match
     
+    async def _extract_from_container(self, container, match: VBLMatch) -> VBLMatch:
+        """
+        Fallback: Extract data directly from match container when overlay doesn't open.
+        This handles matches that are displayed directly on the bracket without clickable overlays.
+        """
+        try:
+            # Get all text content from the container
+            text_content = await container.text_content() or ""
+            logger.debug(f"Container text: {text_content[:200]}")
+            
+            # Try to extract team names
+            # Look for text elements that might contain team names
+            team_elements = await container.locator('div, span').all()
+            potential_teams = []
+            
+            for elem in team_elements:
+                text = (await elem.text_content() or "").strip()
+                # Filter out empty, very short, or common non-team text
+                if text and len(text) > 3 and text not in ["Court", "AM", "PM", "Ref:", "Match"]:
+                    # Check if it looks like a team name (contains letters and possibly /)
+                    if any(c.isalpha() for c in text) and "/" in text:
+                        potential_teams.append(text)
+            
+            # Assign first two unique team names
+            unique_teams = list(dict.fromkeys(potential_teams))  # Remove duplicates while preserving order
+            if len(unique_teams) >= 2:
+                match.team1 = unique_teams[0]
+                match.team2 = unique_teams[1]
+                logger.info(f"Extracted teams: {match.team1} vs {match.team2}")
+            
+            # Extract time (look for patterns like "9:00AM", "10:30 AM")
+            time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM))', text_content, re.IGNORECASE)
+            if time_match:
+                match.start_time = time_match.group(1).replace(" ", "")
+                logger.info(f"Extracted time: {match.start_time}")
+            
+            # Extract court number
+            court_match = re.search(r'Court[:\s]*(\d+|[A-Z0-9]+)', text_content, re.IGNORECASE)
+            if court_match:
+                match.court = court_match.group(1)
+                logger.info(f"Extracted court: {match.court}")
+            
+        except Exception as e:
+            logger.warning(f"Error in fallback extraction: {e}")
+        
+        return match
+    
     async def _extract_api_url(self) -> Optional[str]:
+
         """Click vMix button and extract API URL"""
         try:
             # Find and click vMix button

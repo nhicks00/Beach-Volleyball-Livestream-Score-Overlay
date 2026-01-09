@@ -1,0 +1,69 @@
+{
+  "urls_scanned": 1,
+  "total_matches": 3,
+  "results": [
+    {
+      "url": "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+      "timestamp": "2026-01-09T08:04:12.033956",
+      "total_matches": 3,
+      "matches": [
+        {
+          "index": 0,
+          "match_number": null,
+          "team1": null,
+          "team2": null,
+          "team1_seed": null,
+          "team2_seed": null,
+          "court": null,
+          "startTime": null,
+          "api_url": null,
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap"
+        },
+        {
+          "index": 1,
+          "match_number": "2",
+          "team1": "Nathan Hicks / Reid Malone",
+          "team2": "Marvin Pacheco / Derek Toliver",
+          "team1_seed": "3",
+          "team2_seed": "2",
+          "court": "1",
+          "startTime": "9:30AM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325751/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap"
+        },
+        {
+          "index": 2,
+          "match_number": "3",
+          "team1": "Match 1 Winner",
+          "team2": "Match 2 Winner",
+          "team1_seed": null,
+          "team2_seed": null,
+          "court": "1",
+          "startTime": "10:00AM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325752/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap"
+        }
+      ],
+      "status": "success",
+      "error": null,
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    }
+  ],
+  "status": "success"
+}

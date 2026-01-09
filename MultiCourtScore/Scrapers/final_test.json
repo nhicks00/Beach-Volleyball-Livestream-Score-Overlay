@@ -1,0 +1,17 @@
+{
+  "urls_scanned": 1,
+  "total_matches": 0,
+  "results": [
+    {
+      "url": "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+      "timestamp": "2026-01-09T08:02:56.566155",
+      "total_matches": 0,
+      "matches": [],
+      "status": "error",
+      "error": "Login failed",
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    }
+  ],
+  "status": "partial"
+}
