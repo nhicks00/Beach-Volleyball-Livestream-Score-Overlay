@@ -77,6 +77,10 @@ class BracketScraper(VBLScraperBase):
                 result.error = "No matches found on page"
                 return result
             
+            # Extract match format info (applies to all matches in this bracket/pool)
+            match_format = await self.extract_match_format()
+            logger.info(f"Match format: {match_format.get('format_text', 'Not found')}")
+            
             # Process each match
             for i, container in enumerate(containers):
                 try:
@@ -86,10 +90,17 @@ class BracketScraper(VBLScraperBase):
                     match = await self._process_match(container, i)
                     
                     if match:
+                        # Apply format values to match
+                        match.sets_to_win = match_format['sets_to_win']
+                        match.points_per_set = match_format['points_per_set']
+                        match.point_cap = match_format['point_cap']
+                        match.format_text = match_format['format_text']
+                        
                         result.matches.append(match)
                         team_info = f"{match.team1} vs {match.team2}" if match.team1 else f"Match {i+1}"
                         api_status = "✓ API" if match.api_url else "✗ No API"
                         logger.info(f"  [{i+1}] {team_info} - {api_status}")
+
                     
                     # Close overlay and pause
                     await self._close_overlay()
