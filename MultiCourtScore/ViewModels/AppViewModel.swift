@@ -581,13 +581,18 @@ final class AppViewModel: ObservableObject {
         let t1 = array[0]
         let t2 = array[1]
         
-        // Extract team names - prioritize 'players' field which contains placeholder text like "Match 1 Winner"
-        // Then fall back to 'teamName', and only use generic fallback if both are empty
+        // Extract team names with fallback chain:
+        // 1. 'players' field (sometimes contains placeholder text)
+        // 2. 'teamName' field (actual team names when assigned)
+        // 3. currentMatch team names (preserves scraped placeholders like "Match 1 Winner")
+        // 4. "TBD" as final fallback
         let name1 = (t1["players"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
                     (t1["teamName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    currentMatch?.team1Name ??
                     "TBD"
         let name2 = (t2["players"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
                     (t2["teamName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty() ??
+                    currentMatch?.team2Name ??
                     "TBD"
         
         // Get format from match or use defaults
