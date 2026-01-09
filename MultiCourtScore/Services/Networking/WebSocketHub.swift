@@ -152,47 +152,55 @@ final class WebSocketHub {
                 guard let vm = hub.appViewModel,
                       let idStr = req.parameters.get("id"),
                       let courtId = Int(idStr),
-                      let court = vm.court(for: courtId),
-                      let snapshot = court.lastSnapshot
+                      let court = vm.court(for: courtId)
                 else {
-                    // Return empty structure if not found
+                    // Return empty structure if court not found
                     return try Self.json([
                         "team1": "", "team2": "", "score1": 0, "score2": 0,
                         "set": 1, "status": "Waiting",
                         "setsA": 0, "setsB": 0,
                         "seed1": "", "seed2": "",
-                        "setHistory": [] as [String]
+                        "setHistory": [] as [String],
+                        "nextMatch": "TBD"
                     ])
                 }
                 
+                // Get team names - prefer snapshot, fallback to MatchItem (from scanner)
+                let snapshot = court.lastSnapshot
+                let currentMatch = court.currentMatch
+                let team1 = snapshot?.team1Name.isEmpty == false ? snapshot!.team1Name : (currentMatch?.team1Name ?? "")
+                let team2 = snapshot?.team2Name.isEmpty == false ? snapshot!.team2Name : (currentMatch?.team2Name ?? "")
+                let seed1 = snapshot?.team1Seed ?? currentMatch?.team1Seed ?? ""
+                let seed2 = snapshot?.team2Seed ?? currentMatch?.team2Seed ?? ""
+                
                 // Build response
                 // Calculate current game score (from current/last set)
-                let currentGame = snapshot.setHistory.last
+                let currentGame = snapshot?.setHistory.last
                 let gameScore1 = currentGame?.team1Score ?? 0
                 let gameScore2 = currentGame?.team2Score ?? 0
                 
                 let data: [String: Any] = [
-                    "team1": snapshot.team1Name,
-                    "team2": snapshot.team2Name,
+                    "team1": team1,
+                    "team2": team2,
                     "score1": gameScore1,  // Current game score (what shows large)
                     "score2": gameScore2,  // Current game score (what shows large)
-                    "setsWon1": snapshot.team1Score,  // Sets won by team 1
-                    "setsWon2": snapshot.team2Score,  // Sets won by team 2
-                    "set": snapshot.setNumber,
-                    "status": snapshot.status,
-                    "setsA": snapshot.totalSetsWon.team1,
-                    "setsB": snapshot.totalSetsWon.team2,
-                    "serve": snapshot.serve ?? "none",
-                    "setHistory": snapshot.setHistory.map { $0.displayString },
+                    "setsWon1": snapshot?.team1Score ?? 0,  // Sets won by team 1
+                    "setsWon2": snapshot?.team2Score ?? 0,  // Sets won by team 2
+                    "set": snapshot?.setNumber ?? 1,
+                    "status": snapshot?.status ?? "Pre-Match",
+                    "setsA": snapshot?.totalSetsWon.team1 ?? 0,
+                    "setsB": snapshot?.totalSetsWon.team2 ?? 0,
+                    "serve": snapshot?.serve ?? "none",
+                    "setHistory": snapshot?.setHistory.map { $0.displayString } ?? [],
                     
                     // Fields added for seed support
-                    "seed1": snapshot.team1Seed ?? "",
-                    "seed2": snapshot.team2Seed ?? "",
+                    "seed1": seed1,
+                    "seed2": seed2,
                     
                     // Match format (for determining when match ends)
-                    "setsToWin": court.currentMatch?.setsToWin ?? 2,
-                    "pointsPerSet": court.currentMatch?.pointsPerSet ?? 21,
-                    "pointCap": court.currentMatch?.pointCap as Any,
+                    "setsToWin": currentMatch?.setsToWin ?? 2,
+                    "pointsPerSet": currentMatch?.pointsPerSet ?? 21,
+                    "pointCap": currentMatch?.pointCap as Any,
                     
                     // Up Next
                     "nextMatch": court.nextMatch?.displayName ?? "TBD"
