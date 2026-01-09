@@ -682,11 +682,11 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .bug .socialbar, .bug .next-badge {
   position: absolute;
   top: 100%; /* Below scoreboard */
-  margin-top: 12px; /* Separated from scoreboard */
+  margin-top: 10px; /* Separated from scoreboard */
   background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
   border: 1px solid rgba(255,200,0,.35);
   box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
-  padding: 8px 16px;
+  padding: 6px 14px; /* Reduced padding */
   display: flex;
   align-items: center;
   justify-content: center; /* Center content for symmetry */
@@ -694,7 +694,7 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   z-index: 1; 
   border-radius: 999px; /* Fully rounded oval */
   transition: opacity 0.4s ease, transform 0.4s ease;
-  min-width: 220px; /* Enforce minimum width for visual balance */
+  min-width: 200px; /* Slightly reduced min-width */
 }
 
 .bug .socialbar {
@@ -717,28 +717,28 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 /* Centering Fix for Main Score */
 .main-score {
   display: grid;
-  grid-template-columns: 1fr 30px 1fr; /* Tighter colon */
+  grid-template-columns: 1fr 24px 1fr; /* Tighter colon space */
   align-items: center;
   width: 100%;
 }
 .score-num {
-  font-size: 64px; /* Force large size */
+  font-size: 48px; /* Reduced from 64px */
   font-weight: 900;
   letter-spacing: -2px;
   color: var(--text);
   line-height: 1;
 }
 .score-colon {
-  font-size: 52px;
+  font-size: 40px; /* Reduced from 52px */
   font-weight: 700;
   color: rgba(255,255,255,0.5);
   line-height: 1;
-  transform: translateY(-4px); /* Visual optical correction */
+  transform: translateY(-3px); /* Visual optical correction */
 }
 
 /* Social Bar specific styles */
 .socialbar {
-  font-size: 14px;
+  font-size: 12px; /* Reduced font */
   font-weight: 700;
   color: var(--muted);
   white-space: nowrap;
