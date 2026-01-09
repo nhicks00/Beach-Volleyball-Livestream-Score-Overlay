@@ -391,13 +391,13 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 .next-badge .next-label { color: var(--gold2); text-transform: uppercase; font-size: 10px; }
 .next-badge .next-teams { color: var(--text); font-weight: 800; }
 
-/* bug - main scoreboard */
+/* bug - main scoreboard with center-focused layout */
 .bug{
   position:relative;
   display:grid; 
-  grid-template-columns: 400px 100px 400px; /* Fixed columns - never flex */
+  grid-template-columns: 1fr auto 1fr; /* Equal sides, auto center */
   align-items:center; 
-  padding:0;
+  padding:16px 24px;
   width: 900px; /* Fixed width - never changes */
   min-width: 900px; /* Prevent shrinking */
   max-width: 900px; /* Prevent growing */
@@ -405,89 +405,117 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   border-radius:18px; border:1px solid rgba(255,200,0,.35);
   box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
   overflow: visible; /* Allow seeds to show outside */
+  gap: 20px; /* Space between columns */
 }
 
-/* row layout - symmetrical with centered content */
-.row{
-  display:grid;
-  grid-template-columns: 1fr auto 1fr; /* Equal width columns for symmetry */
-  align-items:center;
-  padding:12px 24px; /* Increased horizontal padding for better spacing */
-  position:relative;
-  gap: 16px; /* Consistent spacing between elements */
+/* Team Sections - Left and Right */
+.team-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.row.serving{ background: linear-gradient(90deg, rgba(255,215,0,0.1), transparent); }
-
-.info{ 
-  display:flex; 
-  flex-direction:column; 
-  justify-content:center;
-  align-items:center; /* Center align content */
-  text-align:center; /* Center text */
+.team-section.left {
+  justify-content: flex-start;
+}
+.team-section.right {
+  justify-content: flex-end;
 }
 
-.name{ 
-  font-size:clamp(16px, 2.5vw, 24px); 
-  font-weight:900; 
-  line-height:1; 
-  letter-spacing:-.5px; 
-  text-transform:uppercase; 
-  display:flex; 
-  align-items:center; 
-  justify-content:center; /* Center the name content */
-  gap:8px; 
-  white-space:nowrap; 
-  overflow:hidden; 
-  text-overflow:ellipsis; 
-  max-width:280px;
-  width:100%; /* Take full width of container */
-  text-align:center; /* Center text alignment */
-}
-
-/* Edge-positioned seeds - positioned at the very edges of the scoreboard */
-.seed-edge {
-  position: absolute;
-  display: flex; flex-direction: column; align-items: center;
-  font-weight: 700; color: var(--gold2);
-  text-transform: uppercase; opacity: 0.9;
-  padding: 4px 10px;
-  background: rgba(0,0,0,0.6);
-  border-radius: 6px;
-  z-index: 20;
+/* Team Names */
+.team-name {
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  text-transform: uppercase;
   white-space: nowrap;
-}
-.seed-edge .seed-label { font-size: 8px; opacity: 0.8; letter-spacing: 0.5px; }
-.seed-edge .seed-num { font-size: 12px; font-weight: 800; }
-.seed-edge.hidden { display: none; }
-/* Team 1 seed - left side outside scoreboard */
-#seed1-edge { 
-  left: 0; top: 50%; 
-  transform: translate(-110%, -50%);
-}
-/* Team 2 seed - right side outside scoreboard */
-#seed2-edge { 
-  right: 0; bottom: 50%; 
-  transform: translate(110%, 50%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  color: var(--text);
 }
 
-/* Hide old seed element */
-.seed{ display: none; }
+/* Seed Badges */
+.seed-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--gold2);
+  background: rgba(0,0,0,0.5);
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.seed-badge.hidden { display: none; }
 
-.score{ 
-  font-variant-numeric:tabular-nums; 
-  font-size:32px; 
-  font-weight:800; 
-  letter-spacing:-1px; 
-  text-align:center; /* Center score in grid column */
-  min-width:50px; /* Ensure score always has space */
+/* Center Score Section */
+.score-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
-/* Service Indicator - Volleyball SVG */
-.serve-icon { width:18px; height:18px; display:none; filter: drop-shadow(0 0 4px rgba(255,215,0,0.4)); }
-.serving .serve-icon { display:inline-block; animation: fadeSlide 0.3s ease-out; }
+/* Main Score - Large and Prominent */
+.main-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.score-num {
+  font-size: clamp(42px, 5vw, 56px);
+  font-weight: 900;
+  letter-spacing: -2px;
+  color: var(--text);
+  line-height: 1;
+}
+.score-colon {
+  font-size: clamp(36px, 4.5vw, 48px);
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  line-height: 1;
+}
 
-/* vertical divider */
-.divider{ width:1px; height:40px; background:rgba(255,255,255,0.15); margin:0 4px }
+/* Set Count - Small Below Score */
+.set-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.set-count span {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.set-sep {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+}
+
+/* Serve Indicators - Positioned Absolutely */
+.serve-indicator {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  color: var(--gold);
+  filter: drop-shadow(0 0 6px rgba(255,215,0,0.6));
+  display: none;
+  animation: fadeSlide 0.3s ease-out;
+}
+.serve-indicator.left {
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.serve-indicator.right {
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.serve-indicator.active { display: block; }
 
 /* Seeds sub-bubble - REMOVED, using edge-positioned seeds instead */
 
@@ -695,40 +723,42 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
 </div>
 
     <div id="scorebug" class="bug hidden">
-    <!-- Team 1 -->
-    <div class="row" id="row1">
-       <div class="info">
-         <div class="name">
-             <span id="t1">NVL</span>
-             <!-- Volleyball Icon -->
-             <svg class="vb serve-icon" viewBox="0 0 24 24">
-               <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
-             </svg>
-         </div>
-         <div class="seed" id="sd1"></div>
-       </div>
-       <div class="score" id="sc1">0</div>
-    </div>
-
-    <!-- Divider -->
-    <div class="divider"></div>
-
-    <!-- Team 2 -->
-    <div class="row" id="row2">
-       <div class="info">
-         <div class="name">
-             <span id="t2">NVL</span>
-             <!-- Volleyball Icon -->
-             <svg class="vb serve-icon" viewBox="0 0 24 24">
-               <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
-             </svg>
-         </div>
-         <div class="seed" id="sd2"></div>
-       </div>
-       <div class="score" id="sc2">0</div>
+      <!-- Left Team Section -->
+      <div class="team-section left">
+        <div class="seed-badge" id="seed1-badge">#1</div>
+        <div class="team-name" id="t1">TEAM 1</div>
+      </div>
+      
+      <!-- Center Score Section -->
+      <div class="score-center">
+        <div class="main-score">
+          <span class="score-num" id="sc1">0</span>
+          <span class="score-colon">:</span>
+          <span class="score-num" id="sc2">0</span>
+        </div>
+        <div class="set-count" id="set-count">
+          <span id="sets1">0</span>
+          <span class="set-sep">:</span>
+          <span id="sets2">0</span>
+        </div>
+      </div>
+      
+      <!-- Right Team Section -->
+      <div class="team-section right">
+        <div class="team-name" id="t2">TEAM 2</div>
+        <div class="seed-badge" id="seed2-badge">#2</div>
+      </div>
+      
+      <!-- Serve Indicators (positioned absolutely) -->
+      <svg class="serve-indicator left" id="serve-left" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
+      </svg>
+      <svg class="serve-indicator right" id="serve-right" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
+      </svg>
     </div>
     
-    <!-- Edge-positioned seeds (outside rows, inside bug for proper positioning) -->
+        <!-- Edge-positioned seeds (outside rows, inside bug for proper positioning) -->
     <span id="seed1-edge" class="seed-edge hidden">#1</span>
     <span id="seed2-edge" class="seed-edge hidden">#2</span>
     </div>
@@ -1096,29 +1126,36 @@ function applyData(d){
   const els = getOverlayElements();
   if (els.pmT1) els.pmT1.textContent = name1;
   if (els.pmT2) els.pmT2.textContent = name2;
+  }
   
-  // Seeds - update edge-positioned seeds in rows
-  const seed1Edge = document.getElementById('seed1-edge');
-  const seed2Edge = document.getElementById('seed2-edge');
+  // Seeds - update seed badges
+  const seed1Badge = document.getElementById('seed1-badge');
+  const seed2Badge = document.getElementById('seed2-badge');
   const hasSeed1 = d.seed1 && d.seed1.toString().trim() !== '';
   const hasSeed2 = d.seed2 && d.seed2.toString().trim() !== '';
   
-  if (seed1Edge) {
+  if (seed1Badge) {
     if (hasSeed1) {
-      seed1Edge.innerHTML = `<span class="seed-label">Seed</span><span class="seed-num">#${d.seed1}</span>`;
-      seed1Edge.classList.remove('hidden');
+      seed1Badge.textContent = `#${d.seed1}`;
+      seed1Badge.classList.remove('hidden');
     } else {
-      seed1Edge.classList.add('hidden');
+      seed1Badge.classList.add('hidden');
     }
   }
-  if (seed2Edge) {
+  if (seed2Badge) {
     if (hasSeed2) {
-      seed2Edge.innerHTML = `<span class="seed-label">Seed</span><span class="seed-num">#${d.seed2}</span>`;
-      seed2Edge.classList.remove('hidden');
+      seed2Badge.textContent = `#${d.seed2}`;
+      seed2Badge.classList.remove('hidden');
     } else {
-      seed2Edge.classList.add('hidden');
+      seed2Badge.classList.add('hidden');
     }
   }
+  
+  // Set Count - update sets won
+  const sets1El = document.getElementById('sets1');
+  const sets2El = document.getElementById('sets2');
+  if (sets1El) sets1El.textContent = d.setsA || 0;
+  if (sets2El) sets2El.textContent = d.setsB || 0;
   
   // Track current teams and detect match changes
   const matchKey = d.team1 + '|' + d.team2;
@@ -1224,16 +1261,16 @@ function applyData(d){
   
   // ==================== END STATE MACHINE ====================
   
-  // Serve indicator
+  // Serve indicator - show on left or right
   const srv = (d.serve||"").toLowerCase();
-  const r1 = document.getElementById('row1');
-  const r2 = document.getElementById('row2');
+  const serveLeft = document.getElementById('serve-left');
+  const serveRight = document.getElementById('serve-right');
   
-  if(r1 && r2) {
+  if(serveLeft && serveRight) {
       const isHome = srv.includes('home') || srv.includes('team1');
       const isAway = srv.includes('away') || srv.includes('team2');
-      r1.classList.toggle('serving', isHome);
-      r2.classList.toggle('serving', isAway);
+      serveLeft.classList.toggle('active', isHome);
+      serveRight.classList.toggle('active', isAway);
   }
 }
 
