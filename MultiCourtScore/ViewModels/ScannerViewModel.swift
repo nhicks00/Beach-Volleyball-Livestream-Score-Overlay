@@ -98,7 +98,11 @@ class ScannerViewModel: ObservableObject {
         let setsToWin: Int?
         let pointsPerSet: Int?
         let pointCap: Int?
+        let pointCap: Int?
         let formatText: String?
+        // Live scores
+        let team1_score: Int?
+        let team2_score: Int?
         
         var displayName: String {
             if let t1 = team1, let t2 = team2, !t1.isEmpty, !t2.isEmpty {
@@ -124,7 +128,9 @@ class ScannerViewModel: ObservableObject {
             case apiURL = "api_url"
             case matchType = "match_type"
             case typeDetail = "type_detail"
+            case typeDetail = "type_detail"
             case setsToWin, pointsPerSet, pointCap, formatText
+            case team1_score, team2_score
         }
         
         init(from decoder: Decoder) throws {
@@ -144,7 +150,10 @@ class ScannerViewModel: ObservableObject {
             setsToWin = try container.decodeIfPresent(Int.self, forKey: .setsToWin)
             pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
             pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
+            pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
             formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
+            team1_score = try container.decodeIfPresent(Int.self, forKey: .team1_score)
+            team2_score = try container.decodeIfPresent(Int.self, forKey: .team2_score)
         }
     }
     
