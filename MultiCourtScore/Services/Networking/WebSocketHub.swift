@@ -771,17 +771,17 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   justify-content: center;
 }
 .team-section.left {
-  text-align: left; /* Left team text aligns left */
+  text-align: left;
   flex-direction: row; /* Icon | Name */
-  justify-content: flex-start; /* Push to left edge */
+  justify-content: flex-start; /* Push content to left edge */
 }
 .team-section.left .name-block {
   align-items: flex-start; /* Seed aligns left under first name */
 }
 .team-section.right {
-  text-align: right; /* Right team text aligns right */
-  flex-direction: row-reverse; /* Name | Icon - reversed for right side */
-  justify-content: flex-start; /* Push to right edge (row-reverse makes this correct) */
+  text-align: right;
+  flex-direction: row-reverse; /* Icon | Name - reversed so name comes first from right */
+  justify-content: flex-end; /* Push content to right edge */
 }
 .team-section.right .name-block {
   align-items: flex-end; /* Seed aligns right under last name */
