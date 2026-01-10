@@ -161,7 +161,7 @@ final class WebSocketHub {
                         "setsA": 0, "setsB": 0,
                         "seed1": "", "seed2": "",
                         "setHistory": [] as [String],
-                        "nextMatch": "TBD"
+                        "nextMatch": ""
                     ])
                 }
                 
@@ -209,8 +209,8 @@ final class WebSocketHub {
                     "pointsPerSet": currentMatch?.pointsPerSet ?? 21,
                     "pointCap": currentMatch?.pointCap as Any,
                     
-                    // Up Next
-                    "nextMatch": court.nextMatch?.displayName ?? "TBD"
+                    // Up Next - empty string if no actual next match
+                    "nextMatch": court.nextMatch?.displayName ?? ""
                 ]
                 
                 return try Self.json(data)
@@ -1416,9 +1416,14 @@ function applyData(d){
   // Between sets: current set just finished, OR we're at 0-0 in Set 2+
   const betweenSets = currentSetComplete || (setNum > 1 && isZeroZero(score1, score2));
   
-  // Logic: Show if NOT actively playing AND (match ended OR between sets)
-  const shouldShowNext = !isActivePlaying && (matchEnded || betweenSets) && 
-                         (d.nextMatch && d.nextMatch.trim() !== '');
+  // Logic: Show if NOT actively playing AND (match ended OR between sets) AND we have a real next match
+  // Filter out empty strings, "TBD", and placeholder text
+  const nextMatchText = (d.nextMatch || '').trim();
+  const hasRealNextMatch = nextMatchText !== '' && 
+                           nextMatchText.toUpperCase() !== 'TBD' &&
+                           !nextMatchText.toLowerCase().includes('no next');
+  
+  const shouldShowNext = !isActivePlaying && (matchEnded || betweenSets) && hasRealNextMatch;
   
   console.log('[Overlay] Next Match visibility:', { score1, score2, isActivePlaying, currentSetComplete, matchEnded, betweenSets, shouldShowNext });
   
