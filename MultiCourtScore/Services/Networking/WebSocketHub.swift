@@ -174,18 +174,19 @@ final class WebSocketHub {
                 let seed2 = snapshot?.team2Seed ?? currentMatch?.team2Seed ?? ""
                 
                 // Build response
-                // Calculate current game score - directly from snapshot (team1Score/team2Score)
-                // These represent the score within the current set (e.g. 1-0), NOT sets won
-                let gameScore1 = snapshot?.team1Score ?? currentMatch?.team1_score ?? 0
-                let gameScore2 = snapshot?.team2Score ?? currentMatch?.team2_score ?? 0
+                // Current game score comes from setHistory.last (the in-progress or last completed set)
+                // snapshot.team1Score is actually SETS WON in this data model
+                let currentGame = snapshot?.setHistory.last
+                let gameScore1 = currentGame?.team1Score ?? currentMatch?.team1_score ?? 0
+                let gameScore2 = currentGame?.team2Score ?? currentMatch?.team2_score ?? 0
                 
                 let data: [String: Any] = [
                     "team1": team1,
                     "team2": team2,
-                    "score1": gameScore1,  // Current game score (what shows large)
-                    "score2": gameScore2,  // Current game score (what shows large)
-                    "setsWon1": snapshot?.totalSetsWon.team1 ?? 0,  // Sets won by team 1
-                    "setsWon2": snapshot?.totalSetsWon.team2 ?? 0,  // Sets won by team 2
+                    "score1": gameScore1,  // Current game score (from setHistory.last)
+                    "score2": gameScore2,  // Current game score (from setHistory.last)
+                    "setsWon1": snapshot?.team1Score ?? 0,  // Sets won by team 1 (this IS sets won in the model)
+                    "setsWon2": snapshot?.team2Score ?? 0,  // Sets won by team 2 (this IS sets won in the model)
                     "set": snapshot?.setNumber ?? 1,
                     "status": snapshot?.status ?? "Pre-Match",
                     "setsA": snapshot?.totalSetsWon.team1 ?? 0,
