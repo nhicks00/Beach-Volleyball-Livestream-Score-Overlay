@@ -183,12 +183,23 @@ struct QueueRow: Identifiable {
         return abbreviated.joined(separator: " / ")
     }
     
+    
     var displayTitle: String {
         if !team1.isEmpty || !team2.isEmpty {
             let t1 = team1.isEmpty ? "TBD" : abbreviateName(team1)
             let t2 = team2.isEmpty ? "TBD" : abbreviateName(team2)
             return "\(t1) vs \(t2)"
         }
+        
+        // If we have a label, check if it's just a number
+        if !label.isEmpty {
+            // If label is just a number (e.g., "7"), convert to "Match 7"
+            if let _ = Int(label.trimmingCharacters(in: .whitespaces)) {
+                return "Match \(label)"
+            }
+            return label
+        }
+        
         return "New Match (Save to fetch details)"
     }
     

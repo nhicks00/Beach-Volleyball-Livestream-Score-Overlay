@@ -98,10 +98,15 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.team2_score = team2_score
     }
     
+    
     var displayName: String {
         if let t1 = team1Name, let t2 = team2Name, !t1.isEmpty, !t2.isEmpty {
             return "\(t1) vs \(t2)"
         } else if let label = label, !label.isEmpty {
+            // If label is just a number (e.g., "7"), convert to "Match 7"
+            if let _ = Int(label.trimmingCharacters(in: .whitespaces)) {
+                return "Match \(label)"
+            }
             return label
         } else {
             return "Match"
@@ -114,6 +119,10 @@ struct MatchItem: Codable, Hashable, Identifiable {
             let short2 = t2.components(separatedBy: " ").first ?? t2
             return "\(short1) v \(short2)"
         } else if let label = label, !label.isEmpty {
+            // If label is just a number (e.g., "7"), convert to "M7"
+            if let _ = Int(label.trimmingCharacters(in: .whitespaces)) {
+                return "M\(label)"
+            }
             return label
         } else {
             return "Match"

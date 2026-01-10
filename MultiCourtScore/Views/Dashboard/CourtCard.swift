@@ -366,11 +366,9 @@ struct WaitingForMatchView: View {
     private func abbreviatedDisplayName(for match: MatchItem) -> String {
         if let t1 = match.team1Name, let t2 = match.team2Name, !t1.isEmpty, !t2.isEmpty {
             return "\(abbreviateName(t1)) vs \(abbreviateName(t2))"
-        } else if let label = match.label, !label.isEmpty {
-            return label
-        } else {
-            return "Match"
         }
+        // Use match.displayName which handles numeric-only labels correctly
+        return match.displayName
     }
     
     var body: some View {
@@ -474,15 +472,14 @@ struct QueuePreview: View {
         return abbreviated.joined(separator: " / ")
     }
     
+    
     /// Get abbreviated display name
     private func abbreviatedDisplayName(for match: MatchItem) -> String {
         if let t1 = match.team1Name, let t2 = match.team2Name, !t1.isEmpty, !t2.isEmpty {
             return "\(abbreviateName(t1)) vs \(abbreviateName(t2))"
-        } else if let label = match.label, !label.isEmpty {
-            return label
-        } else {
-            return "Match"
         }
+        // Use match.displayName which handles numeric-only labels correctly
+        return match.displayName
     }
     
     /// Get short match type label: "Pool" or "Bracket"
