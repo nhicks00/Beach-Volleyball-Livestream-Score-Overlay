@@ -55,6 +55,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var pointsPerSet: Int?       // Points to win a set (usually 21)
     var pointCap: Int?           // Point cap (e.g., 23), nil means win by 2
     var formatText: String?      // Raw format text from scraper
+    var team1_score: Int?        // Live score
+    var team2_score: Int?        // Live score
     
     init(
         apiURL: URL,
@@ -72,7 +74,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
         setsToWin: Int? = nil,
         pointsPerSet: Int? = nil,
         pointCap: Int? = nil,
-        formatText: String? = nil
+        formatText: String? = nil,
+        team1_score: Int? = nil,
+        team2_score: Int? = nil
     ) {
         self.apiURL = apiURL
         self.label = label
@@ -90,6 +94,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.pointsPerSet = pointsPerSet
         self.pointCap = pointCap
         self.formatText = formatText
+        self.team1_score = team1_score
+        self.team2_score = team2_score
     }
     
     var displayName: String {

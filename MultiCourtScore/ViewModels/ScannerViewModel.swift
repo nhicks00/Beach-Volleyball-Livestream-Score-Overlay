@@ -477,7 +477,10 @@ class ScannerViewModel: ObservableObject {
                 setsToWin: match.setsToWin,
                 pointsPerSet: match.pointsPerSet,
                 pointCap: match.pointCap,
-                formatText: match.formatText
+                pointCap: match.pointCap,
+                formatText: match.formatText,
+                team1_score: match.team1_score,
+                team2_score: match.team2_score
             )
         }
     }
