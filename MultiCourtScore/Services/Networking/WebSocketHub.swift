@@ -180,6 +180,12 @@ final class WebSocketHub {
                 let gameScore1 = currentGame?.team1Score ?? currentMatch?.team1_score ?? 0
                 let gameScore2 = currentGame?.team2Score ?? currentMatch?.team2_score ?? 0
                 
+                // DEBUG: Log score values
+                print("[Overlay Debug] snapshot exists: \(snapshot != nil), setHistory count: \(snapshot?.setHistory.count ?? -1)")
+                print("[Overlay Debug] currentGame: \(currentGame?.team1Score ?? -1) - \(currentGame?.team2Score ?? -1)")
+                print("[Overlay Debug] gameScore1: \(gameScore1), gameScore2: \(gameScore2)")
+                print("[Overlay Debug] currentMatch?.team1_score: \(currentMatch?.team1_score ?? -1)")
+                
                 let data: [String: Any] = [
                     "team1": team1,
                     "team2": team2,
@@ -1319,6 +1325,14 @@ function applyData(d){
   const score2 = d.score2 || 0;
   const isZero = isZeroZero(score1, score2);
   const setNum = d.setNumber || 1;
+  
+  // CRITICAL: Determine overlay state based on score
+  // If score is 0-0 (and Set 1), show Prematch. Otherwise show Live scoreboard.
+  if (score1 === 0 && score2 === 0 && setNum === 1) {
+    transitionToPrematch();
+  } else {
+    transitionToLive();
+  }
 
   // Names - ALWAYS show last names only as requested
   const useAbbr = true;
@@ -1339,6 +1353,42 @@ function applyData(d){
       console.log('[Overlay] Updating PM T2 to:', name2);
       els.pmT2.textContent = name2;
   }
+  
+  // ===== UPDATE LIVE SCOREBOARD ELEMENTS =====
+  // Team names
+  const t1El = document.getElementById('t1');
+  const t2El = document.getElementById('t2');
+  if (t1El) t1El.textContent = name1;
+  if (t2El) t2El.textContent = name2;
+  
+  // Scores
+  const sc1El = document.getElementById('sc1');
+  const sc2El = document.getElementById('sc2');
+  if (sc1El) sc1El.textContent = score1;
+  if (sc2El) sc2El.textContent = score2;
+  
+  // Sets won
+  const setsWon1 = d.setsWon1 || d.setsA || 0;
+  const setsWon2 = d.setsWon2 || d.setsB || 0;
+  const sets1El = document.getElementById('sets1');
+  const sets2El = document.getElementById('sets2');
+  if (sets1El) sets1El.textContent = setsWon1;
+  if (sets2El) sets2El.textContent = setsWon2;
+  
+  // Seed labels
+  const seed1El = document.getElementById('seed1-label');
+  const seed2El = document.getElementById('seed2-label');
+  if (seed1El) {
+    const s1 = d.seed1 || '';
+    seed1El.textContent = s1 ? 'SEED ' + s1 : '';
+    seed1El.style.display = s1 ? '' : 'none';
+  }
+  if (seed2El) {
+    const s2 = d.seed2 || '';
+    seed2El.textContent = s2 ? 'SEED ' + s2 : '';
+    seed2El.style.display = s2 ? '' : 'none';
+  }
+  // ===== END LIVE SCOREBOARD UPDATES =====
   
   // Check if we should show Next Match info
   // Rule: Show ONLY if match is over OR between sets (set finished or set start 0-0)
