@@ -122,7 +122,8 @@ class ScannerViewModel: ObservableObject {
         var hasAPIURL: Bool { apiURL != nil && !apiURL!.isEmpty }
         
         enum CodingKeys: String, CodingKey {
-            case index, team1, team2, team1_seed, team2_seed, court, startTime, startDate
+            case index, team1, team2, team1_seed, team2_seed, court, startTime
+            case startDate = "day"  // Map Python's 'day' field to startDate
             case matchNumber = "match_number"
             case apiURL = "api_url"
             case matchType = "match_type"
@@ -452,7 +453,7 @@ class ScannerViewModel: ObservableObject {
         // First, auto-number matches that need it
         let numberedMatches = autoNumberMatches(matches)
         
-        return numberedMatches.compactMap { match -> MatchItem? in
+        let items = numberedMatches.compactMap { match -> MatchItem? in
             guard let urlString = match.apiURL,
                   let url = URL(string: urlString) else {
                 return nil
@@ -468,6 +469,7 @@ class ScannerViewModel: ObservableObject {
                 matchType: match.matchType,
                 typeDetail: match.typeDetail,
                 scheduledTime: match.startTime,
+                day: match.startDate,  // Day label from Python scraper
                 matchNumber: match.matchNumber,
                 courtNumber: match.court,
                 physicalCourt: match.court,  // Track physical court for reassignment
@@ -478,6 +480,16 @@ class ScannerViewModel: ObservableObject {
                 team1_score: match.team1_score,
                 team2_score: match.team2_score
             )
+        }
+        
+        // Sort chronologically: by day first, then by time within each day
+        return items.sorted { item1, item2 in
+            // First compare by day
+            if item1.dayOrder != item2.dayOrder {
+                return item1.dayOrder < item2.dayOrder
+            }
+            // If same day (or both have no day), compare by time
+            return item1.timeInMinutes < item2.timeInMinutes
         }
     }
     

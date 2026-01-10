@@ -47,6 +47,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var matchType: String?      // "Pool Play", "Bracket Play"
     var typeDetail: String?     // "Pool A", "Winners Bracket"
     var scheduledTime: String?
+    var day: String?            // Day label for multi-day tournaments ("Saturday", "Sunday", etc.)
     var matchNumber: String?    // "Match 1", "18", etc.
     var courtNumber: String?    // Original court number from VBL
     var physicalCourt: String?  // VBL court name for tracking reassignments (e.g., "Court 1", "Stadium Court")
@@ -68,6 +69,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         matchType: String? = nil,
         typeDetail: String? = nil,
         scheduledTime: String? = nil,
+        day: String? = nil,
         matchNumber: String? = nil,
         courtNumber: String? = nil,
         physicalCourt: String? = nil,
@@ -87,6 +89,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.matchType = matchType
         self.typeDetail = typeDetail
         self.scheduledTime = scheduledTime
+        self.day = day
         self.matchNumber = matchNumber
         self.courtNumber = courtNumber
         self.physicalCourt = physicalCourt
@@ -123,7 +126,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     // MARK: Codable Conformance
     enum CodingKeys: String, CodingKey {
         case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed
-        case matchType, typeDetail, scheduledTime, matchNumber, courtNumber, physicalCourt
+        case matchType, typeDetail, scheduledTime, day, matchNumber, courtNumber, physicalCourt
         case setsToWin, pointsPerSet, pointCap, formatText
     }
     
@@ -138,6 +141,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         matchType = try container.decodeIfPresent(String.self, forKey: .matchType)
         typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
         scheduledTime = try container.decodeIfPresent(String.self, forKey: .scheduledTime)
+        day = try container.decodeIfPresent(String.self, forKey: .day)
         matchNumber = try container.decodeIfPresent(String.self, forKey: .matchNumber)
         courtNumber = try container.decodeIfPresent(String.self, forKey: .courtNumber)
         physicalCourt = try container.decodeIfPresent(String.self, forKey: .physicalCourt)
@@ -146,6 +150,53 @@ struct MatchItem: Codable, Hashable, Identifiable {
         pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
         formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    }
+    
+    // MARK: - Sorting Helpers
+    
+    /// Day order for chronological sorting (Saturday = 0, Sunday = 1, etc.)
+    var dayOrder: Int {
+        guard let day = day?.lowercased() else { return Int.max }  // No day = sort to end
+        let dayMap: [String: Int] = [
+            "saturday": 0, "sat": 0,
+            "sunday": 1, "sun": 1,
+            "monday": 2, "mon": 2,
+            "tuesday": 3, "tue": 3,
+            "wednesday": 4, "wed": 4,
+            "thursday": 5, "thu": 5,
+            "friday": 6, "fri": 6
+        ]
+        return dayMap[day] ?? Int.max
+    }
+    
+    /// Time in minutes since midnight for sorting (e.g., "9:00AM" = 540)
+    var timeInMinutes: Int {
+        guard let time = scheduledTime else { return Int.max }
+        // Parse time like "9:00AM", "10:30 AM", "2:15PM"
+        let cleaned = time.replacingOccurrences(of: " ", with: "").uppercased()
+        let components = cleaned.components(separatedBy: ":")
+        guard components.count == 2 else { return Int.max }
+        
+        let hourStr = components[0]
+        let minuteAndPeriod = components[1]  // e.g., "00AM" or "30PM"
+        
+        guard let hour = Int(hourStr),
+              minuteAndPeriod.count >= 2 else { return Int.max }
+        
+        let minuteStr = String(minuteAndPeriod.prefix(2))
+        guard let minute = Int(minuteStr) else { return Int.max }
+        
+        let isPM = minuteAndPeriod.hasSuffix("PM")
+        var adjustedHour = hour
+        
+        // Convert to 24-hour format
+        if isPM && hour != 12 {
+            adjustedHour += 12
+        } else if !isPM && hour == 12 {
+            adjustedHour = 0
+        }
+        
+        return adjustedHour * 60 + minute
     }
 }
 

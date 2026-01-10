@@ -388,6 +388,24 @@ class BracketScraper(VBLScraperBase):
                 match.start_time = time_match.group(1).replace(" ", "")
                 logger.info(f"Extracted time: {match.start_time}")
             
+            # Extract day label for multi-day tournaments
+            # Look for day names (Saturday, Sunday, Monday, etc.) or abbreviations (Sat, Sun, Mon)
+            day_pattern = r'\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b'
+            day_match = re.search(day_pattern, text_content, re.IGNORECASE)
+            if day_match:
+                day_text = day_match.group(1)
+                # Normalize to full day name
+                day_map = {
+                    'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday',
+                    'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday'
+                }
+                day_lower = day_text.lower()
+                if day_lower in day_map:
+                    match.day = day_map[day_lower]
+                else:
+                    match.day = day_text.capitalize()
+                logger.info(f"Extracted day: {match.day}")
+            
             # Extract court number - look for single digit after "Court:"
             court_match = re.search(r'Court[:\s]*(\d)', text_content, re.IGNORECASE)
             if court_match:
