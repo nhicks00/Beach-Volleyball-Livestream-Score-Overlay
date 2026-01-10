@@ -1397,22 +1397,30 @@ function applyData(d){
   // ===== END LIVE SCOREBOARD UPDATES =====
   
   // Check if we should show Next Match info
-  // Rule: Show ONLY if match is over OR between sets (set finished or set start 0-0)
-  const setsToWin = d.setsToWin || 2;
-  const matchEnded = checkMatchEnd(d.setHistory, setsToWin);
+  // Rule: Show ONLY during postmatch (after match ends) OR between sets (set finished, waiting for new set)
+  // HIDE during active play within a set
   
-  // Use points per set logic to detect if current set is "finished" in the eyes of the operator
-  // VBL usually holds the final score (e.g. 21-15) until they create the next set
+  const setsToWin = d.setsToWin || 2;
   const pps = d.pointsPerSet || 21;
   const cap = d.pointCap || null;
-  const setJustFinished = isSetComplete(score1, score2, pps, cap);
   
-  // Also waiting for next set if score is 0-0 but it's set 2 or 3
-  const waitingForNextSet = (setNum > 1 && isZeroZero(score1, score2));
+  // Check if current set is complete (met win conditions)
+  const currentSetComplete = isSetComplete(score1, score2, pps, cap);
   
-  // Logic: Show if (Match Ended) OR (Between Sets)
-  const shouldShowNext = (matchEnded || setJustFinished || waitingForNextSet) && 
+  // Check if we're actively playing (score is non-zero AND set not complete)
+  const isActivePlaying = (score1 > 0 || score2 > 0) && !currentSetComplete;
+  
+  // Check if match has ended (one team won required sets)
+  const matchEnded = checkMatchEnd(d.setHistory, setsToWin);
+  
+  // Between sets: current set just finished, OR we're at 0-0 in Set 2+
+  const betweenSets = currentSetComplete || (setNum > 1 && isZeroZero(score1, score2));
+  
+  // Logic: Show if NOT actively playing AND (match ended OR between sets)
+  const shouldShowNext = !isActivePlaying && (matchEnded || betweenSets) && 
                          (d.nextMatch && d.nextMatch.trim() !== '');
+  
+  console.log('[Overlay] Next Match visibility:', { score1, score2, isActivePlaying, currentSetComplete, matchEnded, betweenSets, shouldShowNext });
   
   // Hide the entire 'Next' badge if logic dictates, OR if empty string
   if (!shouldShowNext) {
