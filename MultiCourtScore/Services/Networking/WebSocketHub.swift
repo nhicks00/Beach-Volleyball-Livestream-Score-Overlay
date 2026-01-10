@@ -745,23 +745,23 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   display:grid; 
   grid-template-columns: 1fr auto 1fr; /* Equal sides, auto center */
   align-items:center; 
-  padding: 2px 24px; /* Ultra-slim padding */
-  width: 900px; 
-  min-width: 900px;
-  max-width: 900px;
+  padding: 2px 20px; /* Slightly reduced padding */
+  width: 720px; 
+  min-width: 720px;
+  max-width: 720px;
   background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
-  border-radius:16px; /* Slightly tighter radius */
+  border-radius:16px;
   border:1px solid rgba(255,200,0,.35);
   box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
   overflow: visible; 
-  gap: 16px; /* Reduced gap between columns */
+  gap: 12px; /* Reduced gap between columns */
 }
 
 /* Team Sections */
 .team-section {
   display: flex;
   align-items: center;
-  gap: 12px; /* Spacing between icon and name */
+  gap: 10px; /* Spacing between icon and name */
 }
 .name-block {
   display: flex;
@@ -769,14 +769,20 @@ svg.vb{color:var(--gold1)} /* Volleyball icon color */
   justify-content: center;
 }
 .team-section.left {
-  text-align: right;
+  text-align: left; /* Left team text aligns left */
   flex-direction: row; /* Icon | Name */
-  justify-content: flex-end;
+  justify-content: flex-start; /* Push to left edge */
+}
+.team-section.left .name-block {
+  align-items: flex-start; /* Seed aligns left under first name */
 }
 .team-section.right {
-  text-align: left;
-  flex-direction: row; /* Name | Icon */
-  justify-content: flex-start;
+  text-align: right; /* Right team text aligns right */
+  flex-direction: row-reverse; /* Name | Icon - reversed for right side */
+  justify-content: flex-start; /* Push to right edge (row-reverse makes this correct) */
+}
+.team-section.right .name-block {
+  align-items: flex-end; /* Seed aligns right under last name */
 }
 
 .team-name {
