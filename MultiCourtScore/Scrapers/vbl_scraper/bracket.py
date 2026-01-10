@@ -180,6 +180,28 @@ class BracketScraper(VBLScraperBase):
         match = VBLMatch(index=index)
         
         try:
+            # FIRST: Extract day from container (before clicking)
+            # Day labels appear on the bracket page, not in the card overlay
+            try:
+                container_text = await container.text_content() or ""
+                day_pattern = r'\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b'
+                day_match = re.search(day_pattern, container_text, re.IGNORECASE)
+                if day_match:
+                    day_text = day_match.group(1)
+                    # Normalize to full day name
+                    day_map = {
+                        'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday',
+                        'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday'
+                    }
+                    day_lower = day_text.lower()
+                    if day_lower in day_map:
+                        match.day = day_map[day_lower]
+                    else:
+                        match.day = day_text.capitalize()
+                    logger.info(f"Match {index}: Extracted day from container: {match.day}")
+            except Exception as day_error:
+                logger.debug(f"Match {index}: Could not extract day from container: {day_error}")
+            
             # Click to open overlay
             logger.debug(f"Clicking match container {index}...")
             await container.click()
@@ -224,7 +246,6 @@ class BracketScraper(VBLScraperBase):
             logger.warning(f"Match {index}: Error processing - {type(e).__name__}: {e}")
         
         return match
-
 
     
     async def _extract_card_data(self, overlay, match: VBLMatch) -> VBLMatch:
