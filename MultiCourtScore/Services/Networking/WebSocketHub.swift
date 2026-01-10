@@ -175,9 +175,10 @@ final class WebSocketHub {
                 
                 // Build response
                 // Calculate current game score (from current/last set)
+                // Calculate current game score (from current/last set OR currentMatch)
                 let currentGame = snapshot?.setHistory.last
-                let gameScore1 = currentGame?.team1Score ?? 0
-                let gameScore2 = currentGame?.team2Score ?? 0
+                let gameScore1 = currentGame?.team1Score ?? currentMatch?.team1_score ?? 0
+                let gameScore2 = currentGame?.team2Score ?? currentMatch?.team2_score ?? 0
                 
                 let data: [String: Any] = [
                     "team1": team1,
