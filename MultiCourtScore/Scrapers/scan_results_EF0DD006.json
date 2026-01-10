@@ -1,0 +1,75 @@
+{
+  "urls_scanned": 1,
+  "total_matches": 3,
+  "results": [
+    {
+      "url": "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+      "timestamp": "2026-01-09T23:14:42.237869",
+      "total_matches": 3,
+      "matches": [
+        {
+          "index": 0,
+          "match_number": "1",
+          "team1": "William Mota / Derek Strause",
+          "team2": "George Black / Daniel Wenger",
+          "team1_seed": "1",
+          "team2_seed": "4",
+          "court": "1",
+          "startTime": "9:00AM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325750/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap",
+          "team1_score": 28,
+          "team2_score": 0
+        },
+        {
+          "index": 1,
+          "match_number": "2",
+          "team1": "Nathan Hicks / Reid Malone",
+          "team2": "Marvin Pacheco / Derek Toliver",
+          "team1_seed": "3",
+          "team2_seed": "2",
+          "court": "1",
+          "startTime": "9:30AM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325751/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap",
+          "team1_score": 28,
+          "team2_score": 0
+        },
+        {
+          "index": 2,
+          "match_number": "3",
+          "team1": "William Mota / Derek Strause",
+          "team2": "Nathan Hicks / Reid Malone",
+          "team1_seed": "1",
+          "team2_seed": "3",
+          "court": "1",
+          "startTime": "10:00AM",
+          "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325752/vmix?bracket=true",
+          "match_type": null,
+          "type_detail": null,
+          "setsToWin": 1,
+          "pointsPerSet": 28,
+          "pointCap": null,
+          "formatText": "All Matches Are 1 set to 28 with no cap",
+          "team1_score": 21,
+          "team2_score": 0
+        }
+      ],
+      "status": "success",
+      "error": null,
+      "match_type": "Bracket Play",
+      "type_detail": "Main Bracket"
+    }
+  ],
+  "status": "success"
+}
