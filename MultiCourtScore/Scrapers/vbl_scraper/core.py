@@ -51,7 +51,6 @@ class VBLMatch:
     team2_seed: Optional[str] = None
     court: Optional[str] = None
     start_time: Optional[str] = None
-    day: Optional[str] = None  # Day label for multi-day tournaments (e.g., "Saturday", "Sunday")
     api_url: Optional[str] = None
     match_type: Optional[str] = None
     type_detail: Optional[str] = None
@@ -74,7 +73,6 @@ class VBLMatch:
             'team2_seed': self.team2_seed,
             'court': self.court,
             'startTime': self.start_time,
-            'day': self.day,
             'api_url': self.api_url,
             'match_type': self.match_type,
             'type_detail': self.type_detail,

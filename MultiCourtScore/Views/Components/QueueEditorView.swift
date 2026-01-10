@@ -85,7 +85,6 @@ struct QueueEditorView: View {
                 team2: match.team2Name ?? "",
                 matchNumber: match.matchNumber ?? "",
                 scheduledTime: match.scheduledTime ?? "",
-                day: match.day ?? "",
                 matchType: match.matchType ?? ""
             )
         }
@@ -155,7 +154,6 @@ struct QueueRow: Identifiable {
     var team2: String = ""
     var matchNumber: String = ""
     var scheduledTime: String = ""
-    var day: String = ""  // Day label (Saturday, Sunday, etc.)
     var matchType: String = ""  // "Pool Play" or "Bracket Play"
     
     /// Clean name by removing parenthetical content like "(FR 52nd)"
@@ -223,10 +221,6 @@ struct QueueRow: Identifiable {
         }
         if !matchNumber.isEmpty {
             parts.append("M\(matchNumber)")
-        }
-        // Show day before time for multi-day tournaments
-        if !day.isEmpty {
-            parts.append(day)
         }
         if !scheduledTime.isEmpty {
             parts.append(scheduledTime)
