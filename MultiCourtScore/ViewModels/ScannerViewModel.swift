@@ -339,26 +339,44 @@ class ScannerViewModel: ObservableObject {
         addLog("Python: \(pythonPath)", type: .info)
         addLog("Script: \(scriptPath)", type: .info)
         
-        for (index, url) in allURLs.enumerated() {
-            scanProgress = "Scanning URL \(index + 1) of \(allURLs.count)..."
-            addLog("Scanning: \(url)", type: .info)
+        // PARALLEL MODE: Send all URLs at once for ~4x speedup
+        if allURLs.count > 1 {
+            scanProgress = "🚀 Parallel scanning \(allURLs.count) URLs..."
+            addLog("🚀 Using PARALLEL mode for \(allURLs.count) URLs", type: .info)
             
-            let matches = await scanSingleURL(
-                url, 
-                pythonPath: pythonPath, 
+            let matches = await scanAllURLsParallel(
+                allURLs,
+                pythonPath: pythonPath,
                 scriptPath: scriptPath,
                 workingDir: workingDir
             )
             
             if !matches.isEmpty {
                 scanResults.append(contentsOf: matches)
-                addLog("Found \(matches.count) matches from URL \(index + 1)", type: .success)
+                addLog("Found \(matches.count) matches total", type: .success)
             } else {
-                addLog("No matches found from URL \(index + 1)", type: .warning)
+                addLog("No matches found", type: .warning)
             }
-            
-            // Small delay between URLs
-            try? await Task.sleep(nanoseconds: 500_000_000)
+        } else {
+            // Single URL - use standard mode
+            for (index, url) in allURLs.enumerated() {
+                scanProgress = "Scanning URL \(index + 1) of \(allURLs.count)..."
+                addLog("Scanning: \(url)", type: .info)
+                
+                let matches = await scanSingleURL(
+                    url, 
+                    pythonPath: pythonPath, 
+                    scriptPath: scriptPath,
+                    workingDir: workingDir
+                )
+                
+                if !matches.isEmpty {
+                    scanResults.append(contentsOf: matches)
+                    addLog("Found \(matches.count) matches from URL \(index + 1)", type: .success)
+                } else {
+                    addLog("No matches found from URL \(index + 1)", type: .warning)
+                }
+            }
         }
         
         isScanning = false
@@ -480,6 +498,123 @@ class ScannerViewModel: ObservableObject {
                 }
             }
         }
+    }
+    
+    /// Scan all URLs in parallel using --parallel flag (4x faster for multiple brackets)
+    private func scanAllURLsParallel(_ urls: [String], pythonPath: String, scriptPath: String, workingDir: String) async -> [VBLMatch] {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                let pipe = Pipe()
+                let errorPipe = Pipe()
+                
+                // Generate unique output file
+                let outputFile = URL(fileURLWithPath: workingDir)
+                    .appendingPathComponent("parallel_results_\(UUID().uuidString.prefix(8)).json")
+                
+                process.executableURL = URL(fileURLWithPath: pythonPath)
+                
+                // Build arguments: python -m vbl_scraper.cli url1 url2 url3 --parallel -o output.json
+                var args = ["-m", "vbl_scraper.cli"]
+                args.append(contentsOf: urls)
+                args.append("--parallel")
+                args.append("-o")
+                args.append(outputFile.path)
+                
+                process.arguments = args
+                process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
+                process.standardOutput = pipe
+                process.standardError = errorPipe
+                
+                var env = ProcessInfo.processInfo.environment
+                env["PYTHONPATH"] = workingDir
+                process.environment = env
+                
+                Task { @MainActor in
+                    self.currentProcess = process
+                    self.addLog("🚀 Parallel scan: \(urls.count) URLs", type: .info)
+                }
+                
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    
+                    let exitCode = process.terminationStatus
+                    print("📊 Parallel scan exit code: \(exitCode)")
+                    
+                    // Read stderr for any errors
+                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                    if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
+                        print("⚠️ Parallel scan stderr:\n\(errorString)")
+                        Task { @MainActor in
+                            self.addLog("Scan output: \(errorString.prefix(200))", type: .info)
+                        }
+                    }
+                    
+                    // Parse results - parallel mode returns aggregated results
+                    if let data = try? Data(contentsOf: outputFile),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        
+                        // Clean up temp file
+                        try? FileManager.default.removeItem(at: outputFile)
+                        
+                        // Extract matches from all results
+                        var allMatches: [VBLMatch] = []
+                        
+                        if let results = json["results"] as? [[String: Any]] {
+                            for result in results {
+                                if let matchesData = result["matches"] as? [[String: Any]] {
+                                    let matchType = result["match_type"] as? String
+                                    let typeDetail = result["type_detail"] as? String
+                                    
+                                    for matchDict in matchesData {
+                                        if let match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
+                                            allMatches.append(match)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Task { @MainActor in
+                            self.addLog("Parallel scan found \(allMatches.count) total matches", type: .success)
+                        }
+                        
+                        continuation.resume(returning: allMatches)
+                    } else {
+                        Task { @MainActor in
+                            self.addLog("Could not parse parallel results", type: .error)
+                        }
+                        continuation.resume(returning: [])
+                    }
+                } catch {
+                    Task { @MainActor in
+                        self.addLog("Parallel scan error: \(error)", type: .error)
+                    }
+                    continuation.resume(returning: [])
+                }
+            }
+        }
+    }
+    
+    /// Parse a JSON dictionary into a VBLMatch using JSONDecoder
+    nonisolated private func parseVBLMatch(from dict: [String: Any], matchType: String?, typeDetail: String?) -> VBLMatch? {
+        // Add match_type and type_detail to the dictionary if provided
+        var enrichedDict = dict
+        if let matchType = matchType, enrichedDict["match_type"] == nil {
+            enrichedDict["match_type"] = matchType
+        }
+        if let typeDetail = typeDetail, enrichedDict["type_detail"] == nil {
+            enrichedDict["type_detail"] = typeDetail
+        }
+        
+        // Convert dictionary to JSON data and decode
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: enrichedDict),
+              let match = try? JSONDecoder().decode(VBLMatch.self, from: jsonData) else {
+            return nil
+        }
+        
+        return match
     }
     
     private func getBasePath() -> String {
