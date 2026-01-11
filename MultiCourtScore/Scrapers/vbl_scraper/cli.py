@@ -16,6 +16,7 @@ from typing import List, Optional
 from vbl_scraper.core import ScraperConfig, ScanResult, logger
 from vbl_scraper.bracket import BracketScraper
 from vbl_scraper.pool import PoolScraper
+from vbl_scraper.parallel import ParallelScraper, scan_parallel
 
 
 async def scan_urls(
@@ -23,7 +24,9 @@ async def scan_urls(
     username: Optional[str] = None,
     password: Optional[str] = None,
     headless: bool = True,
-    output_file: Optional[Path] = None
+    output_file: Optional[Path] = None,
+    parallel: bool = False,
+    max_concurrent: int = 4
 ) -> List[ScanResult]:
     """
     Scan multiple URLs and return combined results.
@@ -34,6 +37,8 @@ async def scan_urls(
         password: VBL login password
         headless: Run browser in headless mode
         output_file: Optional file to write results
+        parallel: Use parallel scanning (4x faster for multiple URLs)
+        max_concurrent: Max concurrent browser instances
         
     Returns:
         List of ScanResult objects
@@ -48,6 +53,30 @@ async def scan_urls(
     config.session_file.parent.mkdir(parents=True, exist_ok=True)
     
     all_results = []
+    
+    # PARALLEL MODE: Use concurrent browser instances
+    if parallel and len(urls) > 1:
+        logger.info(f"🚀 Using PARALLEL mode with max {max_concurrent} concurrent browsers")
+        
+        parallel_result = await scan_parallel(
+            urls,
+            username=username,
+            password=password,
+            max_concurrent=max_concurrent,
+            headless=headless
+        )
+        
+        all_results = parallel_result.results
+        
+        # Write results to file
+        if output_file:
+            with open(output_file, 'w') as f:
+                json.dump(parallel_result.to_dict(), f, indent=2)
+            logger.info(f"\nResults written to: {output_file}")
+        
+        return all_results
+    
+    # SEQUENTIAL MODE: Single browser, process one at a time
     
     # Use bracket scraper (which also handles login for pools)
     async with BracketScraper(config) as scraper:
@@ -162,6 +191,19 @@ Examples:
         help='Enable verbose logging'
     )
     
+    parser.add_argument(
+        '--parallel',
+        action='store_true',
+        help='Use parallel scanning (4x faster for multiple URLs)'
+    )
+    
+    parser.add_argument(
+        '--max-concurrent',
+        type=int,
+        default=4,
+        help='Max concurrent browsers in parallel mode (default: 4)'
+    )
+    
     args = parser.parse_args()
     
     # Set log level
@@ -218,7 +260,9 @@ Examples:
         username=username,
         password=password,
         headless=not args.no_headless,
-        output_file=args.output
+        output_file=args.output,
+        parallel=args.parallel,
+        max_concurrent=args.max_concurrent
     ))
     
     # Print summary
