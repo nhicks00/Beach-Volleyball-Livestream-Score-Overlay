@@ -83,9 +83,18 @@ struct QueueEditorView: View {
                 urlString: match.apiURL.absoluteString,
                 team1: match.team1Name ?? "",
                 team2: match.team2Name ?? "",
+                team1Seed: match.team1Seed ?? "",
+                team2Seed: match.team2Seed ?? "",
                 matchNumber: match.matchNumber ?? "",
                 scheduledTime: match.scheduledTime ?? "",
-                matchType: match.matchType ?? ""
+                matchType: match.matchType ?? "",
+                typeDetail: match.typeDetail ?? "",
+                courtNumber: match.courtNumber ?? "",
+                physicalCourt: match.physicalCourt ?? "",
+                setsToWin: match.setsToWin,
+                pointsPerSet: match.pointsPerSet,
+                pointCap: match.pointCap,
+                formatText: match.formatText ?? ""
             )
         }
     }
@@ -97,11 +106,24 @@ struct QueueEditorView: View {
                 return nil
             }
             
+            // Preserve ALL match metadata when saving
             return MatchItem(
                 apiURL: url,
                 label: row.label.isEmpty ? nil : row.label,
                 team1Name: row.team1.isEmpty ? nil : row.team1,
-                team2Name: row.team2.isEmpty ? nil : row.team2
+                team2Name: row.team2.isEmpty ? nil : row.team2,
+                team1Seed: row.team1Seed.isEmpty ? nil : row.team1Seed,
+                team2Seed: row.team2Seed.isEmpty ? nil : row.team2Seed,
+                matchType: row.matchType.isEmpty ? nil : row.matchType,
+                typeDetail: row.typeDetail.isEmpty ? nil : row.typeDetail,
+                scheduledTime: row.scheduledTime.isEmpty ? nil : row.scheduledTime,
+                matchNumber: row.matchNumber.isEmpty ? nil : row.matchNumber,
+                courtNumber: row.courtNumber.isEmpty ? nil : row.courtNumber,
+                physicalCourt: row.physicalCourt.isEmpty ? nil : row.physicalCourt,
+                setsToWin: row.setsToWin,
+                pointsPerSet: row.pointsPerSet,
+                pointCap: row.pointCap,
+                formatText: row.formatText.isEmpty ? nil : row.formatText
             )
         }
         
@@ -152,9 +174,18 @@ struct QueueRow: Identifiable {
     var urlString: String = ""
     var team1: String = ""
     var team2: String = ""
+    var team1Seed: String = ""
+    var team2Seed: String = ""
     var matchNumber: String = ""
     var scheduledTime: String = ""
-    var matchType: String = ""  // "Pool Play" or "Bracket Play"
+    var matchType: String = ""      // "Pool Play" or "Bracket Play"
+    var typeDetail: String = ""     // "Pool A", "Winners Bracket"
+    var courtNumber: String = ""    // Original court number from VBL
+    var physicalCourt: String = "" // VBL court name
+    var setsToWin: Int? = nil
+    var pointsPerSet: Int? = nil
+    var pointCap: Int? = nil
+    var formatText: String = ""
     
     /// Clean name by removing parenthetical content like "(FR 52nd)"
     private func cleanName(_ name: String) -> String {

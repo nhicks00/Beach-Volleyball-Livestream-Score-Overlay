@@ -226,6 +226,58 @@ class ScannerViewModel: ObservableObject {
         return minA - minB
     }
     
+    /// Compare two day strings (e.g., "Sat", "Sun", "Friday", "1/10")
+    /// Returns: negative if a < b, positive if a > b, 0 if equal
+    private func compareDayStrings(_ a: String?, _ b: String?) -> Int {
+        guard let dayA = a?.trimmingCharacters(in: .whitespaces).lowercased(),
+              let dayB = b?.trimmingCharacters(in: .whitespaces).lowercased() else {
+            return 0  // If either is nil, treat as equal
+        }
+        
+        // Day abbreviations in week order (typical tournament is Thu-Sun)
+        let dayOrder: [String: Int] = [
+            "thu": 0, "thursday": 0,
+            "fri": 1, "friday": 1,
+            "sat": 2, "saturday": 2,
+            "sun": 3, "sunday": 3,
+            "mon": 4, "monday": 4,
+            "tue": 5, "tuesday": 5,
+            "wed": 6, "wednesday": 6
+        ]
+        
+        if let orderA = dayOrder[dayA], let orderB = dayOrder[dayB] {
+            return orderA - orderB
+        }
+        
+        // Try parsing as date (e.g., "1/10", "01-11")
+        let datePattern = #"(\d{1,2})[/\-](\d{1,2})"#
+        if let regex = try? NSRegularExpression(pattern: datePattern),
+           let matchA = regex.firstMatch(in: dayA, range: NSRange(dayA.startIndex..., in: dayA)),
+           let matchB = regex.firstMatch(in: dayB, range: NSRange(dayB.startIndex..., in: dayB)) {
+            let monthA = Int(dayA[Range(matchA.range(at: 1), in: dayA)!]) ?? 0
+            let monthB = Int(dayB[Range(matchB.range(at: 1), in: dayB)!]) ?? 0
+            let dayNumA = Int(dayA[Range(matchA.range(at: 2), in: dayA)!]) ?? 0
+            let dayNumB = Int(dayB[Range(matchB.range(at: 2), in: dayB)!]) ?? 0
+            
+            if monthA != monthB { return monthA - monthB }
+            return dayNumA - dayNumB
+        }
+        
+        // Fallback to string comparison
+        return dayA.compare(dayB).rawValue
+    }
+    
+    /// Compare two matches by day first, then time
+    private func compareByDayAndTime(_ a: VBLMatch, _ b: VBLMatch) -> Int {
+        // First compare by day
+        let dayCompare = compareDayStrings(a.startDate, b.startDate)
+        if dayCompare != 0 { return dayCompare }
+        
+        // Then compare by time
+        guard let timeA = a.startTime, let timeB = b.startTime else { return 0 }
+        return compareTimeStrings(timeA, timeB)
+    }
+    
     // MARK: - Actions
     
     func startScan() {
@@ -523,12 +575,9 @@ class ScannerViewModel: ObservableObject {
         var result: [VBLMatch] = otherMatches
         
         for (baseLabel, groupMatches) in labelGroups {
-            // Sort by scheduled time
+            // Sort by day first, then time (prevents Sunday 7AM appearing before Saturday 8PM)
             let sorted = groupMatches.sorted { a, b in
-                guard let timeA = a.startTime, let timeB = b.startTime else {
-                    return false
-                }
-                return compareTimeStrings(timeA, timeB) < 0
+                return compareByDayAndTime(a, b) < 0
             }
             
             // Assign numbers
