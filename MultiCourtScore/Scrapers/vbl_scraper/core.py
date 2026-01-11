@@ -51,6 +51,7 @@ class VBLMatch:
     team2_seed: Optional[str] = None
     court: Optional[str] = None
     start_time: Optional[str] = None
+    start_date: Optional[str] = None  # Day abbreviation (Sat, Sun, etc.)
     api_url: Optional[str] = None
     match_type: Optional[str] = None
     type_detail: Optional[str] = None
@@ -73,6 +74,7 @@ class VBLMatch:
             'team2_seed': self.team2_seed,
             'court': self.court,
             'startTime': self.start_time,
+            'startDate': self.start_date,
             'api_url': self.api_url,
             'match_type': self.match_type,
             'type_detail': self.type_detail,
