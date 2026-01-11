@@ -31,6 +31,49 @@ class BracketScraper(VBLScraperBase):
       Phase 3: Extract match data and API URL from overlay
     """
     
+    # Day abbreviations to look for in time strings
+    DAY_PATTERNS = [
+        ('saturday', 'Sat'), ('sunday', 'Sun'), ('friday', 'Fri'),
+        ('thursday', 'Thu'), ('wednesday', 'Wed'), ('tuesday', 'Tue'), ('monday', 'Mon'),
+        ('sat', 'Sat'), ('sun', 'Sun'), ('fri', 'Fri'),
+        ('thu', 'Thu'), ('wed', 'Wed'), ('tue', 'Tue'), ('mon', 'Mon'),
+    ]
+    
+    def _parse_day_time(self, raw_text: str) -> tuple:
+        """
+        Parse combined day+time string like 'Sat 12:00 PM' into (day, time).
+        
+        Returns:
+            tuple: (start_date, start_time) - either can be None if not found
+            
+        Examples:
+            'Sat 12:00 PM' -> ('Sat', '12:00PM')
+            'Sun 7:00 AM'  -> ('Sun', '7:00AM')
+            '9:00AM'       -> (None, '9:00AM')
+        """
+        if not raw_text:
+            return None, None
+        
+        text = raw_text.strip()
+        start_date = None
+        start_time = None
+        
+        # Check for day abbreviation at the start
+        text_lower = text.lower()
+        for pattern, abbrev in self.DAY_PATTERNS:
+            if text_lower.startswith(pattern):
+                start_date = abbrev
+                # Remove the day part from text
+                text = text[len(pattern):].strip()
+                break
+        
+        # Extract time (patterns like "12:00 PM", "9:00AM")
+        time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM))', text, re.IGNORECASE)
+        if time_match:
+            start_time = time_match.group(1).replace(' ', '')
+        
+        return start_date, start_time
+    
     async def scan(
         self, 
         url: str, 
@@ -180,6 +223,24 @@ class BracketScraper(VBLScraperBase):
         match = VBLMatch(index=index)
         
         try:
+            # FIRST: Extract day+time from the bracket label BEFORE clicking
+            # This is where "Sat 12:00 PM" appears - in the bracket view, not the overlay
+            try:
+                # Try to find the bracket-label inside or near this container
+                label = container.locator('.bracket-label, .topx, [class*="bracket-label"]').first
+                if await label.is_visible():
+                    # Get all spans (usually: Match#, Day+Time, Court)
+                    spans = await label.locator('span').all()
+                    if len(spans) >= 2:
+                        # Second span typically has "Sat 12:00 PM" or just time
+                        day_time_text = await spans[1].text_content()
+                        if day_time_text:
+                            match.start_date, match.start_time = self._parse_day_time(day_time_text)
+                            if match.start_date:
+                                logger.debug(f"Pre-click extracted day: {match.start_date}")
+            except Exception as pre_e:
+                logger.debug(f"Pre-click label extraction failed: {pre_e}")
+            
             # Click to open overlay
             logger.debug(f"Clicking match container {index}...")
             await container.click()
@@ -242,11 +303,21 @@ class BracketScraper(VBLScraperBase):
                     if m:
                         match.match_number = m.group(1)
                 
-                # Extract Time
-                # Usually: <div class="text-center">3:15PM</div>
+                # Extract Time (and Day if present)
+                # Pattern: "Sat 12:00 PM" or just "3:15PM"
+                # NOTE: The overlay often only shows time, not day. Preserve pre-extracted day.
                 time_div = title.locator('div.text-center').first
                 if await time_div.is_visible():
-                    match.start_time = await time_div.text_content()
+                    raw_time = await time_div.text_content()
+                    overlay_date, overlay_time = self._parse_day_time(raw_time)
+                    # Only update time if we got something from overlay
+                    if overlay_time:
+                        match.start_time = overlay_time
+                    # Only update date if overlay had day info (don't overwrite pre-click extraction)
+                    if overlay_date:
+                        match.start_date = overlay_date
+                    if match.start_date:
+                        logger.debug(f"Final day: {match.start_date}")
                 
                 # Extract Court
                 # Usually: <span ...> Court 1</span> (last span)
@@ -382,11 +453,20 @@ class BracketScraper(VBLScraperBase):
                 logger.info(f"Extracted teams: {match.team1} vs {match.team2}")
 
             
-            # Extract time (look for patterns like "9:00AM", "10:30 AM")
-            time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM))', text_content, re.IGNORECASE)
-            if time_match:
-                match.start_time = time_match.group(1).replace(" ", "")
-                logger.info(f"Extracted time: {match.start_time}")
+            # Extract time (and day) - look for patterns like "Sat 9:00AM", "Sun 10:30 AM"
+            # First try to find day+time pattern
+            day_time_match = re.search(
+                r'((?:sat|sun|mon|tue|wed|thu|fri)(?:urday|day|nesday|sday)?)?\s*(\d{1,2}:\d{2}\s*(?:AM|PM))',
+                text_content, 
+                re.IGNORECASE
+            )
+            if day_time_match:
+                day_str = day_time_match.group(1)
+                time_str = day_time_match.group(2)
+                if day_str:
+                    match.start_date = day_str[:3].capitalize()
+                match.start_time = time_str.replace(" ", "")
+                logger.info(f"Extracted day+time: {match.start_date} {match.start_time}")
             
             # Extract court number - look for single digit after "Court:"
             court_match = re.search(r'Court[:\s]*(\d)', text_content, re.IGNORECASE)
