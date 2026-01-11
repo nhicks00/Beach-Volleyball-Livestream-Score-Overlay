@@ -195,6 +195,7 @@ final class WebSocketHub {
                     "setsWon2": snapshot?.team2Score ?? 0,  // Sets won by team 2 (this IS sets won in the model)
                     "set": snapshot?.setNumber ?? 1,
                     "status": snapshot?.status ?? "Pre-Match",
+                    "courtStatus": court.status.rawValue,  // "idle", "waiting", "live", "postmatch"
                     "setsA": snapshot?.totalSetsWon.team1 ?? 0,
                     "setsB": snapshot?.totalSetsWon.team2 ?? 0,
                     "serve": snapshot?.serve ?? "none",
@@ -1333,13 +1334,15 @@ function applyData(d){
   const score2 = d.score2 || 0;
   const isZero = isZeroZero(score1, score2);
   const setNum = d.setNumber || 1;
+  const courtStatus = d.courtStatus || 'idle';  // idle, waiting, live, postmatch
   
-  // CRITICAL: Determine overlay state based on score
-  // If score is 0-0 (and Set 1), show Prematch. Otherwise show Live scoreboard.
-  if (score1 === 0 && score2 === 0 && setNum === 1) {
-    transitionToPrematch();
-  } else {
+  // CRITICAL: Determine overlay state based on COURT STATUS, not just score
+  // Show live scoreboard when court is actively live (even at 0-0)
+  // Show prematch only when court is idle/waiting
+  if (courtStatus === 'live' || courtStatus === 'postmatch') {
     transitionToLive();
+  } else {
+    transitionToPrematch();
   }
 
   // Names - ALWAYS show last names only as requested
