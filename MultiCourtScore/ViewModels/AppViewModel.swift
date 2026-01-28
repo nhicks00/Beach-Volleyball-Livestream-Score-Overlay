@@ -384,24 +384,39 @@ final class AppViewModel: ObservableObject {
     // Refresh TBD names in the queue
     private func refreshQueueMetadata(for courtId: Int) async {
         guard let idx = courtIndex(for: courtId) else { return }
-        
-        // Iterate over future matches
+
+        // Capture queue count at start to avoid race conditions
+        let queueCount = courts[idx].queue.count
         let startIndex = (courts[idx].activeIndex ?? -1) + 1
-        guard startIndex < courts[idx].queue.count else { return }
-        
-        for i in startIndex..<courts[idx].queue.count {
-            let match = courts[idx].queue[i]
-            
+        guard startIndex < queueCount else { return }
+
+        for i in startIndex..<queueCount {
+            // Re-validate index before each access (queue may have changed)
+            guard let courtIdx = courtIndex(for: courtId),
+                  i < courts[courtIdx].queue.count else {
+                print("⚠️ Queue changed during metadata refresh, stopping early")
+                return
+            }
+
+            let match = courts[courtIdx].queue[i]
+
             do {
                 // Fetch fresh data for the queued match
                 let data = try await apiClient.fetchData(from: match.apiURL)
                 let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
-                
+
+                // Re-validate again before write
+                guard let writeIdx = courtIndex(for: courtId),
+                      i < courts[writeIdx].queue.count else {
+                    print("⚠️ Queue changed during metadata refresh, stopping early")
+                    return
+                }
+
                 // Update names if changed
                 if snapshot.team1Name != match.team1Name || snapshot.team2Name != match.team2Name {
                     print("🔄 Updated queue metadata for match \(i): \(snapshot.team1Name) vs \(snapshot.team2Name)")
-                    courts[idx].queue[i].team1Name = snapshot.team1Name
-                    courts[idx].queue[i].team2Name = snapshot.team2Name
+                    courts[writeIdx].queue[i].team1Name = snapshot.team1Name
+                    courts[writeIdx].queue[i].team2Name = snapshot.team2Name
                 }
             } catch {
                 print("⚠️ Failed to refresh queue metadata: \(error.localizedDescription)")

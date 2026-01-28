@@ -918,15 +918,15 @@ struct CourtAssignmentCard: View {
                             .background(AppColors.primary.opacity(0.8))
                             .cornerRadius(4)
                     }
-                    
+
                     // Teams
                     Text("\(match.team1 ?? "TBD") vs \(match.team2 ?? "TBD")")
                         .font(AppTypography.body)
                         .foregroundColor(AppColors.textSecondary)
                         .lineLimit(1)
-                    
+
                     Spacer()
-                    
+
                     // Day + Time
                     HStack(spacing: 4) {
                         if let day = match.startDate {
@@ -941,19 +941,20 @@ struct CourtAssignmentCard: View {
                         }
                     }
                     .frame(width: 80, alignment: .trailing)
-                    
-                    // Camera assignment indicator
-                    let assignedCamera = assignments[match.id] ?? mappedCamera
-                    Text(assignedCamera > 0 ? CourtNaming.shortName(for: assignedCamera) : "—")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(assignedCamera > 0 ? AppColors.success : AppColors.textMuted)
-                        .frame(width: 35, alignment: .center)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(assignedCamera > 0 ? AppColors.success.opacity(0.1) : AppColors.surfaceElevated)
-                        )
+
+                    // Individual match camera picker
+                    Picker("", selection: Binding(
+                        get: { assignments[match.id] ?? mappedCamera },
+                        set: { assignments[match.id] = $0 }
+                    )) {
+                        Text("—").tag(0)
+                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
+                            Text(CourtNaming.shortName(for: id)).tag(id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 70)
+                    .tint((assignments[match.id] ?? mappedCamera) > 0 ? AppColors.success : AppColors.textMuted)
                 }
             }
         }
