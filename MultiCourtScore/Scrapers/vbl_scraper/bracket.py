@@ -148,18 +148,16 @@ class BracketScraper(VBLScraperBase):
                     logger.warning(f"  [{i+1}] Error: {e}")
                     continue
 
-            # PHASE 2: Batch extract API URLs only for matches with real teams
-            logger.info("Phase 2: Extracting API URLs for complete matches...")
-            matches_needing_api = [(i, c, m) for i, c, m in matches_to_process if self._has_real_teams(m)]
-            matches_with_tbd = [(i, c, m) for i, c, m in matches_to_process if not self._has_real_teams(m)]
+            # PHASE 2: Extract API URLs for ALL matches (TBD matches get updated as teams advance)
+            logger.info("Phase 2: Extracting API URLs for all matches...")
 
-            logger.info(f"  {len(matches_needing_api)} matches need API URLs, {len(matches_with_tbd)} are TBD/incomplete")
-
-            # Process API URLs in batches for speed
-            for i, container, match in matches_needing_api:
+            api_success = 0
+            for i, container, match in matches_to_process:
                 try:
                     api_url = await self._extract_api_url_for_match(container, i)
                     match.api_url = api_url
+                    if api_url:
+                        api_success += 1
                     api_status = "✓ API" if api_url else "✗ No API"
                     logger.info(f"  [{i+1}] {api_status}")
                 except Exception as e:
@@ -170,7 +168,7 @@ class BracketScraper(VBLScraperBase):
                 result.matches.append(match)
 
             result.status = "success"
-            logger.info(f"Scan complete: {len(result.matches)} matches ({len(matches_needing_api)} with API URLs)")
+            logger.info(f"Scan complete: {len(result.matches)} matches ({api_success} with API URLs)")
 
         except Exception as e:
             result.status = "error"
