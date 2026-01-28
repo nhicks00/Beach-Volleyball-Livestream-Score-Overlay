@@ -168,11 +168,15 @@ class ScannerViewModel: ObservableObject {
     
     var groupedByCourt: [String: [VBLMatch]] {
         var grouped = Dictionary(grouping: scanResults) { $0.courtDisplay }
-        
-        // Sort matches within each group by: time, then match number, then discovery order
+
+        // Sort matches within each group by: DAY first, then TIME, then match number
         for (court, matches) in grouped {
             grouped[court] = matches.sorted { a, b in
-                // Compare by time first (if both have times)
+                // FIRST: Compare by day (Sat before Sun, etc.)
+                let dayCompare = compareDayStrings(a.startDate, b.startDate)
+                if dayCompare != 0 { return dayCompare < 0 }
+
+                // SECOND: Compare by time (8:00AM before 9:00AM, etc.)
                 if let timeA = a.startTime, let timeB = b.startTime {
                     let timeCompare = compareTimeStrings(timeA, timeB)
                     if timeCompare != 0 { return timeCompare < 0 }
@@ -181,8 +185,8 @@ class ScannerViewModel: ObservableObject {
                 } else if b.startTime != nil {
                     return false // b has time, a doesn't - b comes first
                 }
-                
-                // Then compare by match number
+
+                // THIRD: Compare by match number
                 if let numA = a.matchNumber, let numB = b.matchNumber,
                    let intA = Int(numA), let intB = Int(numB) {
                     if intA != intB { return intA < intB }
@@ -191,12 +195,12 @@ class ScannerViewModel: ObservableObject {
                 } else if b.matchNumber != nil {
                     return false
                 }
-                
+
                 // Finally by discovery order (index)
                 return a.index < b.index
             }
         }
-        
+
         return grouped
     }
     
