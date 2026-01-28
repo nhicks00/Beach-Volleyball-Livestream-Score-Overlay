@@ -87,6 +87,7 @@ struct QueueEditorView: View {
                 team2Seed: match.team2Seed ?? "",
                 matchNumber: match.matchNumber ?? "",
                 scheduledTime: match.scheduledTime ?? "",
+                startDate: match.startDate ?? "",
                 matchType: match.matchType ?? "",
                 typeDetail: match.typeDetail ?? "",
                 courtNumber: match.courtNumber ?? "",
@@ -117,6 +118,7 @@ struct QueueEditorView: View {
                 matchType: row.matchType.isEmpty ? nil : row.matchType,
                 typeDetail: row.typeDetail.isEmpty ? nil : row.typeDetail,
                 scheduledTime: row.scheduledTime.isEmpty ? nil : row.scheduledTime,
+                startDate: row.startDate.isEmpty ? nil : row.startDate,
                 matchNumber: row.matchNumber.isEmpty ? nil : row.matchNumber,
                 courtNumber: row.courtNumber.isEmpty ? nil : row.courtNumber,
                 physicalCourt: row.physicalCourt.isEmpty ? nil : row.physicalCourt,
@@ -178,6 +180,7 @@ struct QueueRow: Identifiable {
     var team2Seed: String = ""
     var matchNumber: String = ""
     var scheduledTime: String = ""
+    var startDate: String = ""
     var matchType: String = ""      // "Pool Play" or "Bracket Play"
     var typeDetail: String = ""     // "Pool A", "Winners Bracket"
     var courtNumber: String = ""    // Original court number from VBL
@@ -215,13 +218,19 @@ struct QueueRow: Identifiable {
     }
     
     
+    /// Format team name with seed suffix (e.g., "T. Smith (1)")
+    private func formatWithSeed(_ name: String, seed: String) -> String {
+        guard !seed.isEmpty else { return name }
+        return "\(name) (\(seed))"
+    }
+
     var displayTitle: String {
         if !team1.isEmpty || !team2.isEmpty {
-            let t1 = team1.isEmpty ? "TBD" : abbreviateName(team1)
-            let t2 = team2.isEmpty ? "TBD" : abbreviateName(team2)
+            let t1 = team1.isEmpty ? "TBD" : formatWithSeed(abbreviateName(team1), seed: team1Seed)
+            let t2 = team2.isEmpty ? "TBD" : formatWithSeed(abbreviateName(team2), seed: team2Seed)
             return "\(t1) vs \(t2)"
         }
-        
+
         // If we have a label, check if it's just a number
         if !label.isEmpty {
             // If label is just a number (e.g., "7"), convert to "Match 7"
@@ -230,7 +239,7 @@ struct QueueRow: Identifiable {
             }
             return label
         }
-        
+
         return "New Match (Save to fetch details)"
     }
     
@@ -264,10 +273,54 @@ struct QueueRow: Identifiable {
         if !matchNumber.isEmpty {
             parts.append("M\(matchNumber)")
         }
-        if !scheduledTime.isEmpty {
-            parts.append(scheduledTime)
+
+        // Combine Day + Time
+        var timeStr = ""
+        if !startDate.isEmpty {
+            timeStr += startDate
         }
+        if !scheduledTime.isEmpty {
+            if !timeStr.isEmpty { timeStr += " " }
+            timeStr += scheduledTime
+        }
+        if !timeStr.isEmpty {
+            parts.append(timeStr)
+        }
+
+        // Add format info if non-default
+        let formatStr = formatDisplay
+        if !formatStr.isEmpty {
+            parts.append(formatStr)
+        }
+
         return parts.joined(separator: " • ")
+    }
+
+    /// Format display (e.g., "Bo3 21pts" or "Bo1 15/17")
+    var formatDisplay: String {
+        let sets = setsToWin ?? 2
+        let points = pointsPerSet ?? 21
+        let cap = pointCap
+
+        // Don't show if using defaults
+        if sets == 2 && points == 21 && cap == nil {
+            return ""
+        }
+
+        var parts: [String] = []
+
+        // Sets to win: "Bo1", "Bo3", "Bo5"
+        let totalSets = sets * 2 - 1
+        parts.append("Bo\(totalSets)")
+
+        // Points: "21pts" or "15/17" if there's a cap
+        if let cap = cap {
+            parts.append("\(points)/\(cap)")
+        } else if points != 21 {
+            parts.append("\(points)pts")
+        }
+
+        return parts.joined(separator: " ")
     }
     
     var isValid: Bool {

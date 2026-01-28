@@ -362,15 +362,50 @@ struct WaitingForMatchView: View {
         return abbreviated.joined(separator: " / ")
     }
     
-    /// Get abbreviated display name
+    /// Get abbreviated display name with optional seeds
     private func abbreviatedDisplayName(for match: MatchItem) -> String {
         if let t1 = match.team1Name, let t2 = match.team2Name, !t1.isEmpty, !t2.isEmpty {
-            return "\(abbreviateName(t1)) vs \(abbreviateName(t2))"
+            let team1Display = formatTeamWithSeed(abbreviateName(t1), seed: match.team1Seed)
+            let team2Display = formatTeamWithSeed(abbreviateName(t2), seed: match.team2Seed)
+            return "\(team1Display) vs \(team2Display)"
         }
         // Use match.displayName which handles numeric-only labels correctly
         return match.displayName
     }
-    
+
+    /// Format team name with seed suffix (e.g., "T. Smith / J. Doe (1)")
+    private func formatTeamWithSeed(_ name: String, seed: String?) -> String {
+        guard let seed = seed, !seed.isEmpty else { return name }
+        return "\(name) (\(seed))"
+    }
+
+    /// Format match format info (e.g., "Bo3 21pts" or "Bo1 15/17")
+    private func formatMatchInfo(for match: MatchItem) -> String {
+        let sets = match.setsToWin ?? 2
+        let points = match.pointsPerSet ?? 21
+        let cap = match.pointCap
+
+        // Don't show if using defaults
+        if sets == 2 && points == 21 && cap == nil {
+            return ""
+        }
+
+        var parts: [String] = []
+
+        // Sets to win: "Bo1", "Bo3", "Bo5"
+        let totalSets = sets * 2 - 1  // 1 set = Bo1, 2 sets = Bo3, 3 sets = Bo5
+        parts.append("Bo\(totalSets)")
+
+        // Points: "21pts" or "15/17" if there's a cap
+        if let cap = cap {
+            parts.append("\(points)/\(cap)")
+        } else if points != 21 {
+            parts.append("\(points)pts")
+        }
+
+        return parts.joined(separator: " ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NEXT MATCH")
@@ -414,10 +449,21 @@ struct WaitingForMatchView: View {
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(AppColors.textMuted)
                         }
-                        if let time = match.scheduledTime, !time.isEmpty {
-                            Text(time)
+                        let dayTime = [match.startDate, match.scheduledTime]
+                            .compactMap { $0 }
+                            .filter { !$0.isEmpty }
+                            .joined(separator: " ")
+                        if !dayTime.isEmpty {
+                            Text(dayTime)
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(AppColors.textSecondary)
+                        }
+                        // Format info (e.g., "Bo3 21pts")
+                        let formatInfo = formatMatchInfo(for: match)
+                        if !formatInfo.isEmpty {
+                            Text(formatInfo)
+                                .font(.system(size: 9))
+                                .foregroundColor(AppColors.textMuted)
                         }
                     }
                 }
@@ -473,13 +519,21 @@ struct QueuePreview: View {
     }
     
     
-    /// Get abbreviated display name
+    /// Get abbreviated display name with optional seeds
     private func abbreviatedDisplayName(for match: MatchItem) -> String {
         if let t1 = match.team1Name, let t2 = match.team2Name, !t1.isEmpty, !t2.isEmpty {
-            return "\(abbreviateName(t1)) vs \(abbreviateName(t2))"
+            let team1Display = formatTeamWithSeed(abbreviateName(t1), seed: match.team1Seed)
+            let team2Display = formatTeamWithSeed(abbreviateName(t2), seed: match.team2Seed)
+            return "\(team1Display) vs \(team2Display)"
         }
         // Use match.displayName which handles numeric-only labels correctly
         return match.displayName
+    }
+
+    /// Format team name with seed suffix (e.g., "T. Smith / J. Doe (1)")
+    private func formatTeamWithSeed(_ name: String, seed: String?) -> String {
+        guard let seed = seed, !seed.isEmpty else { return name }
+        return "\(name) (\(seed))"
     }
     
     /// Get short match type label: "Pool" or "Bracket"
@@ -502,7 +556,7 @@ struct QueuePreview: View {
         return ""
     }
     
-    /// Match info for display (match type, match number and time)
+    /// Match info for display (match type, match number and day + time)
     private func matchInfo(for match: MatchItem) -> String {
         var parts: [String] = []
         let typeLabel = matchTypeLabel(for: match)
@@ -512,8 +566,13 @@ struct QueuePreview: View {
         if let matchNum = match.matchNumber, !matchNum.isEmpty {
             parts.append("M\(matchNum)")
         }
-        if let time = match.scheduledTime, !time.isEmpty {
-            parts.append(time)
+        // Combine day + time
+        let dayTime = [match.startDate, match.scheduledTime]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if !dayTime.isEmpty {
+            parts.append(dayTime)
         }
         return parts.joined(separator: " • ")
     }
