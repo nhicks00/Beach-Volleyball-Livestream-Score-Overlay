@@ -70,8 +70,8 @@ struct ScanWorkflowView: View {
                 case .courtMapping:
                     CourtMappingStep(
                         groupedByCourt: groupedByCourt,
-                        courts: appViewModel.courts,
                         onProceed: { advanceToAssign() },
+                        onSkip: { advanceToAssign() },
                         onBack: { currentStep = .scanResults }
                     )
                 case .assign:
@@ -539,8 +539,22 @@ struct CourtResultsCard: View {
                     .foregroundColor(AppColors.textMuted)
             }
             
+            Divider()
+            
             ForEach(Array(matches.enumerated()), id: \.offset) { index, match in
-                HStack {
+                HStack(spacing: 8) {
+                    // Match number badge
+                    if let matchNum = match.matchNumber {
+                        Text("M\(matchNum)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(AppColors.primary.opacity(0.8))
+                            .cornerRadius(4)
+                    }
+                    
+                    // Teams
                     Text("\(match.team1 ?? "TBD") vs \(match.team2 ?? "TBD")")
                         .font(AppTypography.body)
                         .foregroundColor(AppColors.textSecondary)
@@ -548,10 +562,18 @@ struct CourtResultsCard: View {
                     
                     Spacer()
                     
-                    if !match.timeDisplay.isEmpty {
-                        Text(match.timeDisplay)
-                            .font(AppTypography.caption)
-                            .foregroundColor(AppColors.textMuted)
+                    // Day + Time (e.g., "Sat 12:00PM")
+                    HStack(spacing: 4) {
+                        if let day = match.startDate {
+                            Text(day)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(day == "Sun" ? AppColors.warning : AppColors.info)
+                        }
+                        if !match.timeDisplay.isEmpty {
+                            Text(match.timeDisplay)
+                                .font(AppTypography.caption)
+                                .foregroundColor(AppColors.textMuted)
+                        }
                     }
                 }
                 .padding(.vertical, 4)
@@ -569,8 +591,8 @@ struct CourtResultsCard: View {
 
 struct CourtMappingStep: View {
     let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
-    let courts: [Court]
     let onProceed: () -> Void
+    let onSkip: () -> Void
     let onBack: () -> Void
     
     @StateObject private var mappingStore = CourtMappingStore.shared
@@ -586,6 +608,10 @@ struct CourtMappingStep: View {
         }
     }
     
+    private var allAssigned: Bool {
+        sortedCourts.allSatisfy { courtAssignments[$0] ?? 0 > 0 }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -595,7 +621,7 @@ struct CourtMappingStep: View {
                         .font(AppTypography.headline)
                         .foregroundColor(AppColors.textPrimary)
                     
-                    Text("Assign each court to the camera that's recording it")
+                    Text("Assign each VBL court to a camera card")
                         .font(AppTypography.caption)
                         .foregroundColor(AppColors.textMuted)
                 }
@@ -620,6 +646,13 @@ struct CourtMappingStep: View {
                 }
                 .buttonStyle(.bordered)
                 
+                // Skip button - allows manual assignment
+                Button(action: onSkip) {
+                    Text("Skip")
+                        .font(AppTypography.callout)
+                }
+                .buttonStyle(.bordered)
+                
                 Button(action: applyMappingsAndProceed) {
                     HStack(spacing: 4) {
                         Text("Continue")
@@ -629,7 +662,6 @@ struct CourtMappingStep: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppColors.success)
-                .disabled(courtAssignments.values.allSatisfy { $0 == 0 })
             }
             .padding(AppLayout.contentPadding)
             .background(AppColors.surface)
@@ -644,8 +676,7 @@ struct CourtMappingStep: View {
                             selectedCamera: Binding(
                                 get: { courtAssignments[courtName] ?? 0 },
                                 set: { courtAssignments[courtName] = $0 }
-                            ),
-                            availableCameras: courts
+                            )
                         )
                     }
                 }
@@ -675,7 +706,7 @@ struct CourtMappingStep: View {
             if priorityPatterns.contains(where: { lowerName.contains($0) }) {
                 courtAssignments[courtName] = 1  // Core 1
             } else {
-                courtAssignments[courtName] = min(cameraIndex, courts.count)
+                courtAssignments[courtName] = min(cameraIndex, AppConfig.maxCourts)
                 cameraIndex += 1
             }
         }
@@ -701,7 +732,6 @@ struct CourtMappingRow: View {
     let courtName: String
     let matchCount: Int
     @Binding var selectedCamera: Int
-    let availableCameras: [Court]
     
     var body: some View {
         HStack(spacing: 16) {
@@ -718,16 +748,19 @@ struct CourtMappingRow: View {
             
             Spacer()
             
-            // Camera picker
+            // Arrow indicator
+            Image(systemName: "arrow.right")
+                .foregroundColor(AppColors.textMuted)
+            
+            // Camera picker - uses CourtNaming for proper "Core 1, Mevo 2..." names
             Picker("Camera", selection: $selectedCamera) {
                 Text("Not Assigned").tag(0)
-                ForEach(availableCameras) { court in
-                    Text(court.name)
-                        .tag(court.id)
+                ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
+                    Text(CourtNaming.displayName(for: cameraId)).tag(cameraId)
                 }
             }
             .pickerStyle(.menu)
-            .frame(width: 160)
+            .frame(width: 140)
             .tint(selectedCamera > 0 ? AppColors.success : AppColors.textMuted)
         }
         .padding(AppLayout.cardPadding)
@@ -825,6 +858,13 @@ struct CourtAssignmentCard: View {
     let matches: [ScannerViewModel.VBLMatch]
     @Binding var assignments: [UUID: Int]
     
+    @StateObject private var mappingStore = CourtMappingStore.shared
+    
+    // Get pre-assigned camera from court mapping
+    private var mappedCamera: Int {
+        mappingStore.cameraId(for: courtName) ?? 0
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -840,28 +880,46 @@ struct CourtAssignmentCard: View {
                 
                 Spacer()
                 
-                // Bulk assign picker
-                Picker("Assign All", selection: Binding(
-                    get: { assignments[matches.first?.id ?? UUID()] ?? 0 },
-                    set: { newValue in
-                        for match in matches {
-                            assignments[match.id] = newValue
+                // Show current mapping or bulk assign picker
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right")
+                        .foregroundColor(AppColors.textMuted)
+                    
+                    // Bulk assign picker with CourtNaming
+                    Picker("Assign All", selection: Binding(
+                        get: { assignments[matches.first?.id ?? UUID()] ?? mappedCamera },
+                        set: { newValue in
+                            for match in matches {
+                                assignments[match.id] = newValue
+                            }
+                        }
+                    )) {
+                        Text("Not Assigned").tag(0)
+                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
+                            Text(CourtNaming.displayName(for: id)).tag(id)
                         }
                     }
-                )) {
-                    Text("Not Assigned").tag(0)
-                    ForEach(1...AppConfig.maxCourts, id: \.self) { id in
-                        Text(CourtNaming.displayName(for: id)).tag(id)
-                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
                 }
-                .pickerStyle(.menu)
-                .frame(width: 140)
             }
             
             Divider()
             
             ForEach(Array(matches.enumerated()), id: \.offset) { index, match in
-                HStack {
+                HStack(spacing: 8) {
+                    // Match number badge
+                    if let matchNum = match.matchNumber {
+                        Text("M\(matchNum)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(AppColors.primary.opacity(0.8))
+                            .cornerRadius(4)
+                    }
+                    
+                    // Teams
                     Text("\(match.team1 ?? "TBD") vs \(match.team2 ?? "TBD")")
                         .font(AppTypography.body)
                         .foregroundColor(AppColors.textSecondary)
@@ -869,17 +927,33 @@ struct CourtAssignmentCard: View {
                     
                     Spacer()
                     
-                    Picker("", selection: Binding(
-                        get: { assignments[match.id] ?? 0 },
-                        set: { assignments[match.id] = $0 }
-                    )) {
-                        Text("—").tag(0)
-                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
-                            Text(CourtNaming.shortName(for: id)).tag(id)
+                    // Day + Time
+                    HStack(spacing: 4) {
+                        if let day = match.startDate {
+                            Text(day)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(day == "Sun" ? AppColors.warning : AppColors.info)
+                        }
+                        if !match.timeDisplay.isEmpty {
+                            Text(match.timeDisplay)
+                                .font(AppTypography.caption)
+                                .foregroundColor(AppColors.textMuted)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 100)
+                    .frame(width: 80, alignment: .trailing)
+                    
+                    // Camera assignment indicator
+                    let assignedCamera = assignments[match.id] ?? mappedCamera
+                    Text(assignedCamera > 0 ? CourtNaming.shortName(for: assignedCamera) : "—")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(assignedCamera > 0 ? AppColors.success : AppColors.textMuted)
+                        .frame(width: 35, alignment: .center)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(assignedCamera > 0 ? AppColors.success.opacity(0.1) : AppColors.surfaceElevated)
+                        )
                 }
             }
         }
@@ -888,5 +962,15 @@ struct CourtAssignmentCard: View {
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
                 .fill(AppColors.surface)
         )
+        .onAppear {
+            // Pre-fill assignments from court mapping if not already set
+            if mappedCamera > 0 {
+                for match in matches {
+                    if assignments[match.id] == nil || assignments[match.id] == 0 {
+                        assignments[match.id] = mappedCamera
+                    }
+                }
+            }
+        }
     }
 }
