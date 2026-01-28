@@ -93,15 +93,15 @@ class BracketScraper(VBLScraperBase):
 
         try:
             logger.info(f"Scanning bracket: {url}")
-            # Use domcontentloaded instead of networkidle for faster initial load
-            await self.page.goto(url, wait_until='domcontentloaded')
+            # Use networkidle to ensure JS-rendered match cards are loaded
+            await self.page.goto(url, wait_until='networkidle')
 
             # Check if login is needed
             if await self._requires_login():
                 if username and password:
                     logger.info("Login required, attempting authentication...")
                     if await self.login(username, password):
-                        await self.page.goto(url, wait_until='domcontentloaded')
+                        await self.page.goto(url, wait_until='networkidle')
                     else:
                         result.status = "error"
                         result.error = "Login failed"
@@ -111,9 +111,9 @@ class BracketScraper(VBLScraperBase):
                     result.error = "Login required but no credentials provided"
                     return result
 
-            # Wait for bracket content - reduced from 4s to 2s
+            # Wait for bracket to fully load (VBL renders match cards via JS)
             logger.info("Waiting for bracket content...")
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(4.0)
 
             # Phase 1: Find match containers
             containers = await self._phase1_find_containers()
@@ -201,6 +201,7 @@ class BracketScraper(VBLScraperBase):
 
         for selector in selectors:
             try:
+                await asyncio.sleep(0.5)  # Give page time to render between attempts
                 elements = await self.page.locator(selector).all()
 
                 if elements:
