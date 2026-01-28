@@ -47,6 +47,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var matchType: String?      // "Pool Play", "Bracket Play"
     var typeDetail: String?     // "Pool A", "Winners Bracket"
     var scheduledTime: String?
+    var startDate: String?      // "Sat", "Sun", "1/12", etc.
     var matchNumber: String?    // "Match 1", "18", etc.
     var courtNumber: String?    // Original court number from VBL
     var physicalCourt: String?  // VBL court name for tracking reassignments (e.g., "Court 1", "Stadium Court")
@@ -68,6 +69,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         matchType: String? = nil,
         typeDetail: String? = nil,
         scheduledTime: String? = nil,
+        startDate: String? = nil,
         matchNumber: String? = nil,
         courtNumber: String? = nil,
         physicalCourt: String? = nil,
@@ -87,6 +89,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.matchType = matchType
         self.typeDetail = typeDetail
         self.scheduledTime = scheduledTime
+        self.startDate = startDate
         self.matchNumber = matchNumber
         self.courtNumber = courtNumber
         self.physicalCourt = physicalCourt
@@ -132,8 +135,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
     // MARK: Codable Conformance
     enum CodingKeys: String, CodingKey {
         case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed
-        case matchType, typeDetail, scheduledTime, matchNumber, courtNumber, physicalCourt
+        case matchType, typeDetail, scheduledTime, startDate, matchNumber, courtNumber, physicalCourt
         case setsToWin, pointsPerSet, pointCap, formatText
+        case team1_score, team2_score
     }
     
     init(from decoder: Decoder) throws {
@@ -147,6 +151,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         matchType = try container.decodeIfPresent(String.self, forKey: .matchType)
         typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
         scheduledTime = try container.decodeIfPresent(String.self, forKey: .scheduledTime)
+        startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
         matchNumber = try container.decodeIfPresent(String.self, forKey: .matchNumber)
         courtNumber = try container.decodeIfPresent(String.self, forKey: .courtNumber)
         physicalCourt = try container.decodeIfPresent(String.self, forKey: .physicalCourt)
@@ -154,6 +159,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
         pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
         pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
         formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
+        team1_score = try container.decodeIfPresent(Int.self, forKey: .team1_score)
+        team2_score = try container.decodeIfPresent(Int.self, forKey: .team2_score)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
     }
 }
