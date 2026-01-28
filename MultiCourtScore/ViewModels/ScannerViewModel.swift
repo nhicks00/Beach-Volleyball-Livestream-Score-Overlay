@@ -661,6 +661,7 @@ class ScannerViewModel: ObservableObject {
                 matchType: match.matchType,
                 typeDetail: match.typeDetail,
                 scheduledTime: match.startTime,
+                startDate: match.startDate,
                 matchNumber: match.matchNumber,
                 courtNumber: match.court,
                 physicalCourt: match.court,  // Track physical court for reassignment
