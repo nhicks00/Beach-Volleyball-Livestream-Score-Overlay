@@ -631,7 +631,7 @@ function showNextMatchBar(nextMatchText) {
   // After 30 seconds, swap back
   nextMatchTimer = setTimeout(function() {
     hideNextMatchBar();
-  }, 30000);
+  }, 17000);
 }
 
 function hideNextMatchBar() {
