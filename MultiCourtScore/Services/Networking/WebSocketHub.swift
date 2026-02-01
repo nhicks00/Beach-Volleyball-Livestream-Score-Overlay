@@ -472,6 +472,57 @@ body {
   transform: translateY(0);
   opacity: 1;
 }
+
+/* Intermission transition animations */
+.scorebug-transition {
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.content-fade {
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.content-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.slide-to-center {
+  transform: translateX(0);
+}
+.slide-off-left {
+  transform: translateX(-50px);
+  opacity: 0;
+}
+.slide-off-right {
+  transform: translateX(50px);
+  opacity: 0;
+}
+
+/* Status bubble for intermission */
+.status-bubble {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  border-top: none;
+  border-radius: 0 0 0.5rem 0.5rem;
+  animation: status-pulse 2s infinite ease-in-out;
+}
+@keyframes status-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 5px rgba(212, 175, 55, 0.3), inset 0 0 5px rgba(212, 175, 55, 0.1); 
+    border-color: rgba(212, 175, 55, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), inset 0 0 10px rgba(212, 175, 55, 0.2); 
+    border-color: rgba(212, 175, 55, 0.9);
+  }
+}
+
+/* Intermission scorebug styling */
+#intermission-bug {
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+}
+#intermission-bug.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
 </style>
 </head>
 <body style="display: flex; flex-direction: column; align-items: center; padding-top: 2rem;">
@@ -546,6 +597,44 @@ body {
       <span style="color: rgba(255,255,255,0.3); flex-shrink: 0;">|</span>
       <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase; white-space: nowrap;">Loading...</span>
     </div>
+    
+    <!-- Status Bubble for Intermission (hidden by default) -->
+    <div id="status-bar" class="status-bubble hidden-up" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); white-space: nowrap;">
+      <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Match Starting Soon</span>
+    </div>
+  </div>
+</div>
+
+<!-- Intermission Scorebug (hidden by default, used between matches) -->
+<div id="intermission-container" style="display: none; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem; position: absolute; top: 2rem;">
+  <div id="intermission-bug" class="carbon-bar" style="height: 3rem; border-radius: 0.375rem; display: inline-flex; align-items: center; box-shadow: 0 8px 40px rgb(0,0,0,0.9); position: relative; overflow: hidden; z-index: 10; padding: 0 1.5rem;">
+    
+    <!-- Left Team Name -->
+    <div style="display: flex; align-items: center; flex-shrink: 0;">
+      <span id="int-team1" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap;">Team 1</span>
+    </div>
+    
+    <!-- VS Divider -->
+    <div style="display: flex; align-items: center; flex-shrink: 0; margin: 0 1rem;">
+      <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
+      <span style="font-size: 1.125rem; font-weight: 900; font-style: italic; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
+      <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
+    </div>
+    
+    <!-- Right Team Name -->
+    <div style="display: flex; align-items: center; flex-shrink: 0;">
+      <span id="int-team2" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap;">Team 2</span>
+    </div>
+    
+    <!-- Bottom Accent Line -->
+    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.6), transparent);"></div>
+  </div>
+  
+  <!-- Intermission Status Bubble -->
+  <div class="bubble-container">
+    <div id="int-status-bar" class="status-bubble visible" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); position: absolute; top: 0;">
+      <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Match Starting Soon</span>
+    </div>
   </div>
 </div>
 
@@ -553,16 +642,34 @@ body {
 const SRC = "/score.json";
 const NEXT_SRC = "/next.json";
 const POLL_MS = 1000;
+const POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends
+
+// Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
+let overlayState = 'scoring';
+let postMatchTimer = null;
+let matchFinishedAt = null;
+let lastMatchId = null;
 
 // Animation state
 let lastTriggerScore = -1;
 let animationInProgress = false;
 let nextMatchTimer = null;
+let transitionInProgress = false;
 
-// DOM refs
+// DOM refs - Scoring overlay
+const scoringContainer = document.querySelector('div[style*="max-width: 900px"]');
+const scorebug = document.getElementById('scorebug');
 const socialBar = document.getElementById('social-bar');
 const nextBar = document.getElementById('next-bar');
 const nextTeamsEl = document.getElementById('next-teams');
+const statusBar = document.getElementById('status-bar');
+
+// DOM refs - Intermission overlay
+const intermissionContainer = document.getElementById('intermission-container');
+const intermissionBug = document.getElementById('intermission-bug');
+const intTeam1 = document.getElementById('int-team1');
+const intTeam2 = document.getElementById('int-team2');
+const intStatusBar = document.getElementById('int-status-bar');
 
 /* Helpers */
 async function fetchJSON(u) {
@@ -728,11 +835,184 @@ function applyData(d) {
   }
 }
 
-/* Polling loop */
+/* ===== OVERLAY STATE TRANSITIONS ===== */
+
+// Transition from Scoring → Intermission
+function transitionToIntermission(nextTeam1, nextTeam2) {
+  if (transitionInProgress || overlayState === 'intermission') return;
+  transitionInProgress = true;
+  
+  // Step 1: Retract any visible bubble
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+  nextBar.classList.remove('visible');
+  nextBar.classList.add('hidden-up');
+  
+  // Step 2: After bubble retracts, fade out scoring content
+  setTimeout(function() {
+    // Hide the scoring overlay
+    if (scoringContainer) {
+      scoringContainer.style.opacity = '0';
+      scoringContainer.style.transition = 'opacity 0.4s ease';
+    }
+    
+    // After fade out, show intermission
+    setTimeout(function() {
+      if (scoringContainer) scoringContainer.style.display = 'none';
+      
+      // Update intermission team names
+      if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(nextTeam1)) || 'TBD';
+      if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(nextTeam2)) || 'TBD';
+      
+      // Show intermission container
+      if (intermissionContainer) {
+        intermissionContainer.style.display = 'flex';
+        intermissionContainer.style.opacity = '0';
+        // Trigger reflow then fade in
+        intermissionContainer.offsetHeight;
+        intermissionContainer.style.transition = 'opacity 0.4s ease';
+        intermissionContainer.style.opacity = '1';
+      }
+      
+      overlayState = 'intermission';
+      transitionInProgress = false;
+      console.log('[Overlay] Transitioned to intermission');
+    }, 400);
+    
+  }, 400);
+}
+
+// Transition from Intermission → Scoring
+function transitionToScoring() {
+  if (transitionInProgress || overlayState === 'scoring') return;
+  transitionInProgress = true;
+  
+  // Step 1: Hide intermission status bubble (it retracts up)
+  if (intStatusBar) {
+    intStatusBar.classList.remove('visible');
+    intStatusBar.classList.add('hidden-up');
+  }
+  
+  // Step 2: Fade out intermission container
+  setTimeout(function() {
+    if (intermissionContainer) {
+      intermissionContainer.style.opacity = '0';
+    }
+    
+    // After fade out, show scoring overlay
+    setTimeout(function() {
+      if (intermissionContainer) intermissionContainer.style.display = 'none';
+      
+      // Reset and show scoring container
+      if (scoringContainer) {
+        scoringContainer.style.display = 'flex';
+        scoringContainer.style.opacity = '0';
+        // Trigger reflow then fade in
+        scoringContainer.offsetHeight;
+        scoringContainer.style.opacity = '1';
+      }
+      
+      // Show social bar after scoring appears
+      setTimeout(function() {
+        socialBar.classList.remove('hidden-up');
+        socialBar.classList.add('visible');
+        
+        // Reset intermission status bar for next time
+        if (intStatusBar) {
+          intStatusBar.classList.remove('hidden-up');
+          intStatusBar.classList.add('visible');
+        }
+        
+        overlayState = 'scoring';
+        transitionInProgress = false;
+        matchFinishedAt = null;
+        postMatchTimer = null;
+        console.log('[Overlay] Transitioned to scoring');
+      }, 400);
+      
+    }, 400);
+    
+  }, 400);
+}
+
+// Check if match is finished based on sets won
+function isMatchFinished(d) {
+  const setsToWin = d.setsToWin || 2;
+  const setsWon1 = d.setsA || d.setsWon1 || 0;
+  const setsWon2 = d.setsB || d.setsWon2 || 0;
+  return setsWon1 >= setsToWin || setsWon2 >= setsToWin;
+}
+
+// Determine overlay state based on data
+function determineState(d) {
+  const combinedScore = (d.score1 || 0) + (d.score2 || 0);
+  const hasScoring = combinedScore > 0;
+  const matchFinished = isMatchFinished(d);
+  const courtStatus = (d.courtStatus || '').toLowerCase();
+  
+  // If currently in intermission and scoring starts, switch to scoring
+  if (overlayState === 'intermission' && hasScoring && !matchFinished) {
+    return 'scoring';
+  }
+  
+  // If match just finished, enter post-match state
+  if (matchFinished && overlayState === 'scoring') {
+    return 'postmatch';
+  }
+  
+  // If in post-match and 3 min elapsed, or no more score data, go to intermission
+  if (overlayState === 'postmatch') {
+    if (matchFinishedAt && (Date.now() - matchFinishedAt >= POST_MATCH_HOLD_MS)) {
+      return 'intermission';
+    }
+  }
+  
+  // If court is waiting/idle and score is 0-0 and we have next match data, show intermission
+  if ((courtStatus === 'waiting' || courtStatus === 'idle') && combinedScore === 0 && d.nextMatch) {
+    return 'intermission';
+  }
+  
+  return overlayState;
+}
+
+/* Polling loop with state machine */
 async function tick() {
   try {
     const d = await fetchJSON(SRC);
-    if (d) applyData(d);
+    if (!d) return;
+    
+    // Determine what state we should be in
+    const newState = determineState(d);
+    
+    // Handle state transitions
+    if (newState === 'postmatch' && overlayState === 'scoring') {
+      // Match just finished - start the hold timer
+      overlayState = 'postmatch';
+      matchFinishedAt = Date.now();
+      console.log('[Overlay] Match finished, holding for 3 minutes');
+    }
+    
+    if (newState === 'intermission' && overlayState !== 'intermission' && !transitionInProgress) {
+      // Transition to intermission with next match teams
+      const nextMatch = d.nextMatch || '';
+      const parts = nextMatch.split(/\\s+vs\\.?\\s+/i);
+      if (parts.length >= 2) {
+        transitionToIntermission(parts[0], parts[1]);
+      } else if (nextMatch) {
+        transitionToIntermission(nextMatch, 'TBD');
+      }
+    }
+    
+    if (newState === 'scoring' && overlayState === 'intermission' && !transitionInProgress) {
+      // Scoring started, transition back to scoring overlay
+      transitionToScoring();
+    }
+    
+    // Apply data to scoring overlay if in scoring or postmatch state
+    if ((overlayState === 'scoring' || overlayState === 'postmatch') && !transitionInProgress) {
+      applyData(d);
+    }
+    
   } catch (e) {
     console.log('[Overlay] Fetch error:', e);
   } finally {
