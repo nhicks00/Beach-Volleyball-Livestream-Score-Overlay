@@ -323,6 +323,7 @@ final class AppViewModel: ObservableObject {
                     if holdExpired || nextStarted || isStale {
                         // Advance to next match
                         courts[idx].activeIndex = nextIndex
+                        courts[idx].lastSnapshot = nil
                         courts[idx].status = .waiting
                         courts[idx].liveSince = nil
                         courts[idx].finishedAt = nil  // Reset for next match
