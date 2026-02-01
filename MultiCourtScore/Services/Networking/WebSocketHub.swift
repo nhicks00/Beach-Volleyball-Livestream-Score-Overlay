@@ -597,11 +597,6 @@ body {
       <span style="color: rgba(255,255,255,0.3); flex-shrink: 0;">|</span>
       <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase; white-space: nowrap;">Loading...</span>
     </div>
-    
-    <!-- Status Bubble for Intermission (hidden by default) -->
-    <div id="status-bar" class="status-bubble hidden-up" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); white-space: nowrap;">
-      <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Match Starting Soon</span>
-    </div>
   </div>
 </div>
 
@@ -662,7 +657,6 @@ const scorebug = document.getElementById('scorebug');
 const socialBar = document.getElementById('social-bar');
 const nextBar = document.getElementById('next-bar');
 const nextTeamsEl = document.getElementById('next-teams');
-const statusBar = document.getElementById('status-bar');
 
 // DOM refs - Intermission overlay
 const intermissionContainer = document.getElementById('intermission-container');

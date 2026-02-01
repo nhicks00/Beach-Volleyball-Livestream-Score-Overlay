@@ -25,13 +25,21 @@ enum CourtFilter: String, CaseIterable {
     }
 }
 
+struct EditorConfig: Identifiable {
+    let id: Int
+}
+
 struct DashboardView: View {
     @EnvironmentObject var appViewModel: AppViewModel
-    @Environment(\.openWindow) private var openWindow
 
     // State
     @State private var renamingCourtId: Int?
     @State private var newCourtName = ""
+
+    // Sheet state
+    @State private var showScannerSheet = false
+    @State private var showSettingsSheet = false
+    @State private var editorConfig: EditorConfig?
 
     // Filter
     @State private var courtFilter: CourtFilter = .all
@@ -64,7 +72,7 @@ struct DashboardView: View {
                                 onStop: { appViewModel.stopPolling(for: court.id) },
                                 onSkipNext: { appViewModel.skipToNext(court.id) },
                                 onSkipPrevious: { appViewModel.skipToPrevious(court.id) },
-                                onEditQueue: { openWindow(id: "queue-editor", value: court.id) },
+                                onEditQueue: { editorConfig = EditorConfig(id: court.id) },
                                 onRename: {
                                     renamingCourtId = court.id
                                     newCourtName = court.name
@@ -96,6 +104,19 @@ struct DashboardView: View {
             }
         } message: {
             Text("Enter a new name for this overlay")
+        }
+        // Modal sheets
+        .sheet(isPresented: $showScannerSheet) {
+            ScanWorkflowView()
+                .environmentObject(appViewModel)
+        }
+        .sheet(item: $editorConfig) { config in
+            QueueEditorView(courtId: config.id)
+                .environmentObject(appViewModel)
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView()
+                .environmentObject(appViewModel)
         }
     }
 
@@ -138,7 +159,7 @@ struct DashboardView: View {
                 Divider()
                     .frame(height: 20)
 
-                Button { openWindow(id: "scanner") } label: {
+                Button { showScannerSheet = true } label: {
                     Label("Scan VBL", systemImage: "magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
                 }
@@ -153,7 +174,7 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.bordered)
 
-                SettingsLink {
+                Button { showSettingsSheet = true } label: {
                     Image(systemName: "gear")
                         .font(.system(size: 14))
                 }
