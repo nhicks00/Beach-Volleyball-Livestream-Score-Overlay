@@ -432,6 +432,68 @@ tailwind.config = {
 .bg-gold { background-color: #D4AF37; }
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
 
+/* Confetti celebration */
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(80px) rotate(720deg); opacity: 0; }
+}
+.confetti-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.confetti-container.active { opacity: 1; }
+.confetti-piece {
+  position: absolute;
+  width: 4px;
+  height: 8px;
+  opacity: 0.85;
+  top: -10%;
+  border-radius: 1px;
+  animation: confetti-fall 3s linear infinite;
+}
+.cf-1 { left: 10%; background: #D4AF37; animation-delay: 0s; }
+.cf-2 { left: 22%; background: #FFD700; animation-delay: 0.5s; }
+.cf-3 { left: 35%; background: #FFFFFF; animation-delay: 1.2s; }
+.cf-4 { left: 48%; background: #D4AF37; animation-delay: 0.2s; }
+.cf-5 { left: 60%; background: #FFD700; animation-delay: 1.8s; }
+.cf-6 { left: 72%; background: #F9E29B; animation-delay: 0.9s; }
+.cf-7 { left: 15%; background: #D4AF37; animation-delay: 2.1s; }
+.cf-8 { left: 42%; background: #FFFFFF; animation-delay: 0.7s; }
+.cf-9 { left: 80%; background: #FFD700; animation-delay: 1.5s; }
+.cf-10 { left: 90%; background: #D4AF37; animation-delay: 2.5s; }
+
+/* Trophy & winner styling */
+.trophy-icon {
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  font-size: 1.5rem;
+  color: #D4AF37;
+  filter: drop-shadow(0 0 5px rgba(212,175,55,0.5));
+}
+.trophy-icon.visible { opacity: 1; }
+.winner-glow .set-pip.bg-gold {
+  box-shadow: 0 0 8px rgba(212,175,55,0.8);
+}
+.loser-dim {
+  opacity: 0.5 !important;
+  transition: opacity 0.6s ease;
+}
+.final-label {
+  display: none;
+  font-size: 10px;
+  font-weight: 900;
+  color: rgba(212,175,55,0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin-bottom: 2px;
+}
+.final-label.visible { display: block; }
+
 body {
   min-height: 100dvh;
   background-color: transparent;
@@ -532,8 +594,17 @@ body {
   <div id="scorebug" class="carbon-bar" style="width: 100%; height: 4rem; border-radius: 0.375rem; display: flex; align-items: center; box-shadow: 0 8px 30px rgb(0,0,0,0.8); position: relative; overflow: hidden; z-index: 20;">
     
     <!-- Left Team Section -->
-    <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%;">
-      <div style="display: flex; align-items: center; gap: 1rem;">
+    <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+      <!-- Confetti (hidden until match win) -->
+      <div id="confetti-left" class="confetti-container">
+        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 1rem; position: relative; z-index: 20;">
+        <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
         <div style="display: flex; flex-direction: column; justify-content: center;">
           <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
           <div id="pips1" style="display: flex; gap: 0.375rem;">
@@ -543,7 +614,7 @@ body {
         </div>
         <span id="serve-left" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
       </div>
-      <div class="score-container">
+      <div class="score-container" style="position: relative; z-index: 20;">
         <span id="sc1" class="score-text">0</span>
       </div>
     </div>
@@ -553,7 +624,7 @@ body {
     
     <!-- Set Indicator -->
     <div style="padding: 0 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px;">
-      <span style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
+      <span id="set-label" style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
       <span id="set-num" style="font-size: 1.25rem; font-weight: 900; color: rgba(255,255,255,0.9); line-height: 1;">1</span>
     </div>
     
@@ -561,11 +632,19 @@ body {
     <div style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2);"></div>
     
     <!-- Right Team Section -->
-    <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%;">
-      <div class="score-container">
+    <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+      <!-- Confetti (hidden until match win) -->
+      <div id="confetti-right" class="confetti-container">
+        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+      </div>
+      <div class="score-container" style="position: relative; z-index: 20;">
         <span id="sc2" class="score-text">0</span>
       </div>
-      <div style="display: flex; align-items: center; gap: 1rem; text-align: right;">
+      <div style="display: flex; align-items: center; gap: 1rem; text-align: right; position: relative; z-index: 20;">
         <span id="serve-right" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
         <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
           <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
@@ -574,6 +653,7 @@ body {
             <div class="set-pip bg-gold-muted"></div>
           </div>
         </div>
+        <span id="trophy-right" class="material-symbols-outlined trophy-icon">emoji_events</span>
       </div>
     </div>
     
@@ -650,6 +730,7 @@ let lastTriggerScore = -1;
 let animationInProgress = false;
 let nextMatchTimer = null;
 let transitionInProgress = false;
+let celebrationActive = false;
 
 // DOM refs - Scoring overlay
 const scoringContainer = document.querySelector('div[style*="max-width: 900px"]');
@@ -827,6 +908,84 @@ function applyData(d) {
       showNextMatchBar(nextMatch);
     }
   }
+
+  // Match celebration: confetti + trophy for the winner
+  if (isMatchFinished(d)) {
+    const setsWon1 = d.setsA || d.setsWon1 || 0;
+    const setsWon2 = d.setsB || d.setsWon2 || 0;
+    const winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
+    showCelebration(winner);
+  } else if (celebrationActive) {
+    // New match started, clear celebration
+    clearCelebration();
+  }
+}
+
+/* ===== MATCH CELEBRATION ===== */
+
+function showCelebration(winner) {
+  if (celebrationActive) return;
+  celebrationActive = true;
+
+  const confettiLeft = document.getElementById('confetti-left');
+  const confettiRight = document.getElementById('confetti-right');
+  const trophyLeft = document.getElementById('trophy-left');
+  const trophyRight = document.getElementById('trophy-right');
+  const team1Section = document.getElementById('team1-section');
+  const team2Section = document.getElementById('team2-section');
+  const sc1El = document.getElementById('sc1');
+  const sc2El = document.getElementById('sc2');
+  const setLabel = document.getElementById('set-label');
+  const serveLeft = document.getElementById('serve-left');
+  const serveRight = document.getElementById('serve-right');
+
+  // Hide serve indicators
+  if (serveLeft) { serveLeft.style.opacity = '0'; serveLeft.classList.remove('serving-pulse'); }
+  if (serveRight) { serveRight.style.opacity = '0'; serveRight.classList.remove('serving-pulse'); }
+
+  // Show FINAL label
+  if (setLabel) setLabel.textContent = 'FINAL';
+
+  if (winner === 'team1') {
+    // Team 1 wins - confetti + trophy on left, dim right
+    if (confettiLeft) confettiLeft.classList.add('active');
+    if (trophyLeft) trophyLeft.classList.add('visible');
+    if (sc2El) sc2El.classList.add('loser-dim');
+    if (team1Section) team1Section.classList.add('winner-glow');
+  } else {
+    // Team 2 wins - confetti + trophy on right, dim left
+    if (confettiRight) confettiRight.classList.add('active');
+    if (trophyRight) trophyRight.classList.add('visible');
+    if (sc1El) sc1El.classList.add('loser-dim');
+    if (team2Section) team2Section.classList.add('winner-glow');
+  }
+
+  console.log('[Overlay] Celebration triggered for', winner);
+}
+
+function clearCelebration() {
+  if (!celebrationActive) return;
+  celebrationActive = false;
+
+  const confettiLeft = document.getElementById('confetti-left');
+  const confettiRight = document.getElementById('confetti-right');
+  const trophyLeft = document.getElementById('trophy-left');
+  const trophyRight = document.getElementById('trophy-right');
+  const team1Section = document.getElementById('team1-section');
+  const team2Section = document.getElementById('team2-section');
+  const sc1El = document.getElementById('sc1');
+  const sc2El = document.getElementById('sc2');
+  const setLabel = document.getElementById('set-label');
+
+  if (confettiLeft) confettiLeft.classList.remove('active');
+  if (confettiRight) confettiRight.classList.remove('active');
+  if (trophyLeft) trophyLeft.classList.remove('visible');
+  if (trophyRight) trophyRight.classList.remove('visible');
+  if (team1Section) team1Section.classList.remove('winner-glow');
+  if (team2Section) team2Section.classList.remove('winner-glow');
+  if (sc1El) sc1El.classList.remove('loser-dim');
+  if (sc2El) sc2El.classList.remove('loser-dim');
+  if (setLabel) setLabel.textContent = 'SET';
 }
 
 /* ===== OVERLAY STATE TRANSITIONS ===== */
@@ -835,7 +994,10 @@ function applyData(d) {
 function transitionToIntermission(nextTeam1, nextTeam2) {
   if (transitionInProgress || overlayState === 'intermission') return;
   transitionInProgress = true;
-  
+
+  // Clear celebration before transitioning
+  clearCelebration();
+
   // Step 1: Retract any visible bubble
   socialBar.classList.remove('visible');
   socialBar.classList.add('hidden-up');
