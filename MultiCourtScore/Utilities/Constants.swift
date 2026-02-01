@@ -10,36 +10,44 @@ import SwiftUI
 // MARK: - Design System Colors
 enum AppColors {
     // Primary brand colors
-    static let primary = Color(hex: "#4F46E5")           // Indigo (slightly darker for visibility)
-    static let primaryLight = Color(hex: "#6366F1")
-    static let primaryDark = Color(hex: "#3730A3")
-    
-    // Status colors (slightly darker for outdoor visibility)
-    static let success = Color(hex: "#059669")           // Emerald green
-    static let successLight = Color(hex: "#10B981")
-    static let warning = Color(hex: "#D97706")           // Amber
-    static let warningLight = Color(hex: "#F59E0B")
-    static let error = Color(hex: "#DC2626")             // Red
-    static let errorLight = Color(hex: "#EF4444")
-    static let info = Color(hex: "#2563EB")              // Blue
-    
-    // Surface colors (LIGHT MODE - optimized for outdoor/sun)
-    static let background = Color(hex: "#FFFFFF")        // Pure white
-    static let surface = Color(hex: "#F9FAFB")           // Very light gray
-    static let surfaceElevated = Color(hex: "#F3F4F6")   // Light gray
-    static let surfaceHover = Color(hex: "#E5E7EB")      // Slightly darker on hover
-    
-    // Text colors (dark text on light background)
-    static let textPrimary = Color(hex: "#111827")       // Near black
-    static let textSecondary = Color(hex: "#4B5563")     // Dark gray
-    static let textMuted = Color(hex: "#6B7280")         // Medium gray
-    
-    // Status-specific backgrounds (light mode versions)
-    static let liveBackground = Color(hex: "#D1FAE5")    // Light green
-    static let waitingBackground = Color(hex: "#FEF3C7") // Light amber
-    static let finishedBackground = Color(hex: "#DBEAFE") // Light blue
-    static let idleBackground = Color(hex: "#F3F4F6")    // Light gray
-    static let errorBackground = Color(hex: "#FEE2E2")   // Light red
+    static let primary = Color(hex: "#6366F1")           // Indigo
+    static let primaryLight = Color(hex: "#818CF8")
+    static let primaryDark = Color(hex: "#4F46E5")
+
+    // Status colors
+    static let success = Color(hex: "#10B981")           // Emerald green
+    static let successLight = Color(hex: "#34D399")
+    static let warning = Color(hex: "#F59E0B")           // Amber
+    static let warningLight = Color(hex: "#FBBF24")
+    static let error = Color(hex: "#EF4444")             // Red
+    static let errorLight = Color(hex: "#F87171")
+    static let info = Color(hex: "#3B82F6")              // Blue
+
+    // Surface colors (DARK MODE)
+    static let background = Color(hex: "#1E1E1E")        // Main background
+    static let surface = Color(hex: "#2C2C2C")           // Card/panel surfaces
+    static let surfaceElevated = Color(hex: "#333333")   // Elevated surfaces
+    static let surfaceHover = Color(hex: "#3A3A3A")      // Hover state
+
+    // Sidebar, toolbar, footer backgrounds
+    static let sidebarBackground = Color(hex: "#252525")
+    static let toolbarBackground = Color(hex: "#2C2C2C")
+    static let footerBackground = Color(hex: "#252525")
+
+    // Border color
+    static let border = Color(hex: "#3A3A3A")
+
+    // Text colors (light text on dark background)
+    static let textPrimary = Color.white
+    static let textSecondary = Color(hex: "#A1A1AA")     // Zinc 400
+    static let textMuted = Color(hex: "#71717A")         // Zinc 500
+
+    // Status-specific backgrounds (opacity variants for dark mode)
+    static let liveBackground = Color(hex: "#10B981").opacity(0.15)
+    static let waitingBackground = Color(hex: "#F59E0B").opacity(0.15)
+    static let finishedBackground = Color(hex: "#3B82F6").opacity(0.15)
+    static let idleBackground = Color(hex: "#3A3A3A").opacity(0.5)
+    static let errorBackground = Color(hex: "#EF4444").opacity(0.15)
 }
 
 // MARK: - Layout Constants
@@ -48,18 +56,23 @@ enum AppLayout {
     static let cardCornerRadius: CGFloat = 16
     static let buttonCornerRadius: CGFloat = 8
     static let smallCornerRadius: CGFloat = 6
-    
+
     static let cardPadding: CGFloat = 16
     static let sectionPadding: CGFloat = 20
     static let contentPadding: CGFloat = 24
-    
+
     static let cardSpacing: CGFloat = 16
     static let itemSpacing: CGFloat = 12
     static let smallSpacing: CGFloat = 8
     static let sectionSpacing: CGFloat = 24
-    
+
     static let borderWidth: CGFloat = 1.5
     static let iconSize: CGFloat = 18
+
+    // New layout constants
+    static let sidebarWidth: CGFloat = 240
+    static let statusBarHeight: CGFloat = 28
+    static let toolbarHeight: CGFloat = 52
 }
 
 // MARK: - Typography
@@ -72,6 +85,7 @@ enum AppTypography {
     static let caption = Font.system(size: 12, weight: .regular, design: .default)
     static let scoreLarge = Font.system(size: 36, weight: .bold, design: .monospaced)
     static let scoreMedium = Font.system(size: 24, weight: .bold, design: .monospaced)
+    static let scoreCompact = Font.system(size: 28, weight: .bold, design: .monospaced)
 }
 
 // MARK: - Networking Constants
@@ -105,7 +119,7 @@ enum CourtNaming {
             return "Mevo \(courtId)"
         }
     }
-    
+
     static func shortName(for courtId: Int) -> String {
         if courtId == 1 {
             return "C1"
