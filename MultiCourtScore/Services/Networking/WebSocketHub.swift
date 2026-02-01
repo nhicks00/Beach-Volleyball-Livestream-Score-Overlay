@@ -434,7 +434,8 @@ tailwind.config = {
 
 /* Confetti celebration */
 @keyframes confetti-fall {
-  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  0% { transform: translateY(-5px) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.85; }
   100% { transform: translateY(80px) rotate(720deg); opacity: 0; }
 }
 .confetti-container {
@@ -451,9 +452,11 @@ tailwind.config = {
   position: absolute;
   width: 4px;
   height: 8px;
-  opacity: 0.85;
+  opacity: 0;
   top: -10%;
   border-radius: 1px;
+}
+.confetti-container.active .confetti-piece {
   animation: confetti-fall 3s linear infinite;
 }
 .cf-1 { left: 10%; background: #D4AF37; animation-delay: 0s; }
@@ -470,12 +473,17 @@ tailwind.config = {
 /* Trophy & winner styling */
 .trophy-icon {
   opacity: 0;
-  transition: opacity 0.8s ease;
+  transition: opacity 1.5s ease;
   font-size: 1.5rem;
   color: #D4AF37;
   filter: drop-shadow(0 0 5px rgba(212,175,55,0.5));
 }
-.trophy-icon.visible { opacity: 1; }
+.trophy-icon.visible {
+  opacity: 1;
+  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation-delay: 1.5s;
+  animation-fill-mode: backwards;
+}
 .winner-glow .set-pip.bg-gold {
   box-shadow: 0 0 8px rgba(212,175,55,0.8);
 }
@@ -535,27 +543,46 @@ body {
   opacity: 1;
 }
 
-/* Intermission transition animations */
-.scorebug-transition {
+/* Scoring element slide transitions */
+#scoring-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  transition: opacity 0.1s ease;
+}
+#scoring-content > * {
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+}
+#scoring-content.slide-out > * {
+  opacity: 0;
+}
+#scoring-content.slide-out #team1-section {
+  transform: translateX(30%);
+}
+#scoring-content.slide-out #team2-section {
+  transform: translateX(-30%);
+}
+
+/* Scorebug width transition */
+#scorebug {
   transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.content-fade {
-  transition: opacity 0.4s ease, transform 0.4s ease;
-}
-.content-hidden {
+
+/* Intermission content inside scorebug */
+#intermission-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.3s ease;
 }
-.slide-to-center {
-  transform: translateX(0);
-}
-.slide-off-left {
-  transform: translateX(-50px);
-  opacity: 0;
-}
-.slide-off-right {
-  transform: translateX(50px);
-  opacity: 0;
+#intermission-content.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Status bubble for intermission */
@@ -567,23 +594,14 @@ body {
   animation: status-pulse 2s infinite ease-in-out;
 }
 @keyframes status-pulse {
-  0%, 100% { 
-    box-shadow: 0 0 5px rgba(212, 175, 55, 0.3), inset 0 0 5px rgba(212, 175, 55, 0.1); 
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(212, 175, 55, 0.3), inset 0 0 5px rgba(212, 175, 55, 0.1);
     border-color: rgba(212, 175, 55, 0.4);
   }
-  50% { 
-    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), inset 0 0 10px rgba(212, 175, 55, 0.2); 
+  50% {
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), inset 0 0 10px rgba(212, 175, 55, 0.2);
     border-color: rgba(212, 175, 55, 0.9);
   }
-}
-
-/* Intermission scorebug styling */
-#intermission-bug {
-  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
-}
-#intermission-bug.hidden {
-  opacity: 0;
-  pointer-events: none;
 }
 </style>
 </head>
@@ -592,73 +610,87 @@ body {
 <div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem;">
   <!-- Main Scoreboard -->
   <div id="scorebug" class="carbon-bar" style="width: 100%; height: 4rem; border-radius: 0.375rem; display: flex; align-items: center; box-shadow: 0 8px 30px rgb(0,0,0,0.8); position: relative; overflow: hidden; z-index: 20;">
-    
-    <!-- Left Team Section -->
-    <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
-      <!-- Confetti (hidden until match win) -->
-      <div id="confetti-left" class="confetti-container">
-        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
-        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
-        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
-        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
-        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 1rem; position: relative; z-index: 20;">
-        <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
-        <div style="display: flex; flex-direction: column; justify-content: center;">
-          <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
-          <div id="pips1" style="display: flex; gap: 0.375rem;">
-            <div class="set-pip bg-gold-muted"></div>
-            <div class="set-pip bg-gold-muted"></div>
-          </div>
+
+    <!-- Scoring Content Layer -->
+    <div id="scoring-content">
+      <!-- Left Team Section -->
+      <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+        <div id="confetti-left" class="confetti-container">
+          <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+          <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+          <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+          <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+          <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
         </div>
-        <span id="serve-left" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
-      </div>
-      <div class="score-container" style="position: relative; z-index: 20;">
-        <span id="sc1" class="score-text">0</span>
-      </div>
-    </div>
-    
-    <!-- Center Divider -->
-    <div style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2);"></div>
-    
-    <!-- Set Indicator -->
-    <div style="padding: 0 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px;">
-      <span id="set-label" style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
-      <span id="set-num" style="font-size: 1.25rem; font-weight: 900; color: rgba(255,255,255,0.9); line-height: 1;">1</span>
-    </div>
-    
-    <!-- Center Divider -->
-    <div style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2);"></div>
-    
-    <!-- Right Team Section -->
-    <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
-      <!-- Confetti (hidden until match win) -->
-      <div id="confetti-right" class="confetti-container">
-        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
-        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
-        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
-        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
-        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
-      </div>
-      <div class="score-container" style="position: relative; z-index: 20;">
-        <span id="sc2" class="score-text">0</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 1rem; text-align: right; position: relative; z-index: 20;">
-        <span id="serve-right" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
-        <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
-          <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
-          <div id="pips2" style="display: flex; gap: 0.375rem;">
-            <div class="set-pip bg-gold-muted"></div>
-            <div class="set-pip bg-gold-muted"></div>
+        <div style="display: flex; align-items: center; gap: 1rem; position: relative; z-index: 20;">
+          <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
+          <div style="display: flex; flex-direction: column; justify-content: center;">
+            <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
+            <div id="pips1" style="display: flex; gap: 0.375rem;">
+              <div class="set-pip bg-gold-muted"></div>
+              <div class="set-pip bg-gold-muted"></div>
+            </div>
           </div>
+          <span id="serve-left" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
         </div>
-        <span id="trophy-right" class="material-symbols-outlined trophy-icon">emoji_events</span>
+        <div class="score-container" style="position: relative; z-index: 20;">
+          <span id="sc1" class="score-text">0</span>
+        </div>
+      </div>
+
+      <div class="center-divider" style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2); flex-shrink: 0;"></div>
+
+      <!-- Set Indicator -->
+      <div id="set-indicator" style="padding: 0 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px; flex-shrink: 0;">
+        <span id="set-label" style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
+        <span id="set-num" style="font-size: 1.25rem; font-weight: 900; color: rgba(255,255,255,0.9); line-height: 1;">1</span>
+      </div>
+
+      <div class="center-divider" style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2); flex-shrink: 0;"></div>
+
+      <!-- Right Team Section -->
+      <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+        <div id="confetti-right" class="confetti-container">
+          <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+          <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+          <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+          <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+          <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+        </div>
+        <div class="score-container" style="position: relative; z-index: 20;">
+          <span id="sc2" class="score-text">0</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem; text-align: right; position: relative; z-index: 20;">
+          <span id="serve-right" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+            <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
+            <div id="pips2" style="display: flex; gap: 0.375rem;">
+              <div class="set-pip bg-gold-muted"></div>
+              <div class="set-pip bg-gold-muted"></div>
+            </div>
+          </div>
+          <span id="trophy-right" class="material-symbols-outlined trophy-icon">emoji_events</span>
+        </div>
       </div>
     </div>
-    
+
+    <!-- Intermission Content Layer (overlaid, hidden by default) -->
+    <div id="intermission-content">
+      <div style="display: flex; align-items: center; flex-shrink: 0;">
+        <span id="int-team1" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 1</span>
+      </div>
+      <div id="int-vs" style="display: flex; align-items: center; flex-shrink: 0; margin: 0 1rem; opacity: 0; transition: opacity 0.5s ease;">
+        <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
+        <span style="font-size: 1.125rem; font-weight: 900; font-style: italic; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
+        <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
+      </div>
+      <div style="display: flex; align-items: center; flex-shrink: 0;">
+        <span id="int-team2" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(-30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 2</span>
+      </div>
+    </div>
+
     <!-- Bottom Accent Line -->
-    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent);"></div>
+    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); z-index: 30;"></div>
   </div>
   
   <!-- Bubble Container (holds social bar OR next match bar) -->
@@ -677,37 +709,9 @@ body {
       <span style="color: rgba(255,255,255,0.3); flex-shrink: 0;">|</span>
       <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase; white-space: nowrap;">Loading...</span>
     </div>
-  </div>
-</div>
 
-<!-- Intermission Scorebug (hidden by default, used between matches) -->
-<div id="intermission-container" style="display: none; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem; position: absolute; top: 2rem;">
-  <div id="intermission-bug" class="carbon-bar" style="height: 3rem; border-radius: 0.375rem; display: inline-flex; align-items: center; box-shadow: 0 8px 40px rgb(0,0,0,0.9); position: relative; overflow: hidden; z-index: 10; padding: 0 1.5rem;">
-    
-    <!-- Left Team Name -->
-    <div style="display: flex; align-items: center; flex-shrink: 0;">
-      <span id="int-team1" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap;">Team 1</span>
-    </div>
-    
-    <!-- VS Divider -->
-    <div style="display: flex; align-items: center; flex-shrink: 0; margin: 0 1rem;">
-      <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
-      <span style="font-size: 1.125rem; font-weight: 900; font-style: italic; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
-      <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
-    </div>
-    
-    <!-- Right Team Name -->
-    <div style="display: flex; align-items: center; flex-shrink: 0;">
-      <span id="int-team2" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap;">Team 2</span>
-    </div>
-    
-    <!-- Bottom Accent Line -->
-    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.6), transparent);"></div>
-  </div>
-  
-  <!-- Intermission Status Bubble -->
-  <div class="bubble-container">
-    <div id="int-status-bar" class="status-bubble visible" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); position: absolute; top: 0;">
+    <!-- Intermission Status Bubble (hidden by default) -->
+    <div id="int-status-bar" class="status-bubble bubble-bar hidden-up" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
       <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Match Starting Soon</span>
     </div>
   </div>
@@ -718,12 +722,14 @@ const SRC = "/score.json";
 const NEXT_SRC = "/next.json";
 const POLL_MS = 1000;
 const POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends
+const SCORING_WIDTH = '100%';
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
-let overlayState = 'scoring';
+let overlayState = 'intermission'; // Start in intermission until scoring data arrives
 let postMatchTimer = null;
 let matchFinishedAt = null;
 let lastMatchId = null;
+let firstLoad = true;
 
 // Animation state
 let lastTriggerScore = -1;
@@ -732,18 +738,16 @@ let nextMatchTimer = null;
 let transitionInProgress = false;
 let celebrationActive = false;
 
-// DOM refs - Scoring overlay
-const scoringContainer = document.querySelector('div[style*="max-width: 900px"]');
+// DOM refs
 const scorebug = document.getElementById('scorebug');
+const scoringContent = document.getElementById('scoring-content');
+const intermissionContent = document.getElementById('intermission-content');
 const socialBar = document.getElementById('social-bar');
 const nextBar = document.getElementById('next-bar');
 const nextTeamsEl = document.getElementById('next-teams');
-
-// DOM refs - Intermission overlay
-const intermissionContainer = document.getElementById('intermission-container');
-const intermissionBug = document.getElementById('intermission-bug');
 const intTeam1 = document.getElementById('int-team1');
 const intTeam2 = document.getElementById('int-team2');
+const intVs = document.getElementById('int-vs');
 const intStatusBar = document.getElementById('int-status-bar');
 
 /* Helpers */
@@ -762,19 +766,19 @@ function abbreviateName(teamName) {
   const players = teamName.split("/").map(p => p.trim());
   const abbreviated = players.map(player => {
     const lower = player.toLowerCase();
-    if (lower.includes("winner") || lower.includes("loser") || 
+    if (lower.includes("winner") || lower.includes("loser") ||
         lower.includes("team ") || lower.includes("seed ") ||
         lower.includes("match ")) {
       return player;
     }
     const parts = player.split(/\s+/);
     if (parts.length < 2) return player;
-    return parts[parts.length - 1]; // Last name only
+    return parts[parts.length - 1];
   });
   return abbreviated.join(" / ");
 }
 
-/* Set Pips - visual set score indicators */
+/* Set Pips */
 function updatePips(pipsEl, setsWon, setsToWin) {
   if (!pipsEl) return;
   let html = '';
@@ -789,8 +793,7 @@ function updatePips(pipsEl, setsWon, setsToWin) {
 function showNextMatchBar(nextMatchText) {
   if (animationInProgress) return;
   animationInProgress = true;
-  
-  // Update next match text
+
   if (nextTeamsEl && nextMatchText) {
     const parts = nextMatchText.split(/\s+vs\.?\s+/i);
     if (parts.length >= 2) {
@@ -799,29 +802,24 @@ function showNextMatchBar(nextMatchText) {
       nextTeamsEl.textContent = abbreviateName(nextMatchText);
     }
   }
-  
-  // Retract social bar
+
   socialBar.classList.remove('visible');
   socialBar.classList.add('hidden-up');
-  
-  // After social retracts, show next bar
+
   setTimeout(function() {
     nextBar.classList.remove('hidden-up');
     nextBar.classList.add('visible');
   }, 400);
-  
-  // After 30 seconds, swap back
+
   nextMatchTimer = setTimeout(function() {
     hideNextMatchBar();
   }, 17000);
 }
 
 function hideNextMatchBar() {
-  // Retract next bar
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
-  
-  // After next retracts, show social bar
+
   setTimeout(function() {
     socialBar.classList.remove('hidden-up');
     socialBar.classList.add('visible');
@@ -832,75 +830,71 @@ function hideNextMatchBar() {
 /* Main score update */
 function applyData(d) {
   if (!d) return;
-  
+
   const score1 = d.score1 || 0;
   const score2 = d.score2 || 0;
   const combinedScore = score1 + score2;
   const setsToWin = d.setsToWin || 2;
-  
+
   // Team names
   const t1El = document.getElementById('t1');
   const t2El = document.getElementById('t2');
   if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
   if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
-  
+
   // Scores
   const sc1El = document.getElementById('sc1');
   const sc2El = document.getElementById('sc2');
   if (sc1El) sc1El.textContent = score1;
   if (sc2El) sc2El.textContent = score2;
-  
+
   // Set number
   const setNumEl = document.getElementById('set-num');
   if (setNumEl) setNumEl.textContent = d.setNumber || 1;
-  
+
   // Set pips
   updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
   updatePips(document.getElementById('pips2'), d.setsWon2 || 0, setsToWin);
-  
-  // Serve indicator - show for team that scored last point
-  const serveLeft = document.getElementById('serve-left');
-  const serveRight = document.getElementById('serve-right');
-  if (serveLeft && serveRight) {
-    // Determine who scored last based on score change or use API serve field
-    let isLeftServing = false;
-    let isRightServing = false;
-    
-    // Check if we have previous scores to compare
-    if (window.prevScore1 !== undefined && window.prevScore2 !== undefined) {
-      if (d.score1 > window.prevScore1) {
-        isLeftServing = true;
-      } else if (d.score2 > window.prevScore2) {
-        isRightServing = true;
+
+  // Serve indicator — skip entirely during celebration
+  if (!celebrationActive) {
+    const serveLeft = document.getElementById('serve-left');
+    const serveRight = document.getElementById('serve-right');
+    if (serveLeft && serveRight) {
+      let isLeftServing = false;
+      let isRightServing = false;
+
+      if (window.prevScore1 !== undefined && window.prevScore2 !== undefined) {
+        if (d.score1 > window.prevScore1) {
+          isLeftServing = true;
+        } else if (d.score2 > window.prevScore2) {
+          isRightServing = true;
+        } else {
+          isLeftServing = window.lastServe === 'left';
+          isRightServing = window.lastServe === 'right';
+        }
+      } else if (combinedScore === 0) {
+        isLeftServing = false;
+        isRightServing = false;
       } else {
-        // No score change, keep previous serve state
-        isLeftServing = window.lastServe === 'left';
-        isRightServing = window.lastServe === 'right';
+        const srv = (d.serve || "").toLowerCase();
+        isLeftServing = srv.includes('home') || srv.includes('team1');
+        isRightServing = srv.includes('away') || srv.includes('team2');
       }
-    } else if (combinedScore === 0) {
-      // 0-0: no serve indicator
-      isLeftServing = false;
-      isRightServing = false;
-    } else {
-      // Fall back to API serve field if available
-      const srv = (d.serve || "").toLowerCase();
-      isLeftServing = srv.includes('home') || srv.includes('team1');
-      isRightServing = srv.includes('away') || srv.includes('team2');
+
+      window.prevScore1 = d.score1;
+      window.prevScore2 = d.score2;
+      if (isLeftServing) window.lastServe = 'left';
+      if (isRightServing) window.lastServe = 'right';
+
+      serveLeft.style.opacity = isLeftServing ? '1' : '0';
+      serveLeft.classList.toggle('serving-pulse', isLeftServing);
+      serveRight.style.opacity = isRightServing ? '1' : '0';
+      serveRight.classList.toggle('serving-pulse', isRightServing);
     }
-    
-    // Store current state for next update
-    window.prevScore1 = d.score1;
-    window.prevScore2 = d.score2;
-    if (isLeftServing) window.lastServe = 'left';
-    if (isRightServing) window.lastServe = 'right';
-    
-    serveLeft.style.opacity = isLeftServing ? '1' : '0';
-    serveLeft.classList.toggle('serving-pulse', isLeftServing);
-    serveRight.style.opacity = isRightServing ? '1' : '0';
-    serveRight.classList.toggle('serving-pulse', isRightServing);
   }
-  
-  // Animation trigger: multiple of 7
+
+  // Next match bar trigger: every multiple of 7
   if (combinedScore > 0 && combinedScore % 7 === 0 && combinedScore !== lastTriggerScore) {
     lastTriggerScore = combinedScore;
     const nextMatch = d.nextMatch || '';
@@ -916,7 +910,6 @@ function applyData(d) {
     const winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
     showCelebration(winner);
   } else if (celebrationActive) {
-    // New match started, clear celebration
     clearCelebration();
   }
 }
@@ -939,7 +932,7 @@ function showCelebration(winner) {
   const serveLeft = document.getElementById('serve-left');
   const serveRight = document.getElementById('serve-right');
 
-  // Hide serve indicators
+  // Immediately hide serve indicators
   if (serveLeft) { serveLeft.style.opacity = '0'; serveLeft.classList.remove('serving-pulse'); }
   if (serveRight) { serveRight.style.opacity = '0'; serveRight.classList.remove('serving-pulse'); }
 
@@ -947,13 +940,11 @@ function showCelebration(winner) {
   if (setLabel) setLabel.textContent = 'FINAL';
 
   if (winner === 'team1') {
-    // Team 1 wins - confetti + trophy on left, dim right
     if (confettiLeft) confettiLeft.classList.add('active');
     if (trophyLeft) trophyLeft.classList.add('visible');
     if (sc2El) sc2El.classList.add('loser-dim');
     if (team1Section) team1Section.classList.add('winner-glow');
   } else {
-    // Team 2 wins - confetti + trophy on right, dim left
     if (confettiRight) confettiRight.classList.add('active');
     if (trophyRight) trophyRight.classList.add('visible');
     if (sc1El) sc1El.classList.add('loser-dim');
@@ -990,7 +981,61 @@ function clearCelebration() {
 
 /* ===== OVERLAY STATE TRANSITIONS ===== */
 
-// Transition from Scoring → Intermission
+// Show intermission immediately (no animation, used on first load)
+function showIntermissionImmediate(team1, team2) {
+  // Hide scoring content
+  if (scoringContent) {
+    scoringContent.style.opacity = '0';
+    scoringContent.style.pointerEvents = 'none';
+  }
+
+  // Update and show intermission content
+  if (intTeam1) {
+    intTeam1.textContent = abbreviateName(cleanName(team1)) || 'TBD';
+    intTeam1.style.transform = 'translateX(0)';
+    intTeam1.style.opacity = '1';
+  }
+  if (intTeam2) {
+    intTeam2.textContent = abbreviateName(cleanName(team2)) || 'TBD';
+    intTeam2.style.transform = 'translateX(0)';
+    intTeam2.style.opacity = '1';
+  }
+  if (intVs) intVs.style.opacity = '1';
+  if (intermissionContent) intermissionContent.classList.add('visible');
+
+  // Hide social bar, show status bubble
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+  nextBar.classList.remove('visible');
+  nextBar.classList.add('hidden-up');
+
+  // Measure and set intermission width
+  setIntermissionWidth();
+
+  // Show status bubble
+  setTimeout(function() {
+    intStatusBar.classList.remove('hidden-up');
+    intStatusBar.classList.add('visible');
+  }, 300);
+
+  overlayState = 'intermission';
+  console.log('[Overlay] Showing intermission (immediate)');
+}
+
+function setIntermissionWidth() {
+  // Temporarily make intermission content visible to measure
+  if (intermissionContent) {
+    intermissionContent.style.visibility = 'visible';
+    intermissionContent.style.position = 'absolute';
+    // Measure the actual content width
+    const contentWidth = intermissionContent.scrollWidth + 80; // Add padding
+    const minWidth = 400;
+    const targetWidth = Math.max(contentWidth, minWidth);
+    scorebug.style.width = targetWidth + 'px';
+  }
+}
+
+// Transition from Scoring → Intermission (animated)
 function transitionToIntermission(nextTeam1, nextTeam2) {
   if (transitionInProgress || overlayState === 'intermission') return;
   transitionInProgress = true;
@@ -998,97 +1043,121 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
   // Clear celebration before transitioning
   clearCelebration();
 
-  // Step 1: Retract any visible bubble
+  // Pre-set the intermission team names (hidden)
+  if (intTeam1) {
+    intTeam1.textContent = abbreviateName(cleanName(nextTeam1)) || 'TBD';
+    intTeam1.style.transform = 'translateX(30px)';
+    intTeam1.style.opacity = '0';
+  }
+  if (intTeam2) {
+    intTeam2.textContent = abbreviateName(cleanName(nextTeam2)) || 'TBD';
+    intTeam2.style.transform = 'translateX(-30px)';
+    intTeam2.style.opacity = '0';
+  }
+  if (intVs) intVs.style.opacity = '0';
+
+  // Phase 1 (0-400ms): Retract bubbles
   socialBar.classList.remove('visible');
   socialBar.classList.add('hidden-up');
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
-  
-  // Step 2: After bubble retracts, fade out scoring content
+
+  // Phase 2 (400-900ms): Slide scoring elements inward + fade
   setTimeout(function() {
-    // Hide the scoring overlay
-    if (scoringContainer) {
-      scoringContainer.style.opacity = '0';
-      scoringContainer.style.transition = 'opacity 0.4s ease';
-    }
-    
-    // After fade out, show intermission
-    setTimeout(function() {
-      if (scoringContainer) scoringContainer.style.display = 'none';
-      
-      // Update intermission team names
-      if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(nextTeam1)) || 'TBD';
-      if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(nextTeam2)) || 'TBD';
-      
-      // Show intermission container
-      if (intermissionContainer) {
-        intermissionContainer.style.display = 'flex';
-        intermissionContainer.style.opacity = '0';
-        // Trigger reflow then fade in
-        intermissionContainer.offsetHeight;
-        intermissionContainer.style.transition = 'opacity 0.4s ease';
-        intermissionContainer.style.opacity = '1';
-      }
-      
-      overlayState = 'intermission';
-      transitionInProgress = false;
-      console.log('[Overlay] Transitioned to intermission');
-    }, 400);
-    
+    if (scoringContent) scoringContent.classList.add('slide-out');
   }, 400);
+
+  // Phase 3 (900-1100ms): Brief pause — empty bar
+  setTimeout(function() {
+    if (scoringContent) {
+      scoringContent.style.opacity = '0';
+      scoringContent.style.pointerEvents = 'none';
+    }
+  }, 900);
+
+  // Phase 4 (1100-1600ms): Width adjusts to intermission size
+  setTimeout(function() {
+    setIntermissionWidth();
+  }, 1100);
+
+  // Phase 5 (1600-2100ms): Intermission content slides outward
+  setTimeout(function() {
+    if (intermissionContent) intermissionContent.classList.add('visible');
+
+    // Trigger the slide-out animations on team names
+    requestAnimationFrame(function() {
+      if (intTeam1) {
+        intTeam1.style.transform = 'translateX(0)';
+        intTeam1.style.opacity = '1';
+      }
+      if (intTeam2) {
+        intTeam2.style.transform = 'translateX(0)';
+        intTeam2.style.opacity = '1';
+      }
+      if (intVs) intVs.style.opacity = '1';
+    });
+  }, 1600);
+
+  // Phase 6 (2100-2500ms): Status bubble drops down
+  setTimeout(function() {
+    intStatusBar.classList.remove('hidden-up');
+    intStatusBar.classList.add('visible');
+
+    overlayState = 'intermission';
+    transitionInProgress = false;
+    console.log('[Overlay] Transitioned to intermission');
+  }, 2100);
 }
 
-// Transition from Intermission → Scoring
+// Transition from Intermission → Scoring (animated)
 function transitionToScoring() {
   if (transitionInProgress || overlayState === 'scoring') return;
   transitionInProgress = true;
-  
-  // Step 1: Hide intermission status bubble (it retracts up)
-  if (intStatusBar) {
-    intStatusBar.classList.remove('visible');
-    intStatusBar.classList.add('hidden-up');
-  }
-  
-  // Step 2: Fade out intermission container
+
+  // Phase 1 (0-400ms): Retract status bubble
+  intStatusBar.classList.remove('visible');
+  intStatusBar.classList.add('hidden-up');
+
+  // Phase 2 (400-900ms): Intermission names slide inward + fade
   setTimeout(function() {
-    if (intermissionContainer) {
-      intermissionContainer.style.opacity = '0';
+    if (intTeam1) {
+      intTeam1.style.transform = 'translateX(30px)';
+      intTeam1.style.opacity = '0';
     }
-    
-    // After fade out, show scoring overlay
-    setTimeout(function() {
-      if (intermissionContainer) intermissionContainer.style.display = 'none';
-      
-      // Reset and show scoring container
-      if (scoringContainer) {
-        scoringContainer.style.display = 'flex';
-        scoringContainer.style.opacity = '0';
-        // Trigger reflow then fade in
-        scoringContainer.offsetHeight;
-        scoringContainer.style.opacity = '1';
-      }
-      
-      // Show social bar after scoring appears
-      setTimeout(function() {
-        socialBar.classList.remove('hidden-up');
-        socialBar.classList.add('visible');
-        
-        // Reset intermission status bar for next time
-        if (intStatusBar) {
-          intStatusBar.classList.remove('hidden-up');
-          intStatusBar.classList.add('visible');
-        }
-        
-        overlayState = 'scoring';
-        transitionInProgress = false;
-        matchFinishedAt = null;
-        postMatchTimer = null;
-        console.log('[Overlay] Transitioned to scoring');
-      }, 400);
-      
-    }, 400);
-    
+    if (intTeam2) {
+      intTeam2.style.transform = 'translateX(-30px)';
+      intTeam2.style.opacity = '0';
+    }
+    if (intVs) intVs.style.opacity = '0';
   }, 400);
+
+  // Phase 3 (900-1400ms): Width expands back to scoring
+  setTimeout(function() {
+    if (intermissionContent) intermissionContent.classList.remove('visible');
+    scorebug.style.width = SCORING_WIDTH;
+  }, 900);
+
+  // Phase 4 (1400-1900ms): Scoring elements slide outward from center
+  setTimeout(function() {
+    // Reset scoring content
+    if (scoringContent) {
+      scoringContent.classList.remove('slide-out');
+      scoringContent.style.opacity = '1';
+      scoringContent.style.pointerEvents = 'auto';
+    }
+  }, 1400);
+
+  // Phase 5 (1900-2300ms): Social bubble drops down
+  setTimeout(function() {
+    socialBar.classList.remove('hidden-up');
+    socialBar.classList.add('visible');
+
+    overlayState = 'scoring';
+    transitionInProgress = false;
+    matchFinishedAt = null;
+    postMatchTimer = null;
+    console.log('[Overlay] Transitioned to scoring');
+  }, 1900);
 }
 
 // Check if match is finished based on sets won
@@ -1105,29 +1174,34 @@ function determineState(d) {
   const hasScoring = combinedScore > 0;
   const matchFinished = isMatchFinished(d);
   const courtStatus = (d.courtStatus || '').toLowerCase();
-  
+
   // If currently in intermission and scoring starts, switch to scoring
   if (overlayState === 'intermission' && hasScoring && !matchFinished) {
     return 'scoring';
   }
-  
+
   // If match just finished, enter post-match state
   if (matchFinished && overlayState === 'scoring') {
     return 'postmatch';
   }
-  
-  // If in post-match and 3 min elapsed, or no more score data, go to intermission
+
+  // If in post-match and 3 min elapsed, go to intermission
   if (overlayState === 'postmatch') {
     if (matchFinishedAt && (Date.now() - matchFinishedAt >= POST_MATCH_HOLD_MS)) {
       return 'intermission';
     }
   }
-  
-  // If court is waiting/idle and score is 0-0 and we have next match data, show intermission
-  if ((courtStatus === 'waiting' || courtStatus === 'idle') && combinedScore === 0 && d.nextMatch) {
+
+  // If court is waiting/idle and score is 0-0, show intermission
+  if ((courtStatus === 'waiting' || courtStatus === 'idle') && combinedScore === 0) {
     return 'intermission';
   }
-  
+
+  // On first load with no scoring, stay in intermission
+  if (firstLoad && !hasScoring) {
+    return 'intermission';
+  }
+
   return overlayState;
 }
 
@@ -1136,45 +1210,82 @@ async function tick() {
   try {
     const d = await fetchJSON(SRC);
     if (!d) return;
-    
-    // Determine what state we should be in
+
     const newState = determineState(d);
-    
+
+    // First load — set up initial state without animation
+    if (firstLoad) {
+      firstLoad = false;
+      if (newState === 'intermission' || newState === 'scoring' && ((d.score1 || 0) + (d.score2 || 0)) === 0) {
+        // Show intermission immediately
+        const team1 = d.team1 || '';
+        const team2 = d.team2 || '';
+        showIntermissionImmediate(team1, team2);
+        return;
+      } else if (newState === 'scoring' || newState === 'postmatch') {
+        // Show scoring immediately (skip animation)
+        overlayState = 'scoring';
+        if (scoringContent) {
+          scoringContent.style.opacity = '1';
+          scoringContent.style.pointerEvents = 'auto';
+        }
+        scorebug.style.width = SCORING_WIDTH;
+        socialBar.classList.remove('hidden-up');
+        socialBar.classList.add('visible');
+        applyData(d);
+        if (newState === 'postmatch') {
+          overlayState = 'postmatch';
+          matchFinishedAt = Date.now();
+        }
+        return;
+      }
+    }
+
     // Handle state transitions
     if (newState === 'postmatch' && overlayState === 'scoring') {
-      // Match just finished - start the hold timer
       overlayState = 'postmatch';
       matchFinishedAt = Date.now();
       console.log('[Overlay] Match finished, holding for 3 minutes');
     }
-    
+
     if (newState === 'intermission' && overlayState !== 'intermission' && !transitionInProgress) {
-      // Transition to intermission with next match teams
       const nextMatch = d.nextMatch || '';
-      const parts = nextMatch.split(/\\s+vs\\.?\\s+/i);
+      const team1 = d.team1 || '';
+      const team2 = d.team2 || '';
+      const parts = nextMatch.split(/\s+vs\.?\s+/i);
       if (parts.length >= 2) {
         transitionToIntermission(parts[0], parts[1]);
       } else if (nextMatch) {
         transitionToIntermission(nextMatch, 'TBD');
+      } else {
+        // No next match info — use current team names
+        transitionToIntermission(team1, team2);
       }
     }
-    
+
     if (newState === 'scoring' && overlayState === 'intermission' && !transitionInProgress) {
-      // Scoring started, transition back to scoring overlay
       transitionToScoring();
     }
-    
+
     // Apply data to scoring overlay if in scoring or postmatch state
     if ((overlayState === 'scoring' || overlayState === 'postmatch') && !transitionInProgress) {
       applyData(d);
     }
-    
+
   } catch (e) {
     console.log('[Overlay] Fetch error:', e);
   } finally {
     setTimeout(tick, POLL_MS);
   }
 }
+
+// Initialize: hide scoring content, start polling
+if (scoringContent) {
+  scoringContent.style.opacity = '0';
+  scoringContent.style.pointerEvents = 'none';
+}
+socialBar.classList.remove('visible');
+socialBar.classList.add('hidden-up');
 
 tick();
 </script>
