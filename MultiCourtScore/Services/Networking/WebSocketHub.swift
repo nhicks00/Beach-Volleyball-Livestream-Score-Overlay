@@ -676,17 +676,46 @@ function applyData(d) {
   updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
   updatePips(document.getElementById('pips2'), d.setsWon2 || 0, setsToWin);
   
-  // Serve indicator
-  const srv = (d.serve || "").toLowerCase();
+  // Serve indicator - show for team that scored last point
   const serveLeft = document.getElementById('serve-left');
   const serveRight = document.getElementById('serve-right');
   if (serveLeft && serveRight) {
-    const isHome = srv.includes('home') || srv.includes('team1');
-    const isAway = srv.includes('away') || srv.includes('team2');
-    serveLeft.style.opacity = isHome ? '1' : '0';
-    serveLeft.classList.toggle('serving-pulse', isHome);
-    serveRight.style.opacity = isAway ? '1' : '0';
-    serveRight.classList.toggle('serving-pulse', isAway);
+    // Determine who scored last based on score change or use API serve field
+    let isLeftServing = false;
+    let isRightServing = false;
+    
+    // Check if we have previous scores to compare
+    if (window.prevScore1 !== undefined && window.prevScore2 !== undefined) {
+      if (d.score1 > window.prevScore1) {
+        isLeftServing = true;
+      } else if (d.score2 > window.prevScore2) {
+        isRightServing = true;
+      } else {
+        // No score change, keep previous serve state
+        isLeftServing = window.lastServe === 'left';
+        isRightServing = window.lastServe === 'right';
+      }
+    } else if (combinedScore === 0) {
+      // 0-0: no serve indicator
+      isLeftServing = false;
+      isRightServing = false;
+    } else {
+      // Fall back to API serve field if available
+      const srv = (d.serve || "").toLowerCase();
+      isLeftServing = srv.includes('home') || srv.includes('team1');
+      isRightServing = srv.includes('away') || srv.includes('team2');
+    }
+    
+    // Store current state for next update
+    window.prevScore1 = d.score1;
+    window.prevScore2 = d.score2;
+    if (isLeftServing) window.lastServe = 'left';
+    if (isRightServing) window.lastServe = 'right';
+    
+    serveLeft.style.opacity = isLeftServing ? '1' : '0';
+    serveLeft.classList.toggle('serving-pulse', isLeftServing);
+    serveRight.style.opacity = isRightServing ? '1' : '0';
+    serveRight.classList.toggle('serving-pulse', isRightServing);
   }
   
   // Animation trigger: multiple of 7
