@@ -40,6 +40,7 @@ struct SettingsView: View {
     @State private var password = ""
     @State private var showPassword = false
     @State private var showingCredentialsSaved = false
+    @State private var showSettingsSaved = false
     @State private var searchText = ""
 
     private let configStore = ConfigStore()
@@ -230,8 +231,8 @@ struct SettingsView: View {
                     }
                 }
 
-                // Overlay
-                DetailSection(title: "Overlay Theme") {
+                // Theme
+                DetailSection(title: "Theme") {
                     Picker("Theme", selection: $settings.overlayTheme) {
                         Text("Dark").tag("dark")
                         Text("Light").tag("light")
@@ -242,8 +243,28 @@ struct SettingsView: View {
 
                 HStack {
                     Spacer()
+
+                    if showSettingsSaved {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(AppColors.success)
+                            Text("Settings saved!")
+                                .foregroundColor(AppColors.success)
+                        }
+                        .font(.system(size: 13))
+                        .transition(.opacity)
+                    }
+
                     Button("Save Settings") {
                         saveSettings()
+                        withAnimation {
+                            showSettingsSaved = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                showSettingsSaved = false
+                            }
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(AppColors.success)

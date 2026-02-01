@@ -6,15 +6,48 @@
 //
 
 import SwiftUI
+import AppKit
+
+// MARK: - NSColor Hex Extension
+
+extension NSColor {
+    convenience init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r, g, b: UInt64
+        switch hex.count {
+        case 6:
+            (r, g, b) = (int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (r, g, b) = (0, 0, 0)
+        }
+        self.init(
+            srgbRed: CGFloat(r) / 255,
+            green: CGFloat(g) / 255,
+            blue: CGFloat(b) / 255,
+            alpha: 1.0
+        )
+    }
+}
 
 // MARK: - Design System Colors
 enum AppColors {
-    // Primary brand colors
+    // Adaptive color helper — responds to NSApp.appearance changes
+    private static func adaptive(light: String, dark: String) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(hex: dark)
+                : NSColor(hex: light)
+        })
+    }
+
+    // Primary brand colors (same in both modes)
     static let primary = Color(hex: "#6366F1")           // Indigo
     static let primaryLight = Color(hex: "#818CF8")
     static let primaryDark = Color(hex: "#4F46E5")
 
-    // Status colors
+    // Status colors (same in both modes)
     static let success = Color(hex: "#10B981")           // Emerald green
     static let successLight = Color(hex: "#34D399")
     static let warning = Color(hex: "#F59E0B")           // Amber
@@ -23,30 +56,30 @@ enum AppColors {
     static let errorLight = Color(hex: "#F87171")
     static let info = Color(hex: "#3B82F6")              // Blue
 
-    // Surface colors (DARK MODE)
-    static let background = Color(hex: "#1E1E1E")        // Main background
-    static let surface = Color(hex: "#2C2C2C")           // Card/panel surfaces
-    static let surfaceElevated = Color(hex: "#333333")   // Elevated surfaces
-    static let surfaceHover = Color(hex: "#3A3A3A")      // Hover state
+    // Surface colors (adaptive)
+    static let background = adaptive(light: "#F5F5F5", dark: "#1E1E1E")
+    static let surface = adaptive(light: "#FFFFFF", dark: "#2C2C2C")
+    static let surfaceElevated = adaptive(light: "#F0F0F0", dark: "#333333")
+    static let surfaceHover = adaptive(light: "#E8E8E8", dark: "#3A3A3A")
 
-    // Sidebar, toolbar, footer backgrounds
-    static let sidebarBackground = Color(hex: "#252525")
-    static let toolbarBackground = Color(hex: "#2C2C2C")
-    static let footerBackground = Color(hex: "#252525")
+    // Sidebar, toolbar, footer backgrounds (adaptive)
+    static let sidebarBackground = adaptive(light: "#F0F0F0", dark: "#252525")
+    static let toolbarBackground = adaptive(light: "#FFFFFF", dark: "#2C2C2C")
+    static let footerBackground = adaptive(light: "#F0F0F0", dark: "#252525")
 
-    // Border color
-    static let border = Color(hex: "#3A3A3A")
+    // Border color (adaptive)
+    static let border = adaptive(light: "#D4D4D8", dark: "#3A3A3A")
 
-    // Text colors (light text on dark background)
-    static let textPrimary = Color.white
-    static let textSecondary = Color(hex: "#A1A1AA")     // Zinc 400
-    static let textMuted = Color(hex: "#71717A")         // Zinc 500
+    // Text colors (adaptive)
+    static let textPrimary = adaptive(light: "#1A1A1A", dark: "#FFFFFF")
+    static let textSecondary = adaptive(light: "#52525B", dark: "#A1A1AA")
+    static let textMuted = adaptive(light: "#A1A1AA", dark: "#71717A")
 
-    // Status-specific backgrounds (opacity variants for dark mode)
+    // Status-specific backgrounds (opacity variants — work on both)
     static let liveBackground = Color(hex: "#10B981").opacity(0.15)
     static let waitingBackground = Color(hex: "#F59E0B").opacity(0.15)
     static let finishedBackground = Color(hex: "#3B82F6").opacity(0.15)
-    static let idleBackground = Color(hex: "#3A3A3A").opacity(0.5)
+    static let idleBackground = adaptive(light: "#E8E8E8", dark: "#3A3A3A").opacity(0.5)
     static let errorBackground = Color(hex: "#EF4444").opacity(0.15)
 }
 

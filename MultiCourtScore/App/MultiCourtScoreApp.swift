@@ -17,14 +17,14 @@ struct MultiCourtScoreApp: App {
                 .environmentObject(appViewModel)
                 .onAppear {
                     appViewModel.startServices()
-                    // Force dark mode appearance
-                    NSApp.appearance = NSAppearance(named: .darkAqua)
-                    // Auto-start polling if configured
+                    applyTheme(appViewModel.appSettings.overlayTheme)
                     if appViewModel.appSettings.autoStartPolling {
                         appViewModel.startAllPolling()
                     }
                 }
-                .preferredColorScheme(.dark)
+                .onChange(of: appViewModel.appSettings.overlayTheme) { _, newTheme in
+                    applyTheme(newTheme)
+                }
                 .frame(minWidth: 1200, minHeight: 800)
         }
         .windowStyle(.hiddenTitleBar)
@@ -49,26 +49,9 @@ struct MultiCourtScoreApp: App {
                 .keyboardShortcut(.delete, modifiers: [.command, .shift])
             }
         }
+    }
 
-        WindowGroup(id: "scanner") {
-            ScanWorkflowView()
-                .environmentObject(appViewModel)
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 1100, height: 750)
-
-        WindowGroup(id: "queue-editor", for: Int.self) { $courtId in
-            if let courtId {
-                QueueEditorView(courtId: courtId)
-                    .environmentObject(appViewModel)
-            }
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 1000, height: 650)
-
-        Settings {
-            SettingsView()
-                .environmentObject(appViewModel)
-        }
+    private func applyTheme(_ theme: String) {
+        NSApp.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
     }
 }

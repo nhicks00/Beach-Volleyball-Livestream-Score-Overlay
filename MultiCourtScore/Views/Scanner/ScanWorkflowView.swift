@@ -148,6 +148,7 @@ struct ScanWorkflowView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isActive ? AppColors.surfaceHover : Color.clear)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
