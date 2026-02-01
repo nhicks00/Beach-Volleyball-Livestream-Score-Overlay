@@ -427,24 +427,38 @@ tailwind.config = {
 
 /* Confetti celebration */
 @keyframes cf-drift-1 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
-  8% { opacity: 0.9; }
-  100% { transform: translateY(90px) translateX(15px) rotate(540deg); opacity: 0; }
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
+  10% { opacity: 0.9; transform: translateY(5px) translateX(12px) rotate(90deg) scale(0.95); }
+  30% { transform: translateY(25px) translateX(-8px) rotate(220deg) scale(1.05); }
+  50% { transform: translateY(45px) translateX(18px) rotate(380deg) scale(0.9); }
+  70% { transform: translateY(65px) translateX(-5px) rotate(500deg) scale(1); }
+  100% { transform: translateY(95px) translateX(10px) rotate(720deg) scale(0.85); opacity: 0; }
 }
 @keyframes cf-drift-2 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
-  8% { opacity: 0.85; }
-  100% { transform: translateY(85px) translateX(-12px) rotate(680deg); opacity: 0; }
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
+  8% { opacity: 0.85; transform: translateY(3px) translateX(-15px) rotate(45deg) scale(1.1); }
+  25% { transform: translateY(22px) translateX(10px) rotate(180deg) scale(0.9); }
+  45% { transform: translateY(40px) translateX(-20px) rotate(320deg) scale(1.05); }
+  65% { transform: translateY(58px) translateX(8px) rotate(480deg) scale(0.95); }
+  85% { transform: translateY(78px) translateX(-12px) rotate(620deg) scale(1); }
+  100% { transform: translateY(90px) translateX(5px) rotate(800deg) scale(0.8); opacity: 0; }
 }
 @keyframes cf-drift-3 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
-  10% { opacity: 0.8; }
-  100% { transform: translateY(95px) translateX(8px) rotate(420deg); opacity: 0; }
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(0.9); opacity: 0; }
+  12% { opacity: 0.8; transform: translateY(8px) translateX(20px) rotate(60deg) scale(1); }
+  35% { transform: translateY(30px) translateX(-15px) rotate(200deg) scale(1.1); }
+  55% { transform: translateY(50px) translateX(25px) rotate(360deg) scale(0.85); }
+  75% { transform: translateY(72px) translateX(-10px) rotate(520deg) scale(1.05); }
+  100% { transform: translateY(92px) translateX(15px) rotate(680deg) scale(0.9); opacity: 0; }
 }
 @keyframes cf-drift-4 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
-  6% { opacity: 0.9; }
-  100% { transform: translateY(80px) translateX(-18px) rotate(760deg); opacity: 0; }
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1.05); opacity: 0; }
+  6% { opacity: 0.9; transform: translateY(2px) translateX(-10px) rotate(30deg) scale(0.95); }
+  20% { transform: translateY(18px) translateX(22px) rotate(150deg) scale(1.1); }
+  40% { transform: translateY(38px) translateX(-18px) rotate(290deg) scale(0.88); }
+  60% { transform: translateY(55px) translateX(15px) rotate(450deg) scale(1.02); }
+  80% { transform: translateY(75px) translateX(-8px) rotate(600deg) scale(0.92); }
+  100% { transform: translateY(88px) translateX(12px) rotate(780deg) scale(0.85); opacity: 0; }
 }
 .confetti-container {
   position: absolute;
@@ -869,9 +883,9 @@ function applyData(d) {
   if (sc1El) sc1El.textContent = score1;
   if (sc2El) sc2El.textContent = score2;
 
-  // Set number
+  // Set number (API returns 'set', not 'setNumber')
   const setNumEl = document.getElementById('set-num');
-  if (setNumEl) setNumEl.textContent = d.setNumber || 1;
+  if (setNumEl) setNumEl.textContent = d.set || 1;
 
   // Set pips
   updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
@@ -1398,21 +1412,20 @@ async function tick() {
 
     const newState = determineState(d);
 
-    // First load — set up initial state without animation
+    // First load — set up initial state based on ACTUAL DATA, not overlayState
     if (firstLoad) {
       firstLoad = false;
       // Initialize current match tracking
       updateCurrentMatch(d.team1 || '', d.team2 || '');
       
-      if (newState === 'intermission' || newState === 'scoring' && ((d.score1 || 0) + (d.score2 || 0)) === 0) {
-        // Show intermission immediately
-        const team1 = d.team1 || '';
-        const team2 = d.team2 || '';
-        showIntermissionImmediate(team1, team2);
-        return;
-      } else if (newState === 'scoring' || newState === 'postmatch') {
-        // Show scoring immediately (skip animation)
-        overlayState = 'scoring';
+      const combinedScore = (d.score1 || 0) + (d.score2 || 0);
+      const courtStatus = (d.courtStatus || '').toLowerCase();
+      const matchFinished = isMatchFinished(d);
+      
+      // If there's an active score OR match is finished (postmatch), show scoring overlay
+      if (combinedScore > 0 || matchFinished) {
+        console.log('[Overlay] First load: Active scoring detected (score:', combinedScore, ')');
+        overlayState = matchFinished ? 'postmatch' : 'scoring';
         if (scoringContent) {
           scoringContent.style.opacity = '1';
           scoringContent.style.pointerEvents = 'auto';
@@ -1421,12 +1434,18 @@ async function tick() {
         socialBar.classList.remove('hidden-up');
         socialBar.classList.add('visible');
         applyData(d);
-        if (newState === 'postmatch') {
-          overlayState = 'postmatch';
+        if (matchFinished) {
           matchFinishedAt = Date.now();
         }
         return;
       }
+      
+      // No active score - show intermission
+      console.log('[Overlay] First load: No active score, showing intermission');
+      const team1 = d.team1 || '';
+      const team2 = d.team2 || '';
+      showIntermissionImmediate(team1, team2);
+      return;
     }
 
     // *** MATCH CHANGE DETECTION ***
