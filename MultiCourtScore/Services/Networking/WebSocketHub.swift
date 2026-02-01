@@ -337,1040 +337,330 @@ final class WebSocketHub {
     
     private func generateOverlayHTML(courtId: String) -> String {
         var html = Self.bvmOverlayHTML
-        // Inject court-specific endpoints
+        // Inject court-specific endpoints (new Tailwind overlay format)
         html = html.replacingOccurrences(
-            of: #"const SRC = "/score.json"; const NEXT_SRC = "/next.json"; const LABEL_SRC = "/label.json";"#,
-            with: #"const SRC = "/overlay/court/\#(courtId)/score.json"; const NEXT_SRC = "/overlay/court/\#(courtId)/next.json"; const LABEL_SRC = "/overlay/court/\#(courtId)/label.json";"#
+            of: #"const SRC = "/score.json";"#,
+            with: #"const SRC = "/overlay/court/\#(courtId)/score.json";"#
+        )
+        html = html.replacingOccurrences(
+            of: #"const NEXT_SRC = "/next.json";"#,
+            with: #"const NEXT_SRC = "/overlay/court/\#(courtId)/next.json";"#
         )
         return html
     }
     
-    // MARK: - Embedded HTML (Restored from V1)
+    // MARK: - Embedded HTML (Stitch-generated Tailwind overlay)
     private static let bvmOverlayHTML: String = #"""
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>BVM Scorebug Overlay</title>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BVM Scoreboard Overlay</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "carbon": "#121212",
+        "gold": "#D4AF37",
+        "gold-bright": "#F9E29B",
+        "gold-muted": "rgba(212, 175, 55, 0.25)",
+      },
+      fontFamily: {
+        "display": ["Roboto Condensed", "sans-serif"]
+      }
+    },
+  },
+}
+</script>
 <style>
-:root{
-  --gold1:#ffd700; --gold2:#ffb300; --goldGlow:rgba(255,215,0,.25);
-  --bgTop:#141414; --bgBot:#1c1c1c; --text:#fff; --muted:rgba(255,255,255,.85);
-  --score-size:38px; --sets-size:14px; --maxw:900px; --bugw:900px;
+/* Tailwind utility classes compiled inline for overlay */
+.carbon-bar {
+  background: linear-gradient(180deg, #1A1A1A 0%, #080808 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
-html,body{margin:0;background:transparent;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-.wrap{position:fixed; top:10px; left:0; right:0; pointer-events:none}
-.container{width:var(--bugw); margin:0 auto; display:grid; gap:10px}
-
-/* Social bar base style - now fixed at top-left of page */
-.socialbar{
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  z-index: 100;
-  display:inline-grid; grid-auto-flow:column; gap:10px; align-items:center;
-  padding:6px 12px;
-  background:linear-gradient(180deg,rgba(0,0,0,.65),rgba(0,0,0,.65));
-  border:1px solid rgba(255,200,0,.45); border-radius:999px;
-  box-shadow:0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
+.text-gold-gradient {
+  background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
-.handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
-
-/* Brand icon colors */
-svg.ig {}
-svg.ig defs linearGradient stop:nth-child(1){stop-color:#f58529}
-svg.ig defs linearGradient stop:nth-child(2){stop-color:#dd2a7b}
-svg.ig defs linearGradient stop:nth-child(3){stop-color:#8134af}
-svg.ig defs linearGradient stop:nth-child(4){stop-color:#515bd4}
-svg.yt{color:#ff0000}
-svg.fb{color:#1877f2}
-svg.vb{color:var(--gold1)} /* Volleyball icon color */
-
-/* Top header row layout */
-.header-row {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px; width: 100%;
+.set-pip {
+  width: 1.5rem;
+  height: 0.375rem;
+  border-radius: 9999px;
 }
-#social-header { margin-left: 0; }
-#next-header { margin-right: 0; }
-.handle{font-size:12px; color:rgba(255,255,255,.85); font-weight:800; letter-spacing:.3px}
-
-/* Next Up badge - inline with social bar */
-.next-badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px;
-  background: linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.65));
-  border: 1px solid rgba(255,200,0,.35); border-radius: 999px;
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
-  font-size: 11px; font-weight: 700; color: var(--muted);
-  transition: opacity 0.3s ease;
-}
-.next-badge .next-label { color: var(--gold2); text-transform: uppercase; font-size: 10px; }
-.next-badge .next-teams { color: var(--text); font-weight: 800; }
-
-/* bug - main scoreboard with center-focused layout */
-.bug{
-  position:relative;
-  display:grid; 
-  grid-template-columns: 1fr auto 1fr; /* Equal sides, auto center */
-  align-items:center; 
-  padding:16px 24px;
-  width: 900px; /* Fixed width - never changes */
-  min-width: 900px; /* Prevent shrinking */
-  max-width: 900px; /* Prevent growing */
-  background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
-  border-radius:18px; border:1px solid rgba(255,200,0,.35);
-  box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
-  overflow: visible; /* Allow seeds to show outside */
-  gap: 20px; /* Space between columns */
-}
-
-/* Team Sections - Left and Right */
-.team-section {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.team-section.left {
-  justify-content: flex-start;
-}
-.team-section.right {
-  justify-content: flex-end;
-}
-
-/* Team Names */
-.team-name {
-  font-size: clamp(18px, 2.5vw, 22px);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.5px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 320px;
-  color: var(--text);
-}
-
-/* Seed Badges */
-.seed-badge {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--gold2);
-  background: rgba(0,0,0,0.5);
-  padding: 4px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-  opacity: 0.9;
-}
-.seed-badge.hidden { display: none; }
-
-/* Center Score Section */
-.score-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-  /* Centering Fix for Main Score */
-  .main-score {
-    display: grid;
-    grid-template-columns: 1fr 40px 1fr; /* Fixed width for colon, equal space for scores */
-    align-items: center;
-    width: 100%;
-    /* margin-bottom: 4px; */
-  }
-  .main-score .score-num {
-    text-align: right; /* Left score aligns right towards colon */
-  }
-  .main-score .score-num:last-child {
-    text-align: left; /* Right score aligns left towards colon */
-  }
-  .main-score .score-colon {
-    text-align: center;
-    width: 40px;
-    display: inline-block;
-  }
-
-  /* Centering Fix for Set Count */
-  .set-count {
-    display: grid;
-    grid-template-columns: 1fr 20px 1fr; /* Fixed width for colon */
-    align-items: center;
-    width: 100%;
-    opacity: 0.8;
-  }
-  .set-count span:first-child { text-align: right; }
-  .set-count span:last-child { text-align: left; }
-  .set-count .set-sep { text-align: center; width: 20px; display: inline-block; }
-
-  /* Set History Drawer - REMOVED */
-  .setsline { display: none !important; }
-
-/* Serve Indicators - Positioned Absolutely */
-.serve-indicator {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  color: var(--gold);
-  filter: drop-shadow(0 0 6px rgba(255,215,0,0.6));
-  display: none;
-  animation: fadeSlide 0.3s ease-out;
-}
-.serve-indicator.left {
-  left: 24px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.serve-indicator.right {
-  right: 24px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.serve-indicator.active { display: block; }
-
-/* Seeds sub-bubble - REMOVED, using edge-positioned seeds instead */
-
-/* set history — drawer style with slide animation */
-.setsline {
-  display: none; /* Hidden until JS shows it */
-  gap: 20px; justify-content: center;
-  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
-  padding: 12px 24px 8px;
-  margin: -14px auto 0;
-  width: max-content;
-  min-width: 200px;
-  
-  border: 1px solid rgba(255,200,0,.35);
-  border-top: none;
-  border-bottom-left-radius: 12px;
-  border-bottom-right-radius: 12px;
-  
-  box-shadow: 0 10px 24px rgba(0,0,0,.5);
-  position: relative;
-  z-index: 1;
-  
-  /* Animation setup - starts hidden/above, slides down when visible */
-  opacity: 0;
-  transform: translateY(-30px);
-  transition: opacity 0.5s ease, transform 0.5s ease;
-}
-.setsline.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-/* Ensure bug is on top */
-.bug { z-index: 10; position: relative; }
-
-.set-item {
-  font-size: 16px; font-weight: 700; color: var(--muted);
-  display: flex; align-items: center; gap: 4px;
-}
-.set-lbl { color: var(--gold2); font-size: 12px; text-transform: uppercase; margin-right: 2px; opacity: 0.8; }
-.set-sc { color: #fff; font-variant-numeric: tabular-nums; }
-.set-sc.win { color: var(--gold1); border-bottom: 2px solid var(--gold1); padding-bottom: 1px; }
-
-/* Old next line - hidden, replaced by next-badge */
-.next{ display: none; }
-
-/* accent */
-.accent{height:3px; width:68%; margin:0 auto;
-  background:linear-gradient(90deg,transparent,var(--gold1),var(--gold2),transparent);
-  border-radius:3px; opacity:.9}
-
-/* Timeout Banner */
-#timeout-banner {
-  display: none;
-  background: rgba(255, 0, 0, 0.7);
-  color: white;
-  font-size: 14px;
-  font-weight: 800;
-  text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 4px;
-  margin: -6px auto 0;
-  width: max-content;
-  z-index: 5;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-  animation: pulse 2s infinite ease-in-out;
-}
-
-@keyframes pulse {
-  0% { transform: scale(1); opacity: 0.9; }
-  50% { transform: scale(1.05); opacity: 1; }
-  100% { transform: scale(1); opacity: 0.9; }
-}
-
-/* animations */
-@keyframes flip { 0%{transform:rotateX(-90deg); opacity:0} 100%{transform:rotateX(0); opacity:1} }
-@keyframes fadeSlide { 0%{opacity:0; transform:translateY(-4px)} 100%{opacity:1; transform:translateY(0)} }
-@keyframes slideDown { 0%{opacity:0; transform:translateY(-20px)} 100%{opacity:1; transform:translateY(0)} }
-@keyframes fadeIn { 0%{opacity:0} 100%{opacity:1} }
-.flip{ animation:flip .22s ease-out }
-.fade{ animation:fadeSlide .18s ease-out }
-
-/* Pre-match mode - simple "Team A vs Team B" text */
-.prematch-bar {
-  display: flex; align-items: center; justify-content: center; gap: 16px;
-  padding: 14px 28px;
-  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
-  border-radius: 18px; border: 1px solid rgba(255,200,0,.35);
-  box-shadow: 0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
-  transition: opacity 0.4s ease, transform 0.4s ease;
-}
-.prematch-bar .team-name {
-  font-size: 24px; font-weight: 900; text-transform: uppercase;
-  letter-spacing: -0.5px; color: var(--text);
-}
-.prematch-bar .vs {
-  font-size: 16px; font-weight: 700; color: var(--gold2);
-  text-transform: uppercase; opacity: 0.9;
-}
-
-/* Post-match "Next Up" banner */
-.postmatch-next {
-  text-align: center; padding: 10px 20px;
-  font-size: 14px; font-weight: 800; color: var(--gold1);
-  background: linear-gradient(180deg, rgba(20,20,20,0.95), rgba(28,28,28,0.95));
-  border: 1px solid rgba(255,200,0,.25); border-top: none;
-  border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
-  margin: -10px auto 0; width: max-content; min-width: 280px;
-  box-shadow: 0 8px 20px rgba(0,0,0,.4);
-  opacity: 0; transform: translateY(-10px);
-  transition: opacity 0.5s ease, transform 0.5s ease;
-}
-.postmatch-next.visible { opacity: 1; transform: translateY(0); }
-.postmatch-next .next-label { color: var(--muted); font-size: 11px; margin-right: 6px; }
-
-/* State transitions - ONLY opacity and vertical position, NO width changes */
-.bug, .prematch-bar { 
-  transition: opacity 0.5s ease, transform 0.5s ease; 
-  margin: 0 auto; 
-}
-
-.bug.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; display: none; }
-.prematch-bar.hidden { opacity: 0; transform: translateY(-10px); display: none; }
-
-/* Removed all transition-init and width animation states */
-/* Scoreboard is now permanently 900px wide */
-
-/* Match-change slide-off animation */
-@keyframes slideOutLeft {
-  0% { transform: translateX(0); opacity: 1; }
-  100% { transform: translateX(-120%); opacity: 0; }
-}
-@keyframes slideOutRight {
-  0% { transform: translateX(0); opacity: 1; }
-  100% { transform: translateX(120%); opacity: 0; }
-}
-@keyframes slideInLeft {
-  0% { transform: translateX(-120%); opacity: 0; }
-  100% { transform: translateX(0); opacity: 1; }
-}
-@keyframes slideInRight {
-  0% { transform: translateX(120%); opacity: 0; }
-  100% { transform: translateX(0); opacity: 1; }
-}
-
-.bug.match-change .row {
-  clip-path: inset(0 0 0 0); /* Contain children within the row */
-}
-.bug.match-change #t1 { animation: slideOutLeft 0.4s ease-in forwards; }
-.bug.match-change #t2 { animation: slideOutRight 0.4s ease-in forwards; }
-.bug.match-change #sc1, .bug.match-change #sc2 { animation: fadeSlide 0.4s ease-in reverse forwards; }
-
-.bug.match-reveal #t1 { animation: slideInRight 0.4s ease-out 0.1s forwards; }
-.bug.match-reveal #t2 { animation: slideInLeft 0.4s ease-out 0.1s forwards; }
-.bug.match-reveal #sc1, .bug.match-reveal #sc2 { animation: fadeSlide 0.4s ease-out 0.1s forwards; }
-
-.bug.reveal { animation: slideDown 0.5s ease-out; }
-@media (prefers-reduced-motion: reduce){ .flip,.fade{ animation:none } }
-
-/* Social Bar specific styles - remains bottom left */
-.bug .socialbar {
-  position: absolute;
-  top: 100%; /* Below scoreboard */
-  margin-top: 8px; 
-  left: 20px;
-  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
-  border: 1px solid rgba(255,200,0,.35);
-  box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
-  padding: 6px 14px;
+.score-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  z-index: 1; 
-  border-radius: 999px;
-  transition: opacity 0.4s ease, transform 0.4s ease;
-  min-width: 200px;
+  min-width: 4rem;
+  padding: 0.5rem 1rem;
 }
-
-/* Next Up Badge - moved to RIGHT SIDE CAR */
-.bug .next-badge {
-  position: absolute;
-  left: 100%; /* Push to the right side */
-  top: 50%;   /* Vertically center */
-  transform: translateY(-50%);
-  margin-left: 15px; /* Gap from scoreboard */
-  
-  background: linear-gradient(180deg, var(--bgTop), var(--bgBot));
-  border: 1px solid rgba(255,200,0,.35);
-  box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 0 14px rgba(255,215,0,.25);
-  padding: 8px 16px;
-  
-  display: flex;
-  align-items: center; /* Center label and block */
-  justify-content: flex-start;
-  gap: 12px;
-  z-index: 1; 
-  border-radius: 12px; /* Less rounded for side block? Or keep oval? User said "in the bubble that it has". Let's keep it rounded but maybe rectangular-ish for height */
-  border-radius: 20px; 
-  
-  transition: opacity 0.4s ease, transform 0.4s ease;
-  min-width: 200px;
-  max-width: 300px;
-}
-.bug.hidden .socialbar, .bug.hidden .next-badge {
-  opacity: 0;
-  transform: translateY(-10px); /* Just fade out for side */
-}
-.bug.hidden .next-badge {
-  transform: translateY(-50%) translateX(-10px); /* Slide in from left when hiding? or fade */
-  opacity: 0;
-}
-
-/* bug - main scoreboard with center-focused layout */
-.bug{
-  position:relative;
-  display:grid; 
-  grid-template-columns: 1fr auto 1fr; /* Equal sides, auto center */
-  align-items:center; 
-  padding: 2px 20px; /* Slightly reduced padding */
-  width: 720px; 
-  min-width: 720px;
-  max-width: 720px;
-  background:linear-gradient(180deg,var(--bgTop),var(--bgBot));
-  border-radius:16px;
-  border:1px solid rgba(255,200,0,.35);
-  box-shadow:0 10px 24px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
-  overflow: visible; 
-  gap: 12px; /* Reduced gap between columns */
-}
-
-/* Team Sections */
-.team-section {
-  display: flex;
-  align-items: center;
-  gap: 10px; /* Spacing between icon and name */
-}
-.name-block {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.team-section.left {
-  text-align: left;
-  flex-direction: row; /* Icon | Name */
-  justify-content: flex-start; /* Push content to left edge */
-}
-.team-section.left .name-block {
-  align-items: flex-start; /* Seed aligns left under first name */
-}
-.team-section.right {
-  text-align: right;
-  flex-direction: row-reverse; /* Icon | Name - reversed so name comes first from right */
-  justify-content: flex-end; /* Push content to right edge */
-}
-.team-section.right .name-block {
-  align-items: flex-end; /* Seed aligns right under last name */
-}
-
-.team-name {
-  font-size: 16px; /* Reduced from 18px */
+.score-text {
+  font-size: 2.25rem;
   font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.5px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 320px;
-  color: var(--text);
-}
-.seed-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--gold1);
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-
-/* Serve Icon - Volleyball SVG */
-.serve-icon {
-  width: 20px; 
-  height: 20px;
-  color: #fff;
-  opacity: 0; /* Hidden by default */
-  transition: opacity 0.3s ease;
-  flex-shrink: 0;
-}
-.serve-icon.active {
-  opacity: 1;
-}
-
-/* Center Score Section */
-.score-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0px; /* Removed gap */
-}
-
-/* Centering Fix for Main Score */
-.main-score {
-  display: grid;
-  grid-template-columns: 1fr 24px 1fr; /* Fixed width for SVG colon */
-  align-items: center;
-  width: 100%;
-}
-.score-num {
-  font-size: 42px;
-  font-weight: 900;
-  letter-spacing: -2px;
-  color: var(--text);
-  line-height: 1; 
-  padding-bottom: 2px;
-}
-.score-colon-svg {
-  width: 12px;
-  height: 32px;
-  fill: rgba(255,255,255,0.5);
-  display: block;
-  margin: 0 auto;
-}
-
-/* Set Count - Small Below Score */
-.set-count {
-  display: grid;
-  grid-template-columns: 1fr 14px 1fr; /* Fixed width for SVG colon */
-  align-items: center;
-  width: 100%;
-  opacity: 0.8;
-  margin-top: 0px; 
-}
-.set-count span {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text);
-  line-height: 1;
-}
-.set-sep-svg {
-  width: 6px;
-  height: 12px;
-  fill: rgba(255,255,255,0.4);
-  display: block;
-  margin: 0 auto;
-}  white-space: nowrap;
-}
-.socialbar svg {
-  vertical-align: middle;
-  margin-right: 2px;
-}
-.socialbar .ig stop:nth-child(1) { stop-color: #feda75; }
-.socialbar .ig stop:nth-child(2) { stop-color: #fa7e1e; }
-.socialbar .ig stop:nth-child(3) { stop-color: #d62976; }
-.socialbar .ig stop:nth-child(4) { stop-color: #962fbf; }
-.socialbar .yt { color: #FF0000; }
-.socialbar .fb { color: #1877F2; }
-
-/* Next Up Badge specific styles */
-.next-badge {
-  /* Layout is set in .bug .next-badge above */
-  font-family: inherit;
-}
-.next-badge .next-label {
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--gold1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-.next-badge .next-info-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center; /* Center the stack */
-  justify-content: center;
-  line-height: 1.1;
-}
-.next-team-line {
-  font-size: 11px; /* Same font size as requested */
-  font-weight: 700;
-  color: var(--text);
-  white-space: nowrap;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-}
-.next-vs-line {
-  font-size: 9px;
-  color: var(--muted);
-  text-transform: lowercase;
+  background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-variant-numeric: tabular-nums;
   font-style: italic;
-  margin: 1px 0; /* Tiny breathing room */
+  line-height: 1;
+  padding: 0.25em 0.35em;
+}
+.bubble-bar {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: none;
+  border-radius: 0 0 0.5rem 0.5rem;
+  overflow: hidden;
+}
+.insta-gradient {
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.bg-gold { background-color: #D4AF37; }
+.bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
+
+body {
+  min-height: 100dvh;
+  background-color: transparent;
+  margin: 0;
+  padding: 0;
+  font-family: "Roboto Condensed", sans-serif;
+  color: white;
+  overflow: hidden;
+}
+.serving-pulse {
+  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulse-gold {
+  0%, 100% { opacity: 1; transform: scale(1.1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* Bubble animations - slide from behind scoreboard */
+.bubble-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-top: -2px;
+  z-index: 5;
+  height: 32px;
+}
+.bubble-bar {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  position: absolute;
+  top: 0;
+}
+.bubble-bar.hidden-up {
+  transform: translateY(-120%);
+  opacity: 0;
+  pointer-events: none;
+}
+.bubble-bar.visible {
+  transform: translateY(0);
+  opacity: 1;
 }
 </style>
 </head>
-<body>
-  <!-- Social Media Bar - Fixed at top-left of page -->
-  <div id="social-header" class="socialbar">
-    <!-- Instagram -->
-    <svg class="ig" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <defs>
-        <linearGradient id="iggrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%"/><stop offset="40%"/><stop offset="70%"/><stop offset="100%"/>
-        </linearGradient>
-      </defs>
-      <path fill="url(#iggrad)" d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.9.3 2.3.5.6.2 1 .5 1.5 1 .5.5.8.9 1 1.5.2.4.4 1.1.5 2.3.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.3 1.9-.5 2.3-.2.6-.5 1-1 1.5-.5.5-.9.8-1.5 1-.4.2-1.1.4-2.3.5-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.9-.3-2.3-.5a3.9 3.9 0 0 1-1.5-1c-.5-.5-.8-.9-1-1.5-.2-.4-.4-1.1-.5-2.3C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.3-1.9.5-2.3.2-.6.5-1 1-1.5.5-.5.9-.8 1.5-1 .4-.2 1.1-.4 2.3-.5C8.4 2.2 8.8 2.2 12 2.2Zm0 5.3a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm6.4-.9a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/>
-    </svg>
-    <svg class="yt" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path fill="currentColor" d="M23 12s0-3.9-.5-5.7A3.1 3.1 0 0 0 20.8 4C18.9 3.6 12 3.6 12 3.6s-6.9 0-8.8.4A3.1 3.1 0 0 0 1.5 6.3C1 8.1 1 12 1 12s0 3.9.5 5.7c.2.9.9 1.6 1.7 1.9 1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4a3.1 3.1 0 0 0 1.7-1.9c.5-1.8.5-5.7.5-5.7ZM9.8 15.5V8.5l6 3.5-6 3.5Z"/>
-    </svg>
-    <svg class="fb" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
-      <path fill="currentColor" d="M22 12a10 10 0 1 0-11.6 9.9v-7h-2.3V12h2.3V9.7c0-2.3 1.4-3.6 3.5-3.6 1 0 2 .2 2 .2v2.2h-1.1c-1.1 0-1.4.7-1.4 1.4V12h2.4l-.4 2.9h-2v7A10 10 0 0 0 22 12Z"/>
-    </svg>
-    <div class="handle">@BeachVolleyballMedia</div>
+<body style="display: flex; flex-direction: column; align-items: center; padding-top: 2rem;">
+
+<div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem;">
+  <!-- Main Scoreboard -->
+  <div id="scorebug" class="carbon-bar" style="width: 100%; height: 4rem; border-radius: 0.375rem; display: flex; align-items: center; box-shadow: 0 8px 30px rgb(0,0,0,0.8); position: relative; overflow: hidden; z-index: 20;">
+    
+    <!-- Left Team Section -->
+    <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%;">
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="display: flex; flex-direction: column; justify-content: center;">
+          <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
+          <div id="pips1" style="display: flex; gap: 0.375rem;">
+            <div class="set-pip bg-gold-muted"></div>
+            <div class="set-pip bg-gold-muted"></div>
+          </div>
+        </div>
+        <span id="serve-left" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+      </div>
+      <div class="score-container">
+        <span id="sc1" class="score-text">0</span>
+      </div>
+    </div>
+    
+    <!-- Center Divider -->
+    <div style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2);"></div>
+    
+    <!-- Set Indicator -->
+    <div style="padding: 0 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px;">
+      <span style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
+      <span id="set-num" style="font-size: 1.25rem; font-weight: 900; color: rgba(255,255,255,0.9); line-height: 1;">1</span>
+    </div>
+    
+    <!-- Center Divider -->
+    <div style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2);"></div>
+    
+    <!-- Right Team Section -->
+    <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%;">
+      <div class="score-container">
+        <span id="sc2" class="score-text">0</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 1rem; text-align: right;">
+        <span id="serve-right" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+          <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
+          <div id="pips2" style="display: flex; gap: 0.375rem;">
+            <div class="set-pip bg-gold-muted"></div>
+            <div class="set-pip bg-gold-muted"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Bottom Accent Line -->
+    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent);"></div>
   </div>
-
-  <div class="wrap"><div class="container">
-
-    <!-- Pre-match mode: Simple team names display -->
-    <div id="prematch" class="prematch-bar">
-      <span class="team-name" id="pm-t1">Waiting...</span>
-      <span class="vs">vs</span>
-      <span class="team-name" id="pm-t2">Waiting...</span>
-    </div>
-
-    <!-- Main Scoreboard -->
-    <div id="scorebug" class="bug hidden">
-      <!-- Left Team Section -->
-      <div class="team-section left">
-        <svg class="serve-icon" id="serve-left" viewBox="0 0 24 24">
-          <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
-        </svg>
-        <div class="name-block">
-          <div class="team-name" id="t1">TEAM 1</div>
-          <div class="seed-label" id="seed1-label">SEED 1</div>
-        </div>
-      </div>
-      
-      <!-- Center Score Section -->
-      <div class="score-center">
-        <div class="main-score">
-          <span class="score-num" id="sc1">0</span>
-          <!-- SVG Colon for perfect centering -->
-          <svg class="score-colon-svg" viewBox="0 0 12 30">
-            <circle cx="6" cy="9" r="3" />
-            <circle cx="6" cy="21" r="3" />
-          </svg>
-          <span class="score-num" id="sc2">0</span>
-        </div>
-        <div class="set-count" id="set-count">
-          <span id="sets1">0</span>
-          <!-- SVG Colon for perfect centering -->
-          <svg class="set-sep-svg" viewBox="0 0 12 24">
-            <circle cx="6" cy="8" r="2.5" />
-            <circle cx="6" cy="16" r="2.5" />
-          </svg>
-          <span id="sets2">0</span>
-        </div>
-      </div>
-      
-      <!-- Right Team Section -->
-      <div class="team-section right">
-        <div class="name-block">
-          <div class="team-name" id="t2">TEAM 2</div>
-          <div class="seed-label" id="seed2-label">SEED 2</div>
-        </div>
-        <svg class="serve-icon" id="serve-right" viewBox="0 0 24 24">
-          <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
-        </svg>
-      </div>
-      
-      <!-- Serve Indicators - REMOVED OLD SVG DEFINITIONS (Moved inline) -->
-      <svg class="serve-indicator right" id="serve-right" viewBox="0 0 24 24">
-        <path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M7,16.03C7.5,15.7 8.11,15.5 8.75,15.5C10.74,15.5 12.35,17.11 12.35,19.1C12.35,20.25 11.81,21.27 10.96,21.92C8.71,21.05 7,18.78 7,16.03M9.77,2.27C11.53,3.31 12.89,5.03 13.56,7.09C13.88,8.12 14.07,9.15 14.1,10.15L15.42,12.78C15.8,11.39 16.5,10.09 17.5,9.09C18.15,8.44 18.9,7.91 19.74,7.56C18.4,4.5 15.43,2.37 12,2.05C11.23,1.96 10.46,2.04 9.77,2.27M12,20C11.97,20 11.94,20 11.91,20C12.36,18.57 11.83,17.06 10.63,16.14C9.43,15.22 7.78,14.97 6.4,15.55C5.03,16.13 4.14,17.44 4.09,18.94C4.09,19.29 4.13,19.64 4.19,19.97C6.18,21.25 8.97,21.25 12,20M17.58,19.53C18.33,18.39 18.55,17.03 18.17,15.75C17.8,14.47 16.88,13.46 15.65,12.94C15.21,12.75 14.73,12.65 14.25,12.65C13.4,12.65 12.55,12.95 11.86,13.53C11.17,14.11 10.74,14.9 10.64,15.74C10.53,16.59 10.77,17.43 11.29,18.11C11.82,18.79 12.59,19.2 13.43,19.25C15.03,19.33 16.5,19.2 17.58,19.53M18.86,18.19C20.18,16.63 21,14.59 21,12.35C21,11.53 20.89,10.73 20.67,9.97C19.31,10.66 18.23,11.75 17.54,13.11C16.86,14.47 16.71,15.91 17.13,17.22C17.55,18.53 18.47,19.54 19.68,20.08C19.38,19.49 19.11,18.86 18.86,18.19M2.81,10.42C3.19,8.71 4.15,7.19 5.5,6.07C6.84,4.95 8.43,4.31 10.05,4.31C10.77,4.31 11.47,4.45 12.13,4.72C12.44,5.65 12.56,6.66 12.45,7.66C12.34,8.66 12,9.6 11.47,10.41C10.93,11.23 10.24,11.86 9.42,12.28C8.6,12.7 7.71,12.89 6.81,12.83C5.9,12.77 5.03,12.48 4.25,11.96C3.7,11.59 3.21,11.07 2.81,10.42M5.42,3.32C4.33,4.38 3.5,5.68 3,7.12C4.19,7.69 5.5,7.86 6.75,7.56C8,7.27 9.07,6.54 9.77,5.5C10.47,4.45 10.7,3.22 10.43,2.05C8.61,1.96 6.88,2.41 5.42,3.32Z" />
-      </svg>
   
-      <!-- Next Match Info (Side Car) -->
-      <div id="next-header" class="next-badge" style="display:none; opacity:0;">
-         <div class="next-label">NEXT MATCH</div>
-         <div class="next-info-box" id="next-teams">
-            <!-- JS will inject: -->
-            <!-- <div class="next-team-line">Team A</div> -->
-            <!-- <div class="next-vs-line">vs</div> -->
-            <!-- <div class="next-team-line">Team B</div> -->
-         </div>
-      </div>
+  <!-- Bubble Container (holds social bar OR next match bar) -->
+  <div class="bubble-container">
+    <!-- Social Media Bar (default visible) -->
+    <div id="social-bar" class="bubble-bar visible" style="padding: 0.375rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+      <i class="fa-brands fa-facebook" style="color: #1877F2; font-size: 0.875rem;"></i>
+      <i class="fa-brands fa-instagram insta-gradient" style="font-size: 0.875rem;"></i>
+      <i class="fa-brands fa-youtube" style="color: #FF0000; font-size: 0.875rem;"></i>
+      <span style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.9);">@BeachVolleyballMedia</span>
     </div>
-
-    <div id="setsline" class="setsline"></div>
-    <div id="timeout-banner">In Timeout</div>
-    <!-- Removed old "next" div - now using header-row next-badge instead -->
-    <!-- <div class="accent"></div> --> <!-- Removed -->
-
-<!-- Removed postmatch-next - next match info now in header-row -->
-
-  </div></div>
+    
+    <!-- Next Match Bar (hidden by default) -->
+    <div id="next-bar" class="bubble-bar hidden-up" style="padding: 0.375rem 1.25rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+      <span style="font-size: 10px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 0.05em;">Next</span>
+      <span style="color: rgba(255,255,255,0.3);">|</span>
+      <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase;">Loading...</span>
+    </div>
+  </div>
+</div>
 
 <script>
-const SRC = "/score.json"; const NEXT_SRC = "/next.json"; const LABEL_SRC = "/label.json";
+const SRC = "/score.json";
+const NEXT_SRC = "/next.json";
 const POLL_MS = 1000;
-const POSTMATCH_DELAY_MS = 3 * 60 * 1000; // 3 minutes after match ends
 
-/* Overlay State Machine: prematch | live | postmatch */
-let overlayState = 'prematch'; // Start in prematch mode
-let postmatchTimer = null;
-let isFirstLoad = true; // Detect mid-match join
+// Animation state
+let lastTriggerScore = -1;
+let animationInProgress = false;
+let nextMatchTimer = null;
 
-/* prev values + persistent server */
-let prev = { a:null, b:null, set:-1 };
-let lastServer = null; // 'A' | 'B' | null
-let lastSetLinesKey = "";
-let currentTeam1 = "";
-let currentTeam2 = "";
-let lastMatchKey = ""; // Track match changes
+// DOM refs
+const socialBar = document.getElementById('social-bar');
+const nextBar = document.getElementById('next-bar');
+const nextTeamsEl = document.getElementById('next-teams');
 
-/* helpers */
-async function fetchJSON(u){ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error(r.status); return r.json(); }
-function applyText(el, v, cls){ if(!el) return; const s=String(v ?? ''); if(el.textContent!==s){ el.textContent=s; if(cls){ el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); } } }
-function setWon(a,b,t){ return Math.max(a,b) >= t && Math.abs(a-b) >= 2; }
-function cleanName(n){ return (n||"").replace(/\s*\(.*?\)\s*/g," ").replace(/\s{2,}/g," ").trim(); }
+/* Helpers */
+async function fetchJSON(u) {
+  const r = await fetch(u, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
 
-/* Smart truncate: shows ONLY last names for scoreboard
-   Format: "MOTA / STRAUSS"
-   The user now wants only last names displayed on the main scoreboard. */
-function abbreviateName(teamName, maxLen = 30) {
+function cleanName(n) {
+  return (n || "").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
+function abbreviateName(teamName) {
   if (!teamName) return "";
-  
-  // Split by "/" for partner teams
   const players = teamName.split("/").map(p => p.trim());
-  
   const abbreviated = players.map(player => {
-    // DO NOT abbreviate if it looks like a TBD placeholder
     const lower = player.toLowerCase();
     if (lower.includes("winner") || lower.includes("loser") || 
         lower.includes("team ") || lower.includes("seed ") ||
         lower.includes("match ")) {
       return player;
     }
-
     const parts = player.split(/\s+/);
-    if (parts.length < 2) return player; // Single name, keep as is
-    
-    // Return ONLY the last name
-    return parts[parts.length - 1];
+    if (parts.length < 2) return player;
+    return parts[parts.length - 1]; // Last name only
   });
-  
-  let result = abbreviated.join(" / ");
-  
-  // Final truncation check for extreme cases
-  if (result.length > maxLen) {
-    result = result.substring(0, maxLen - 3) + "...";
-  }
-  return result;
+  return abbreviated.join(" / ");
 }
 
-/* ==================== OVERLAY STATE MACHINE ==================== */
-
-// Get DOM elements
-function getOverlayElements() {
-  return {
-    prematch: document.getElementById('prematch'),
-    scorebug: document.getElementById('scorebug'),
-    pmT1: document.getElementById('pm-t1'),
-    pmT2: document.getElementById('pm-t2')
-    // postmatchNext and postmatchTeams removed - using header-row next-badge instead
-  };
+/* Set Pips - visual set score indicators */
+function updatePips(pipsEl, setsWon, setsToWin) {
+  if (!pipsEl) return;
+  let html = '';
+  for (let i = 0; i < setsToWin; i++) {
+    const filled = i < setsWon;
+    html += '<div class="set-pip ' + (filled ? 'bg-gold' : 'bg-gold-muted') + '"></div>';
+  }
+  pipsEl.innerHTML = html;
 }
 
-// Transition to LIVE mode (shows full scoreboard)
-// Transition to Live: Dynamic slide/expand animation
-function transitionToLive(animate = true) {
-  if (overlayState === 'live') return;
-  console.log('[Overlay] Transition: ' + overlayState + ' → live');
+/* Bubble Animation Logic */
+function showNextMatchBar(nextMatchText) {
+  if (animationInProgress) return;
+  animationInProgress = true;
   
-  const els = getOverlayElements();
-  overlayState = 'live';
-  
-  // Hide prematch bar
-  if (els.prematch) {
-    els.prematch.classList.add('hidden');
-    setTimeout(() => { els.prematch.style.display = 'none'; }, 500);
-  }
-  
-  // Show scorebug with animation
-  if (els.scorebug) {
-    els.scorebug.style.display = ''; // Ensure display is not 'none'
-    if (animate) {
-      // Simple fade-in, no width animation
-      els.scorebug.classList.remove('hidden');
+  // Update next match text
+  if (nextTeamsEl && nextMatchText) {
+    const parts = nextMatchText.split(/\s+vs\.?\s+/i);
+    if (parts.length >= 2) {
+      nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
     } else {
-      // No animation (mid-match join)
-      els.scorebug.classList.remove('hidden');
+      nextTeamsEl.textContent = abbreviateName(nextMatchText);
     }
   }
   
-  // Clear any postmatch timer
-  if (postmatchTimer) {
-    clearTimeout(postmatchTimer);
-    postmatchTimer = null;
-  }
+  // Retract social bar
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+  
+  // After social retracts, show next bar
+  setTimeout(function() {
+    nextBar.classList.remove('hidden-up');
+    nextBar.classList.add('visible');
+  }, 400);
+  
+  // After 30 seconds, swap back
+  nextMatchTimer = setTimeout(function() {
+    hideNextMatchBar();
+  }, 30000);
 }
 
-// Transition back to Prematch (for 0-0 resets in Set 1)
-function transitionToPrematch(animate = true) {
-  if (overlayState === 'prematch') return;
-  console.log('[Overlay] Transition: ' + overlayState + ' → prematch (Score Reset)');
+function hideNextMatchBar() {
+  // Retract next bar
+  nextBar.classList.remove('visible');
+  nextBar.classList.add('hidden-up');
   
-  const els = getOverlayElements();
-  overlayState = 'prematch';
-  
-  if (els.scorebug) {
-    // Simple fade-out, no width animation
-    els.scorebug.classList.add('hidden');
-    setTimeout(() => { els.scorebug.style.display = 'none'; }, 500);
-  }
-  
-  if (els.prematch) {
-    els.prematch.style.display = '';
-    void els.prematch.offsetWidth;
-    els.prematch.classList.remove('hidden');
-  }
+  // After next retracts, show social bar
+  setTimeout(function() {
+    socialBar.classList.remove('hidden-up');
+    socialBar.classList.add('visible');
+    animationInProgress = false;
+  }, 400);
 }
 
-// Transition to POSTMATCH mode (keeps final score visible, waits for Swift to advance)
-function transitionToPostmatch(nextTeam1, nextTeam2) {
-  if (overlayState === 'postmatch') return;
-  console.log('[Overlay] Transition: ' + overlayState + ' → postmatch');
+/* Main score update */
+function applyData(d) {
+  if (!d) return;
   
-  overlayState = 'postmatch';
-  
-  // Keep scorebug visible with final score
-  // Next match info is shown in header-row next-badge
-  // Swift handles the 3-minute hold and queue advancement
-  
-  // Optional: Start a fallback timer in case Swift doesn't advance
-  postmatchTimer = setTimeout(() => {
-    console.log('[Overlay] Postmatch timeout - waiting for Swift to advance queue');
-  }, POSTMATCH_DELAY_MS);
-}
-
-// Transition to PREMATCH mode (shows only team names)
-function transitionToPrematch(team1, team2) {
-  console.log('[Overlay] Transition: ' + overlayState + ' → prematch');
-  
-  const els = getOverlayElements();
-  overlayState = 'prematch';
-  
-  // Update prematch bar with team names
-  if (els.pmT1) els.pmT1.textContent = abbreviateName(cleanName(team1)) || 'Team 1';
-  if (els.pmT2) els.pmT2.textContent = abbreviateName(cleanName(team2)) || 'Team 2';
-  
-  // Hide scorebug
-  if (els.scorebug) {
-    els.scorebug.classList.add('hidden');
-  }
-  
-  // Show prematch bar
-  if (els.prematch) {
-    els.prematch.classList.remove('hidden');
-  }
-  
-  // Clear timer
-  if (postmatchTimer) {
-    clearTimeout(postmatchTimer);
-    postmatchTimer = null;
-  }
-}
-
-// Check if match has ended (one team won required number of sets)
-function checkMatchEnd(setHistory, setsToWin = 2) {
-  if (!setHistory || !setHistory.length) return false;
-  
-  let team1Sets = 0, team2Sets = 0;
-  setHistory.forEach(score => {
-    const [a, b] = String(score).split('-').map(Number);
-    if (a > b) team1Sets++;
-    else if (b > a) team2Sets++;
-  });
-  
-  // Use setsToWin from match data (default 2 for best-of-3)
-  return team1Sets >= setsToWin || team2Sets >= setsToWin;
-}
-
-// Check if score is 0-0 (pre-match state)
-function isZeroZero(score1, score2) {
-  return (parseInt(score1) || 0) === 0 && (parseInt(score2) || 0) === 0;
-}
-
-function completedSetLines(A,B){
-  const a1=A.game1||0,b1=B.game1||0, a2=A.game2||0,b2=B.game2||0, a3=A.game3||0,b3=B.game3||0;
-  const out=[]; if(setWon(a1,b1,21)) out.push(`${a1}-${b1}`); if(setWon(a2,b2,21)) out.push(`${a2}-${b2}`); if(setWon(a3,b3,15)) out.push(`${a3}-${b3}`);
-  return out;
-}
-
-// Check if a set is actually completed (score reached target with win-by-2 or hit cap)
-function isSetComplete(scoreA, scoreB, pointsPerSet = 21, pointCap = null) {
-  const maxScore = Math.max(scoreA, scoreB);
-  const diff = Math.abs(scoreA - scoreB);
-  
-  // If there's a cap and someone hit it, set is complete
-  if (pointCap && maxScore >= pointCap) {
-    return true;
-  }
-  
-  // Otherwise, need to reach pointsPerSet AND have 2+ point lead
-  return maxScore >= pointsPerSet && diff >= 2;
-}
-
-// Filter setHistory to only include completed sets
-function filterCompletedSets(lines, pointsPerSet = 21, pointCap = null) {
-  if (!lines || !lines.length) return [];
-  
-  return lines.filter(scoreStr => {
-    const [as, bs] = String(scoreStr).split('-');
-    const a = parseInt(as) || 0;
-    const b = parseInt(bs) || 0;
-    return isSetComplete(a, b, pointsPerSet, pointCap);
-  });
-}
-
-function buildSetChips(lines, pointsPerSet = 21, pointCap = null, currentScore1 = 0, currentScore2 = 0){
-  const host=document.getElementById('setsline'); if(!host) return;
-  
-  // Debug: log what we're receiving
-  console.log('[SetChips] Raw lines:', lines, 'pointsPerSet:', pointsPerSet, 'pointCap:', pointCap, 'currentScores:', currentScore1, currentScore2);
-  
-  // Step 1: Filter out the CURRENT LIVE SET (if last entry matches current scores)
-  let filteredLines = lines ? [...lines] : [];
-  if (filteredLines.length > 0) {
-    const lastEntry = String(filteredLines[filteredLines.length - 1]);
-    const [as, bs] = lastEntry.split('-');
-    const a = parseInt(as) || 0;
-    const b = parseInt(bs) || 0;
-    // Check if last entry matches current scores (it's the live set)
-    if ((a === currentScore1 && b === currentScore2) || (a === currentScore2 && b === currentScore1)) {
-      // Only remove if it's NOT a completed set yet
-      // If it IS complete, we want to show it in history now!
-      if (!isSetComplete(a, b, pointsPerSet, pointCap)) {
-        console.log('[SetChips] Removing live (incomplete) set from history:', lastEntry);
-        filteredLines.pop(); // Remove the current live set
-      } else {
-        console.log('[SetChips] Keeping live (completed) set in history:', lastEntry);
-      }
-    }
-  }
-  
-  // Step 2: Filter to only show COMPLETED sets (not live/in-progress)
-  const completedLines = filterCompletedSets(filteredLines, pointsPerSet, pointCap);
-  console.log('[SetChips] After filtering:', completedLines);
-  
-  // Hide if no completed sets
-  if(!completedLines || !completedLines.length){ 
-    if (host.classList.contains('visible')) {
-      host.classList.remove('visible');
-      // Hide display after transition completes
-      setTimeout(() => { host.style.display = 'none'; }, 500);
-    }
-    lastSetLinesKey=""; 
-    return; 
-  }
-  
-  const key = JSON.stringify(completedLines);
-  if(key === lastSetLinesKey) return;
-  
-  // Build the set chips HTML
-  host.innerHTML = completedLines.map((t,i)=>{ 
-    const [as,bs]=String(t).split('-'); 
-    const a=+as||0, b=+bs||0; 
-    const wa = a>b ? ' win' : '';
-    const wb = b>a ? ' win' : '';
-    return `<div class="set-item">
-      <span class="set-lbl">Set ${i+1}</span>
-      <span class="set-sc${wa}">${a}</span><span class="set-sc">-</span><span class="set-sc${wb}">${b}</span>
-    </div>`; 
-  }).join('<div style="width:1px;height:14px;background:rgba(255,255,255,0.15)"></div>');
-  
-  // Show with animation (slight delay for the transition to work)
-  host.style.display = 'flex';
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      host.classList.add('visible');
-    });
-  });
-  
-  lastSetLinesKey = key;
-}
-
-/* renderer */
-function applyData(d){
-  console.log('[Overlay] applyData called with:', JSON.stringify(d));
-  if(!d) return;
-  
-  // Safety check: ensure we have at least team names before updating
-  // This prevents the "white flash" where overlay renders empty/broken state
-  if (!d.team1 && !d.team2) {
-    console.log('[Overlay] Skipping update - missing team names');
-    return;
-  }
-
-  // Scores - move up to determine naming logic
   const score1 = d.score1 || 0;
   const score2 = d.score2 || 0;
-  const isZero = isZeroZero(score1, score2);
-  const setNum = d.setNumber || 1;
-  const courtStatus = d.courtStatus || 'idle';  // idle, waiting, live, postmatch
+  const combinedScore = score1 + score2;
+  const setsToWin = d.setsToWin || 2;
   
-  // CRITICAL: Determine overlay state based on COURT STATUS, not just score
-  // Show live scoreboard when court is actively live (even at 0-0)
-  // Show prematch only when court is idle/waiting
-  if (courtStatus === 'live' || courtStatus === 'postmatch') {
-    transitionToLive();
-  } else {
-    transitionToPrematch();
-  }
-
-  // Names - ALWAYS show last names only as requested
-  const useAbbr = true;
-  const name1 = abbreviateName(cleanName(d.team1)) || 'Team 1';
-  const name2 = abbreviateName(cleanName(d.team2)) || 'Team 2';
-  
-  // Update header next-badge - match the abbreviation logic
-  const nextTeams = document.getElementById('next-teams');
-  const nextHeader = document.getElementById('next-header');
-
-  // Update prematch bar team names
-  const els = getOverlayElements();
-  if (els.pmT1) {
-      console.log('[Overlay] Updating PM T1 to:', name1);
-      els.pmT1.textContent = name1;
-  }
-  if (els.pmT2) {
-      console.log('[Overlay] Updating PM T2 to:', name2);
-      els.pmT2.textContent = name2;
-  }
-  
-  // ===== UPDATE LIVE SCOREBOARD ELEMENTS =====
   // Team names
   const t1El = document.getElementById('t1');
   const t2El = document.getElementById('t2');
-  if (t1El) t1El.textContent = name1;
-  if (t2El) t2El.textContent = name2;
+  if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
+  if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
   
   // Scores
   const sc1El = document.getElementById('sc1');
@@ -1378,151 +668,53 @@ function applyData(d){
   if (sc1El) sc1El.textContent = score1;
   if (sc2El) sc2El.textContent = score2;
   
-  // Sets won
-  const setsWon1 = d.setsWon1 || d.setsA || 0;
-  const setsWon2 = d.setsWon2 || d.setsB || 0;
-  const sets1El = document.getElementById('sets1');
-  const sets2El = document.getElementById('sets2');
-  if (sets1El) sets1El.textContent = setsWon1;
-  if (sets2El) sets2El.textContent = setsWon2;
+  // Set number
+  const setNumEl = document.getElementById('set-num');
+  if (setNumEl) setNumEl.textContent = d.setNumber || 1;
   
-  // Seed labels
-  const seed1El = document.getElementById('seed1-label');
-  const seed2El = document.getElementById('seed2-label');
-  if (seed1El) {
-    const s1 = d.seed1 || '';
-    seed1El.textContent = s1 ? 'SEED ' + s1 : '';
-    seed1El.style.display = s1 ? '' : 'none';
-  }
-  if (seed2El) {
-    const s2 = d.seed2 || '';
-    seed2El.textContent = s2 ? 'SEED ' + s2 : '';
-    seed2El.style.display = s2 ? '' : 'none';
-  }
-  // ===== END LIVE SCOREBOARD UPDATES =====
+  // Set pips
+  updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
+  updatePips(document.getElementById('pips2'), d.setsWon2 || 0, setsToWin);
   
-  // Check if we should show Next Match info
-  // Rule: Show ONLY during postmatch (after match ends) OR between sets (set finished, waiting for new set)
-  // HIDE during active play within a set
-  
-  const setsToWin = d.setsToWin || 2;
-  const pps = d.pointsPerSet || 21;
-  const cap = d.pointCap || null;
-  
-  // Check if current set is complete (met win conditions)
-  const currentSetComplete = isSetComplete(score1, score2, pps, cap);
-  
-  // Check if we're actively playing (score is non-zero AND set not complete)
-  const isActivePlaying = (score1 > 0 || score2 > 0) && !currentSetComplete;
-  
-  // Check if match has ended (one team won required sets)
-  const matchEnded = checkMatchEnd(d.setHistory, setsToWin);
-  
-  // Between sets: current set just finished, OR we're at 0-0 in Set 2+
-  const betweenSets = currentSetComplete || (setNum > 1 && isZeroZero(score1, score2));
-  
-  // Logic: Show if NOT actively playing AND (match ended OR between sets) AND we have a real next match
-  // Filter out empty strings, "TBD", and placeholder text
-  const nextMatchText = (d.nextMatch || '').trim();
-  const hasRealNextMatch = nextMatchText !== '' && 
-                           nextMatchText.toUpperCase() !== 'TBD' &&
-                           !nextMatchText.toLowerCase().includes('no next');
-  
-  const shouldShowNext = !isActivePlaying && (matchEnded || betweenSets) && hasRealNextMatch;
-  
-  console.log('[Overlay] Next Match visibility:', { score1, score2, isActivePlaying, currentSetComplete, matchEnded, betweenSets, shouldShowNext });
-  
-  // Hide the entire 'Next' badge if logic dictates, OR if empty string
-  if (!shouldShowNext) {
-    if (nextHeader) {
-      nextHeader.style.opacity = '0';
-      setTimeout(() => { nextHeader.style.display = 'none'; }, 300);
-    }
-  } else {
-    // Show the badge
-    if (nextHeader) {
-      nextHeader.style.display = '';
-      setTimeout(() => { nextHeader.style.opacity = '1'; }, 10);
-    }
-    
-    if (nextTeams) {
-      if (!useAbbr) {
-         // Fallback if needed
-         nextTeams.innerHTML = `<div class="next-team-line">${d.nextMatch}</div>`;
-      } else {
-         // Split by 'vs' to stack them
-         // Clean strings first
-         const raw = d.nextMatch;
-         // Use RegExp constructor to avoid any literal parsing issues in raw strings
-         const split = raw.split(new RegExp("\\s+vs\\.?\\s+", "i"));
-         
-         if (split.length >= 2) {
-           const t1 = abbreviateName(split[0], 40);
-           const t2 = abbreviateName(split[1], 40);
-           nextTeams.innerHTML = `
-             <div class="next-team-line">${t1}</div>
-             <div class="next-vs-line">vs</div>
-             <div class="next-team-line">${t2}</div>
-           `;
-         } else {
-           // No 'vs' found, just show the line (e.g. "Match 2 Winner")
-           nextTeams.innerHTML = `<div class="next-team-line">${abbreviateName(raw, 80)}</div>`;
-         }
-      }
-    }
-  }
-  
-  // Serve indicator - show on left or right
-  const srv = (d.serve||"").toLowerCase();
+  // Serve indicator
+  const srv = (d.serve || "").toLowerCase();
   const serveLeft = document.getElementById('serve-left');
   const serveRight = document.getElementById('serve-right');
+  if (serveLeft && serveRight) {
+    const isHome = srv.includes('home') || srv.includes('team1');
+    const isAway = srv.includes('away') || srv.includes('team2');
+    serveLeft.style.opacity = isHome ? '1' : '0';
+    serveLeft.classList.toggle('serving-pulse', isHome);
+    serveRight.style.opacity = isAway ? '1' : '0';
+    serveRight.classList.toggle('serving-pulse', isAway);
+  }
   
-  if(serveLeft && serveRight) {
-      const isHome = srv.includes('home') || srv.includes('team1');
-      const isAway = srv.includes('away') || srv.includes('team2');
-      // Toggle visibility via opacity class
-      serveLeft.classList.toggle('active', isHome);
-      serveRight.classList.toggle('active', isAway);
+  // Animation trigger: multiple of 7
+  if (combinedScore > 0 && combinedScore % 7 === 0 && combinedScore !== lastTriggerScore) {
+    lastTriggerScore = combinedScore;
+    const nextMatch = d.nextMatch || '';
+    if (nextMatch && !animationInProgress) {
+      showNextMatchBar(nextMatch);
+    }
   }
 }
 
-/* ticks */
-async function tick(){ 
-    try{ 
-        const d=await fetchJSON(SRC); 
-        if(d) applyData(d); 
-    }catch(e){
-        console.log(e);
-    } finally{ 
-        setTimeout(tick,POLL_MS); 
-    } 
-}
-
-// label (top‑left)
-async function tickLabel(){
-  try{
-    const o = await fetchJSON(LABEL_SRC);
-    const label = (o && typeof o.label === 'string') ? o.label.trim() : '';
-    const el = document.getElementById('label');
-    el.style.display = label ? '' : 'none';
-    if(label) applyText(el, label, 'fade');
-  }catch(_){} finally{ setTimeout(tickLabel, Math.max(POLL_MS*2, 1500)); }
-}
-
-// next (with label) - Updates every 5 sec to check for placeholder changes
-// function tickNext removed/cleaned
-async function tickNext(){
-  try{
-    // const o = await fetchJSON(SRC); 
-    // Logic moved to main tick loop
-  }catch(_){} finally{ setTimeout(tickNext, 5000); }
+/* Polling loop */
+async function tick() {
+  try {
+    const d = await fetchJSON(SRC);
+    if (d) applyData(d);
+  } catch (e) {
+    console.log('[Overlay] Fetch error:', e);
+  } finally {
+    setTimeout(tick, POLL_MS);
+  }
 }
 
 tick();
-tickLabel();
-tickNext();
 </script>
 </body>
 </html>
 """#
 }
+

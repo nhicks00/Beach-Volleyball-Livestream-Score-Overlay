@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>BVM Scoreboard Overlay</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "carbon": "#121212",
+        "gold": "#D4AF37",
+        "gold-bright": "#F9E29B",
+        "gold-muted": "rgba(212, 175, 55, 0.25)",
+      },
+      fontFamily: {
+        "display": ["Roboto Condensed", "sans-serif"]
+      }
+    },
+  },
+}
+</script>
+<style type="text/tailwindcss">
+@layer utilities {
+  .carbon-bar {
+    background: linear-gradient(180deg, #1A1A1A 0%, #080808 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .text-gold-gradient {
+    background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .set-pip {
+    @apply w-6 h-1.5 rounded-full;
+  }
+  .score-container {
+    @apply flex items-center justify-center min-w-[4rem] px-4 py-2;
+  }
+  .score-text {
+    @apply text-4xl font-black text-gold-gradient tabular-nums tracking-normal italic leading-[1.2] inline-block;
+    padding: 0.15em 0.2em;
+  }
+  .bubble-bar {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: none;
+  }
+  .insta-gradient {
+    background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+</style>
+<style>
+body {
+  min-height: 100dvh;
+  background-color: transparent;
+  margin: 0;
+  padding: 0;
+}
+.serving-pulse {
+  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulse-gold {
+  0%, 100% { opacity: 1; transform: scale(1.1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+/* Bubble animations - slide from behind scoreboard */
+.bubble-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-top: -2px;
+  z-index: 5;
+  overflow: hidden;
+  max-height: 50px;
+}
+.bubble-bar {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+.bubble-bar.hidden-up {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.bubble-bar.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+</style>
+</head>
+<body class="font-display text-white overflow-hidden flex flex-col items-center pt-8">
+
+<div class="flex flex-col items-center w-full max-w-[900px] px-4">
+  <!-- Main Scoreboard -->
+  <div id="scorebug" class="carbon-bar w-full h-16 rounded flex items-center shadow-[0_8px_30px_rgb(0,0,0,0.8)] relative overflow-hidden z-20">
+    
+    <!-- Left Team Section -->
+    <div class="flex-1 flex items-center justify-between px-6 h-full">
+      <div class="flex items-center gap-4">
+        <div class="flex flex-col justify-center">
+          <span id="t1" class="text-lg font-extrabold uppercase tracking-tight text-white/95 leading-none mb-1.5 italic">Team 1</span>
+          <div id="pips1" class="flex gap-1.5">
+            <div class="set-pip bg-gold-muted"></div>
+            <div class="set-pip bg-gold-muted"></div>
+          </div>
+        </div>
+        <span id="serve-left" class="material-symbols-outlined text-gold text-2xl opacity-0">sports_volleyball</span>
+      </div>
+      <div class="score-container">
+        <span id="sc1" class="score-text">0</span>
+      </div>
+    </div>
+    
+    <!-- Center Divider -->
+    <div class="w-px h-10 bg-white/20"></div>
+    
+    <!-- Set Indicator -->
+    <div class="px-6 flex flex-col items-center justify-center min-w-[70px]">
+      <span class="text-[10px] font-black text-gold/80 uppercase tracking-[0.2em] mb-0.5">SET</span>
+      <span id="set-num" class="text-xl font-black text-white/90 leading-none">1</span>
+    </div>
+    
+    <!-- Center Divider -->
+    <div class="w-px h-10 bg-white/20"></div>
+    
+    <!-- Right Team Section -->
+    <div class="flex-1 flex items-center justify-between px-6 h-full">
+      <div class="score-container">
+        <span id="sc2" class="score-text">0</span>
+      </div>
+      <div class="flex items-center gap-4 text-right">
+        <span id="serve-right" class="material-symbols-outlined text-gold text-2xl opacity-0">sports_volleyball</span>
+        <div class="flex flex-col items-end justify-center">
+          <span id="t2" class="text-lg font-extrabold uppercase tracking-tight text-white/95 leading-none mb-1.5 italic">Team 2</span>
+          <div id="pips2" class="flex gap-1.5">
+            <div class="set-pip bg-gold-muted"></div>
+            <div class="set-pip bg-gold-muted"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Bottom Accent Line -->
+    <div class="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-gold/50 to-transparent"></div>
+  </div>
+  
+  <!-- Bubble Container (holds social bar OR next match bar) -->
+  <div class="bubble-container">
+    <!-- Social Media Bar (default visible) -->
+    <div id="social-bar" class="bubble-bar w-auto px-6 py-1 rounded-b-lg flex items-center gap-4 shadow-lg visible">
+      <div class="flex items-center gap-3">
+        <i class="fa-brands fa-facebook text-[#1877F2] text-sm"></i>
+        <i class="fa-brands fa-instagram insta-gradient text-sm"></i>
+        <i class="fa-brands fa-youtube text-[#FF0000] text-sm"></i>
+      </div>
+      <span class="text-xs font-medium tracking-wide text-white/90">@BeachVolleyballMedia</span>
+    </div>
+    
+    <!-- Next Match Bar (hidden by default) -->
+    <div id="next-bar" class="bubble-bar w-auto px-8 py-1.5 rounded-b-lg flex items-center shadow-2xl hidden-up absolute">
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-black text-gold uppercase tracking-widest">Next Match</span>
+        <div class="w-1.5 h-1.5 rounded-full bg-gold/40"></div>
+        <span id="next-teams" class="text-xs font-semibold tracking-wide text-white/95 uppercase">Loading...</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SRC = "/score.json";
+const NEXT_SRC = "/next.json";
+const POLL_MS = 1000;
+
+// Animation state
+let lastTriggerScore = -1;
+let animationInProgress = false;
+let nextMatchTimer = null;
+
+// DOM refs
+const socialBar = document.getElementById('social-bar');
+const nextBar = document.getElementById('next-bar');
+const nextTeamsEl = document.getElementById('next-teams');
+
+/* Helpers */
+async function fetchJSON(u) {
+  const r = await fetch(u, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function cleanName(n) {
+  return (n || "").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
+function abbreviateName(teamName) {
+  if (!teamName) return "";
+  const players = teamName.split("/").map(p => p.trim());
+  const abbreviated = players.map(player => {
+    const lower = player.toLowerCase();
+    if (lower.includes("winner") || lower.includes("loser") || 
+        lower.includes("team ") || lower.includes("seed ") ||
+        lower.includes("match ")) {
+      return player;
+    }
+    const parts = player.split(/\s+/);
+    if (parts.length < 2) return player;
+    return parts[parts.length - 1]; // Last name only
+  });
+  return abbreviated.join(" / ");
+}
+
+/* Set Pips - visual set score indicators */
+function updatePips(pipsEl, setsWon, setsToWin) {
+  if (!pipsEl) return;
+  let html = '';
+  for (let i = 0; i < setsToWin; i++) {
+    const filled = i < setsWon;
+    html += `<div class="set-pip ${filled ? 'bg-gold' : 'bg-gold-muted'}"></div>`;
+  }
+  pipsEl.innerHTML = html;
+}
+
+/* Bubble Animation Logic */
+function showNextMatchBar(nextMatchText) {
+  if (animationInProgress) return;
+  animationInProgress = true;
+  
+  // Update next match text
+  if (nextTeamsEl && nextMatchText) {
+    const parts = nextMatchText.split(/\s+vs\.?\s+/i);
+    if (parts.length >= 2) {
+      nextTeamsEl.innerHTML = `${abbreviateName(parts[0])} <span class="text-white/40 italic mx-1 font-black">vs</span> ${abbreviateName(parts[1])}`;
+    } else {
+      nextTeamsEl.textContent = abbreviateName(nextMatchText);
+    }
+  }
+  
+  // Retract social bar
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+  
+  // After social retracts, show next bar
+  setTimeout(() => {
+    nextBar.classList.remove('hidden-up');
+    nextBar.classList.add('visible');
+  }, 400);
+  
+  // After 30 seconds, swap back
+  nextMatchTimer = setTimeout(() => {
+    hideNextMatchBar();
+  }, 30000);
+}
+
+function hideNextMatchBar() {
+  // Retract next bar
+  nextBar.classList.remove('visible');
+  nextBar.classList.add('hidden-up');
+  
+  // After next retracts, show social bar
+  setTimeout(() => {
+    socialBar.classList.remove('hidden-up');
+    socialBar.classList.add('visible');
+    animationInProgress = false;
+  }, 400);
+}
+
+/* Main score update */
+function applyData(d) {
+  if (!d) return;
+  
+  const score1 = d.score1 || 0;
+  const score2 = d.score2 || 0;
+  const combinedScore = score1 + score2;
+  const setsToWin = d.setsToWin || 2;
+  
+  // Team names
+  const t1El = document.getElementById('t1');
+  const t2El = document.getElementById('t2');
+  if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
+  if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
+  
+  // Scores
+  const sc1El = document.getElementById('sc1');
+  const sc2El = document.getElementById('sc2');
+  if (sc1El) sc1El.textContent = score1;
+  if (sc2El) sc2El.textContent = score2;
+  
+  // Set number
+  const setNumEl = document.getElementById('set-num');
+  if (setNumEl) setNumEl.textContent = d.setNumber || 1;
+  
+  // Set pips
+  updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
+  updatePips(document.getElementById('pips2'), d.setsWon2 || 0, setsToWin);
+  
+  // Serve indicator
+  const srv = (d.serve || "").toLowerCase();
+  const serveLeft = document.getElementById('serve-left');
+  const serveRight = document.getElementById('serve-right');
+  if (serveLeft && serveRight) {
+    const isHome = srv.includes('home') || srv.includes('team1');
+    const isAway = srv.includes('away') || srv.includes('team2');
+    serveLeft.style.opacity = isHome ? '1' : '0';
+    serveLeft.classList.toggle('serving-pulse', isHome);
+    serveRight.style.opacity = isAway ? '1' : '0';
+    serveRight.classList.toggle('serving-pulse', isAway);
+  }
+  
+  // Animation trigger: multiple of 7
+  if (combinedScore > 0 && combinedScore % 7 === 0 && combinedScore !== lastTriggerScore) {
+    lastTriggerScore = combinedScore;
+    const nextMatch = d.nextMatch || '';
+    if (nextMatch && !animationInProgress) {
+      showNextMatchBar(nextMatch);
+    }
+  }
+}
+
+/* Polling loop */
+async function tick() {
+  try {
+    const d = await fetchJSON(SRC);
+    if (d) applyData(d);
+  } catch (e) {
+    console.log('[Overlay] Fetch error:', e);
+  } finally {
+    setTimeout(tick, POLL_MS);
+  }
+}
+
+tick();
+</script>
+</body>
+</html>

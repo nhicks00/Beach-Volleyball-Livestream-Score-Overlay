@@ -275,18 +275,38 @@ struct CourtCard: View {
     // MARK: - Footer
 
     private var cardFooter: some View {
-        HStack {
-            if let snapshot = court.lastSnapshot {
-                let setsWon = snapshot.totalSetsWon
-                Text("Set \(snapshot.setNumber) | \(setsWon.team1)-\(setsWon.team2)")
-                    .font(AppTypography.caption)
+        HStack(spacing: 8) {
+            // Navigation buttons
+            HStack(spacing: 4) {
+                Button {
+                    onSkipPrevious()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .disabled((court.activeIndex ?? 0) <= 0)
+                
+                Text("\((court.activeIndex ?? 0) + 1)/\(court.queue.count)")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(AppColors.textMuted)
-            } else {
-                Text("\(court.queue.count) match\(court.queue.count == 1 ? "" : "es") queued")
-                    .font(AppTypography.caption)
-                    .foregroundColor(AppColors.textMuted)
+                
+                Button {
+                    onSkipNext()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
             }
-
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(AppColors.surfaceElevated.opacity(0.5))
+            .cornerRadius(4)
+            
             Spacer()
 
             if let match = court.currentMatch {

@@ -243,6 +243,34 @@ struct QueueEditorView: View {
 
     private var toolbar: some View {
         HStack(spacing: 16) {
+            // Navigation buttons
+            if let court = court {
+                HStack(spacing: 8) {
+                    Button {
+                        appViewModel.skipToPrevious(courtId)
+                    } label: {
+                        Label("Previous", systemImage: "backward.fill")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled((court.activeIndex ?? 0) <= 0)
+                    
+                    Text("\((court.activeIndex ?? 0) + 1) / \(court.queue.count)")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(AppColors.textSecondary)
+                        .padding(.horizontal, 8)
+                    
+                    Button {
+                        appViewModel.skipToNext(courtId)
+                    } label: {
+                        Label("Next", systemImage: "forward.fill")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
+                }
+            }
+            
             Spacer()
 
             // Status
@@ -788,6 +816,15 @@ struct QueueRow: Identifiable {
 
         let abbreviated = players.map { player -> String in
             let cleanedPlayer = cleanName(player)
+            
+            // Don't abbreviate placeholder names like "Match 4 Winner" or "Loser of Match 6"
+            let lower = cleanedPlayer.lowercased()
+            if lower.contains("winner") || lower.contains("loser") ||
+               lower.hasPrefix("match ") || lower.contains("seed ") ||
+               lower.contains("team ") || lower.hasPrefix("tbd") {
+                return cleanedPlayer
+            }
+            
             let parts = cleanedPlayer.split(separator: " ").map(String.init)
             guard parts.count >= 2 else { return cleanedPlayer }
 
