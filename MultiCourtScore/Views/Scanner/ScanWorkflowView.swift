@@ -2,180 +2,329 @@
 //  ScanWorkflowView.swift
 //  MultiCourtScore v2
 //
-//  Unified VBL scanning and assignment workflow
+//  Unified VBL scanning and assignment workflow with sidebar navigation
 //
 
 import SwiftUI
 
+// MARK: - Workflow Steps
+
 enum ScanWorkflowStep: Int, CaseIterable {
-    case enterURLs = 0
-    case scanResults = 1
-    case courtMapping = 2  // NEW: Map courts to cameras
-    case assign = 3        // Review and import
-    
+    case scanSources = 0
+    case selectLiveCourts = 1
+    case configureOutput = 2
+    case queueManagement = 3
+
     var title: String {
         switch self {
-        case .enterURLs: return "Enter URLs"
-        case .scanResults: return "Review Results"
-        case .courtMapping: return "Map Courts"
-        case .assign: return "Import Matches"
+        case .scanSources: return "Scan Sources"
+        case .selectLiveCourts: return "Select Live Courts"
+        case .configureOutput: return "Configure Output"
+        case .queueManagement: return "Queue Management"
         }
     }
-    
+
     var icon: String {
         switch self {
-        case .enterURLs: return "link.badge.plus"
-        case .scanResults: return "doc.text.magnifyingglass"
-        case .courtMapping: return "video.badge.waveform"
-        case .assign: return "arrow.triangle.branch"
+        case .scanSources: return "link.badge.plus"
+        case .selectLiveCourts: return "video.badge.checkmark"
+        case .configureOutput: return "video.badge.waveform"
+        case .queueManagement: return "rectangle.3.group"
         }
     }
 }
 
+// MARK: - Main View
 
 struct ScanWorkflowView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
-    
-    @State private var currentStep: ScanWorkflowStep = .enterURLs
+
+    @State private var currentStep: ScanWorkflowStep = .scanSources
     @State private var matchAssignments: [UUID: Int] = [:]
-    
+    @State private var selectedCourts: Set<String> = []
+    @State private var courtSearchText = ""
+
     private var viewModel: ScannerViewModel { appViewModel.scannerViewModel }
-    
     private var scanResults: [ScannerViewModel.VBLMatch] { viewModel.scanResults }
     private var groupedByCourt: [String: [ScannerViewModel.VBLMatch]] { viewModel.groupedByCourt }
-    
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Progress Header
-            WorkflowHeader(
-                currentStep: currentStep,
-                onClose: { dismiss() }
-            )
-            
-            // Step Content
-            Group {
-                switch currentStep {
-                case .enterURLs:
-                    URLEntryStep(
-                        viewModel: viewModel,
-                        onScanComplete: { advanceToResults() }
-                    )
-                case .scanResults:
-                    ScanResultsStep(
-                        viewModel: viewModel,
-                        onProceed: { advanceToCourtMapping() },
-                        onBack: { currentStep = .enterURLs }
-                    )
-                case .courtMapping:
-                    CourtMappingStep(
-                        groupedByCourt: groupedByCourt,
-                        onProceed: { advanceToAssign() },
-                        onSkip: { advanceToAssign() },
-                        onBack: { currentStep = .scanResults }
-                    )
-                case .assign:
-                    AssignmentStep(
-                        scanResults: scanResults,
-                        groupedByCourt: groupedByCourt,
-                        assignments: $matchAssignments,
-                        onAutoAssign: autoAssignMatches,
-                        onImport: importAndClose,
-                        onBack: { currentStep = .courtMapping }
-                    )
+        HStack(spacing: 0) {
+            // Sidebar navigation
+            sidebar
+
+            // Main content
+            VStack(spacing: 0) {
+                stepHeader
+                stepContent
+                stepFooter
+            }
+        }
+        .frame(minWidth: 900, minHeight: 650)
+        .background(AppColors.background)
+        .onExitCommand { dismiss() }
+        .onAppear {
+            if !viewModel.scanResults.isEmpty {
+                currentStep = .selectLiveCourts
+                selectedCourts = Set(groupedByCourt.keys)
+            }
+        }
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Title
+            HStack {
+                Text("Scan & Assign")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(AppColors.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+
+            Divider().overlay(AppColors.border)
+
+            // Steps
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(ScanWorkflowStep.allCases, id: \.rawValue) { step in
+                    sidebarItem(step: step)
                 }
             }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 8)
 
+            Spacer()
         }
-        .frame(minWidth: 800, minHeight: 650)
-        .background(AppColors.background)
-        .onAppear {
-            // If we already have results, start at results step
-            if !viewModel.scanResults.isEmpty {
-                currentStep = .scanResults
+        .frame(width: AppLayout.sidebarWidth)
+        .background(AppColors.sidebarBackground)
+        .overlay(
+            Divider().overlay(AppColors.border),
+            alignment: .trailing
+        )
+    }
+
+    private func sidebarItem(step: ScanWorkflowStep) -> some View {
+        let isActive = step == currentStep
+        let isComplete = step.rawValue < currentStep.rawValue
+        let isEnabled = canNavigateTo(step)
+
+        return Button {
+            if isEnabled {
+                currentStep = step
+            }
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    if isComplete {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(AppColors.success)
+                    } else {
+                        Image(systemName: step.icon)
+                            .font(.system(size: 14))
+                            .foregroundColor(isActive ? AppColors.primary : AppColors.textMuted)
+                    }
+                }
+                .frame(width: 24)
+
+                Text(step.title)
+                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .foregroundColor(isActive ? AppColors.textPrimary : (isEnabled ? AppColors.textSecondary : AppColors.textMuted))
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isActive ? AppColors.surfaceHover : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+
+    private func canNavigateTo(_ step: ScanWorkflowStep) -> Bool {
+        switch step {
+        case .scanSources: return true
+        case .selectLiveCourts: return !scanResults.isEmpty
+        case .configureOutput: return !scanResults.isEmpty
+        case .queueManagement: return !scanResults.isEmpty
+        }
+    }
+
+    // MARK: - Step Header
+
+    private var stepHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(currentStep.title)
+                    .font(AppTypography.title)
+                    .foregroundColor(AppColors.textPrimary)
+
+                Text(stepSubtitle)
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
+            }
+            Spacer()
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(AppColors.textSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(AppColors.surfaceHover))
+            }
+            .buttonStyle(.plain)
+            .help("Close (Esc)")
+        }
+        .padding(AppLayout.contentPadding)
+        .background(AppColors.surface)
+        .overlay(
+            Divider().overlay(AppColors.border),
+            alignment: .bottom
+        )
+    }
+
+    private var stepSubtitle: String {
+        switch currentStep {
+        case .scanSources: return "Enter bracket and pool URLs to scan"
+        case .selectLiveCourts: return "\(selectedCourts.count) of \(groupedByCourt.keys.count) courts with cameras"
+        case .configureOutput: return "Map courts to camera slots"
+        case .queueManagement: return "Drag matches between camera columns"
+        }
+    }
+
+    // MARK: - Step Content
+
+    @ViewBuilder
+    private var stepContent: some View {
+        switch currentStep {
+        case .scanSources:
+            URLEntryStep(
+                viewModel: viewModel,
+                onScanComplete: {
+                    selectedCourts = Set(groupedByCourt.keys)
+                    currentStep = .selectLiveCourts
+                }
+            )
+        case .selectLiveCourts:
+            SelectCourtsStep(
+                groupedByCourt: groupedByCourt,
+                selectedCourts: $selectedCourts,
+                searchText: $courtSearchText
+            )
+        case .configureOutput:
+            CourtMappingStep(
+                groupedByCourt: groupedByCourt.filter { selectedCourts.contains($0.key) },
+                onProceed: {
+                    initializeAssignments()
+                    currentStep = .queueManagement
+                },
+                onSkip: {
+                    initializeAssignments()
+                    currentStep = .queueManagement
+                },
+                onBack: { currentStep = .selectLiveCourts }
+            )
+        case .queueManagement:
+            KanbanQueueStep(
+                scanResults: scanResults,
+                liveCourts: selectedCourts,
+                assignments: $matchAssignments,
+                onImport: importAndClose
+            )
+        }
+    }
+
+    // MARK: - Step Footer
+
+    private var stepFooter: some View {
+        HStack {
+            if currentStep.rawValue > 0 {
+                Button {
+                    if let prev = ScanWorkflowStep(rawValue: currentStep.rawValue - 1) {
+                        currentStep = prev
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(AppTypography.callout)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Spacer()
+
+            if currentStep == .queueManagement {
+                Button(action: importAndClose) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("Import as Queue")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppColors.success)
+                .disabled(matchAssignments.values.filter { $0 > 0 }.isEmpty)
+            } else if currentStep != .scanSources {
+                Button {
+                    if let next = ScanWorkflowStep(rawValue: currentStep.rawValue + 1) {
+                        if currentStep == .selectLiveCourts {
+                            // Going to configure output
+                            let allCourts = Array(groupedByCourt.keys.filter { selectedCourts.contains($0) })
+                            CourtMappingStore.shared.updateUnmappedCourts(from: allCourts)
+                        }
+                        if currentStep == .configureOutput {
+                            initializeAssignments()
+                        }
+                        currentStep = next
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Next")
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AppColors.primary)
             }
         }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 12)
+        .background(AppColors.surface)
+        .overlay(
+            Divider().overlay(AppColors.border),
+            alignment: .top
+        )
     }
-    
-    // MARK: - Navigation
-    
-    private func advanceToResults() {
-        currentStep = .scanResults
-    }
-    
-    private func advanceToCourtMapping() {
-        // Collect all unique courts from scan results
-        let allCourts = Array(groupedByCourt.keys)
-        CourtMappingStore.shared.updateUnmappedCourts(from: allCourts)
-        currentStep = .courtMapping
-    }
-    
-    private func advanceToAssign() {
-        initializeAssignments()
-        currentStep = .assign
-    }
-    
+
     // MARK: - Assignment Logic
 
-    
     private func initializeAssignments() {
         for match in scanResults {
-            matchAssignments[match.id] = 0
-        }
-    }
-    
-    private func autoAssignMatches() {
-        let priorityCourtPatterns = ["stadium", "center", "main", "feature", "show"]
-        
-        var priorityCourts: [String] = []
-        var numberedCourts: [(name: String, number: Int)] = []
-        var otherCourts: [String] = []
-        
-        for courtName in groupedByCourt.keys {
-            let lowerName = courtName.lowercased()
-            
-            if priorityCourtPatterns.contains(where: { lowerName.contains($0) }) {
-                priorityCourts.append(courtName)
-            } else if let num = extractCourtNumber(from: courtName) {
-                numberedCourts.append((name: courtName, number: num))
-            } else {
-                otherCourts.append(courtName)
-            }
-        }
-        
-        numberedCourts.sort { $0.number < $1.number }
-        
-        for courtName in priorityCourts {
-            if let matches = groupedByCourt[courtName] {
-                for match in matches {
-                    matchAssignments[match.id] = 1
-                }
-            }
-        }
-        
-        for (index, court) in numberedCourts.enumerated() {
-            let overlayId = min(index + 2, AppConfig.maxCourts)
-            if let matches = groupedByCourt[court.name] {
-                for match in matches {
-                    matchAssignments[match.id] = overlayId
-                }
-            }
-        }
-        
-        let nextOverlayStart = numberedCourts.count + 2
-        for (index, courtName) in otherCourts.enumerated() {
-            let overlayId = min(nextOverlayStart + index, AppConfig.maxCourts)
-            if let matches = groupedByCourt[courtName] {
-                for match in matches {
-                    matchAssignments[match.id] = overlayId
-                }
+            if matchAssignments[match.id] == nil {
+                // Matches on courts without cameras default to Standby (0)
+                matchAssignments[match.id] = 0
             }
         }
     }
-    
+
     private func importAndClose() {
         var matchesByOverlay: [Int: [ScannerViewModel.VBLMatch]] = [:]
-        
+
         for match in scanResults {
             guard let overlayId = matchAssignments[match.id], overlayId > 0 else { continue }
             if matchesByOverlay[overlayId] == nil {
@@ -183,159 +332,54 @@ struct ScanWorkflowView: View {
             }
             matchesByOverlay[overlayId]?.append(match)
         }
-        
+
         for (overlayId, matches) in matchesByOverlay {
             let sortedMatches = matches.sorted { a, b in
                 let aIsPool = a.matchType?.lowercased().contains("pool") ?? false
                 let bIsPool = b.matchType?.lowercased().contains("pool") ?? false
                 if aIsPool && !bIsPool { return true }
                 if !aIsPool && bIsPool { return false }
-                
-                // Secondary sort by index (original order)
                 return a.index < b.index
             }
-            
+
             let matchItems = viewModel.createMatchItems(from: sortedMatches)
-            
-            // Auto-detect start index (skip completed matches)
-            // TODO: Update scraper to return match scores/status to enable this
-            let startIndex = 0 // findFirstLiveMatchIndex(matches: sortedMatches)
-            
-            appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: startIndex)
+            appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
         }
-        
+
         dismiss()
     }
-    
-    private func findFirstLiveMatchIndex(matches: [ScannerViewModel.VBLMatch]) -> Int {
-        // Placeholder until scraper returns scores/status
-        return 0
-    }
-    
-    private func extractCourtNumber(from name: String) -> Int? {
-        let digits = name.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-        return Int(digits)
-    }
 }
 
-// MARK: - Workflow Header
-
-struct WorkflowHeader: View {
-    let currentStep: ScanWorkflowStep
-    let onClose: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Title and close button
-            HStack {
-                Text("Scan & Assign Matches")
-                    .font(AppTypography.title)
-                    .foregroundColor(AppColors.textPrimary)
-                
-                Spacer()
-                
-                Button(action: onClose) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(AppColors.textMuted)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, AppLayout.contentPadding)
-            .padding(.top, AppLayout.contentPadding)
-            .padding(.bottom, 12)
-            
-            // Step indicators
-            HStack(spacing: 0) {
-                ForEach(ScanWorkflowStep.allCases, id: \.rawValue) { step in
-                    StepIndicator(
-                        step: step,
-                        isActive: step == currentStep,
-                        isComplete: step.rawValue < currentStep.rawValue
-                    )
-                    
-                    if step.rawValue < ScanWorkflowStep.allCases.count - 1 {
-                        StepConnector(isComplete: step.rawValue < currentStep.rawValue)
-                    }
-                }
-            }
-            .padding(.horizontal, AppLayout.contentPadding)
-            .padding(.bottom, 16)
-        }
-        .background(AppColors.surface)
-    }
-}
-
-struct StepIndicator: View {
-    let step: ScanWorkflowStep
-    let isActive: Bool
-    let isComplete: Bool
-    
-    var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .fill(isActive ? AppColors.primary : (isComplete ? AppColors.success : AppColors.surfaceHover))
-                    .frame(width: 36, height: 36)
-                
-                if isComplete {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                } else {
-                    Image(systemName: step.icon)
-                        .font(.system(size: 14))
-                        .foregroundColor(isActive ? .white : AppColors.textMuted)
-                }
-            }
-            
-            Text(step.title)
-                .font(.system(size: 11, weight: isActive ? .semibold : .regular))
-                .foregroundColor(isActive ? AppColors.textPrimary : AppColors.textMuted)
-        }
-    }
-}
-
-struct StepConnector: View {
-    let isComplete: Bool
-    
-    var body: some View {
-        Rectangle()
-            .fill(isComplete ? AppColors.success : AppColors.surfaceHover)
-            .frame(height: 2)
-            .frame(maxWidth: 80)
-            .padding(.bottom, 24)
-    }
-}
-
-// MARK: - Step 1: URL Entry
+// MARK: - Step 1: URL Entry (reuses existing structure, dark-styled)
 
 struct URLEntryStep: View {
     @ObservedObject var viewModel: ScannerViewModel
     let onScanComplete: () -> Void
-    
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppLayout.sectionSpacing) {
-                // Bracket URLs
-                URLInputCard(
-                    title: "Bracket URLs",
-                    subtitle: "\(viewModel.bracketURLs.filter { !$0.isEmpty }.count) entered",
-                    urls: $viewModel.bracketURLs,
-                    placeholder: "https://volleyballlife.com/.../brackets",
-                    onAddURL: { viewModel.bracketURLs.append("") }
-                )
-                
-                // Pool URLs
-                URLInputCard(
-                    title: "Pool URLs",
-                    subtitle: "\(viewModel.poolURLs.filter { !$0.isEmpty }.count) entered",
-                    urls: $viewModel.poolURLs,
-                    placeholder: "https://volleyballlife.com/.../pools",
-                    onAddURL: { viewModel.poolURLs.append("") }
-                )
-                
-                // Scan Button
+                HStack(alignment: .top, spacing: AppLayout.cardSpacing) {
+                    // Bracket URLs card
+                    URLInputCard(
+                        title: "Bracket URLs",
+                        subtitle: "\(viewModel.bracketURLs.filter { !$0.isEmpty }.count) entered",
+                        urls: $viewModel.bracketURLs,
+                        placeholder: "https://volleyballlife.com/.../brackets",
+                        onAddURL: { viewModel.bracketURLs.append("") }
+                    )
+
+                    // Pool URLs card
+                    URLInputCard(
+                        title: "Pool URLs",
+                        subtitle: "\(viewModel.poolURLs.filter { !$0.isEmpty }.count) entered",
+                        urls: $viewModel.poolURLs,
+                        placeholder: "https://volleyballlife.com/.../pools",
+                        onAddURL: { viewModel.poolURLs.append("") }
+                    )
+                }
+
+                // Scan action
                 ScanActionCard(viewModel: viewModel, onScanComplete: onScanComplete)
             }
             .padding(AppLayout.contentPadding)
@@ -349,32 +393,32 @@ struct URLInputCard: View {
     @Binding var urls: [String]
     let placeholder: String
     let onAddURL: () -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.itemSpacing) {
             HStack {
                 Text(title)
                     .font(AppTypography.headline)
                     .foregroundColor(AppColors.textPrimary)
-                
+
                 Spacer()
-                
+
                 Text(subtitle)
                     .font(AppTypography.caption)
                     .foregroundColor(AppColors.textMuted)
-                
+
                 Button(action: onAddURL) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(AppColors.primary)
                 }
                 .buttonStyle(.plain)
             }
-            
+
             ForEach(urls.indices, id: \.self) { index in
                 HStack(spacing: 8) {
                     TextField(placeholder, text: $urls[index])
                         .textFieldStyle(.roundedBorder)
-                    
+
                     if !urls[index].isEmpty {
                         Button {
                             urls[index] = ""
@@ -392,32 +436,32 @@ struct URLInputCard: View {
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
                 .fill(AppColors.surface)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
+                .stroke(AppColors.border, lineWidth: 1)
+        )
     }
 }
 
 struct ScanActionCard: View {
     @ObservedObject var viewModel: ScannerViewModel
     let onScanComplete: () -> Void
-    
+
     var body: some View {
         VStack(spacing: 16) {
             if viewModel.isScanning {
-                // Progress
                 VStack(spacing: 12) {
                     ProgressView()
                         .scaleEffect(1.2)
-                    
+
                     Text(viewModel.scanProgress)
                         .font(AppTypography.callout)
                         .foregroundColor(AppColors.textSecondary)
                 }
                 .padding(.vertical, 20)
             } else {
-                // Scan button
                 Button {
                     viewModel.startScan()
-                    
-                    // Monitor for completion
                     Task {
                         while viewModel.isScanning {
                             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -431,7 +475,7 @@ struct ScanActionCard: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass.circle.fill")
-                        Text("Scan \(viewModel.allURLs.count) URL\(viewModel.allURLs.count == 1 ? "" : "s")")
+                        Text("Start Scan (\(viewModel.allURLs.count) URL\(viewModel.allURLs.count == 1 ? "" : "s"))")
                     }
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
@@ -445,7 +489,7 @@ struct ScanActionCard: View {
                 .buttonStyle(.plain)
                 .disabled(!viewModel.canScan)
             }
-            
+
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(AppTypography.caption)
@@ -458,148 +502,168 @@ struct ScanActionCard: View {
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
                 .fill(AppColors.surface)
         )
-    }
-}
-
-// MARK: - Step 2: Scan Results
-
-struct ScanResultsStep: View {
-    @ObservedObject var viewModel: ScannerViewModel
-    let onProceed: () -> Void
-    let onBack: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Results summary
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(viewModel.scanResults.count) Matches Found")
-                        .font(AppTypography.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                    
-                    Text("From \(viewModel.groupedByCourt.keys.count) courts")
-                        .font(AppTypography.caption)
-                        .foregroundColor(AppColors.textMuted)
-                }
-                
-                Spacer()
-                
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .font(AppTypography.callout)
-                }
-                .buttonStyle(.bordered)
-                
-                Button(action: onProceed) {
-                    HStack(spacing: 4) {
-                        Text("Proceed to Assign")
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColors.success)
-            }
-            .padding(AppLayout.contentPadding)
-            .background(AppColors.surface)
-            
-            // Results list
-            ScrollView {
-                LazyVStack(spacing: AppLayout.itemSpacing) {
-                    ForEach(Array(viewModel.groupedByCourt.keys.sorted()), id: \.self) { courtName in
-                        if let matches = viewModel.groupedByCourt[courtName] {
-                            CourtResultsCard(courtName: courtName, matches: matches)
-                        }
-                    }
-                }
-                .padding(AppLayout.contentPadding)
-            }
-        }
-    }
-}
-
-struct CourtResultsCard: View {
-    let courtName: String
-    let matches: [ScannerViewModel.VBLMatch]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Court \(courtName)")
-                    .font(AppTypography.headline)
-                    .foregroundColor(AppColors.textPrimary)
-                
-                Spacer()
-                
-                Text("\(matches.count) matches")
-                    .font(AppTypography.caption)
-                    .foregroundColor(AppColors.textMuted)
-            }
-            
-            Divider()
-            
-            ForEach(Array(matches.enumerated()), id: \.offset) { index, match in
-                HStack(spacing: 8) {
-                    // Match number badge
-                    if let matchNum = match.matchNumber {
-                        Text("M\(matchNum)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(AppColors.primary.opacity(0.8))
-                            .cornerRadius(4)
-                    }
-                    
-                    // Teams
-                    Text("\(match.team1 ?? "TBD") vs \(match.team2 ?? "TBD")")
-                        .font(AppTypography.body)
-                        .foregroundColor(AppColors.textSecondary)
-                        .lineLimit(1)
-                    
-                    Spacer()
-                    
-                    // Day + Time (e.g., "Sat 12:00PM")
-                    HStack(spacing: 4) {
-                        if let day = match.startDate {
-                            Text(day)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(day == "Sun" ? AppColors.warning : AppColors.info)
-                        }
-                        if !match.timeDisplay.isEmpty {
-                            Text(match.timeDisplay)
-                                .font(AppTypography.caption)
-                                .foregroundColor(AppColors.textMuted)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-        }
-        .padding(AppLayout.cardPadding)
-        .background(
+        .overlay(
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
-                .fill(AppColors.surface)
+                .stroke(AppColors.border, lineWidth: 1)
         )
     }
 }
 
-// MARK: - Step 3: Court Mapping (NEW)
+// MARK: - Step 2: Select Courts (NEW)
+
+struct SelectCourtsStep: View {
+    let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
+    @Binding var selectedCourts: Set<String>
+    @Binding var searchText: String
+
+    private var sortedCourts: [String] {
+        let filtered = groupedByCourt.keys.filter {
+            searchText.isEmpty || $0.lowercased().contains(searchText.lowercased())
+        }
+        return filtered.sorted { a, b in
+            let numA = extractNumber(from: a)
+            let numB = extractNumber(from: b)
+            if let nA = numA, let nB = numB { return nA < nB }
+            return a < b
+        }
+    }
+
+    private var allSelected: Bool {
+        sortedCourts.allSatisfy { selectedCourts.contains($0) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Instruction text
+            Text("Choose which courts have cameras. All matches are imported — unselected courts go to Standby.")
+                .font(AppTypography.caption)
+                .foregroundColor(AppColors.textSecondary)
+                .padding(.horizontal, AppLayout.contentPadding)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Search and select all
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(AppColors.textMuted)
+                    TextField("Search courts...", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(AppTypography.body)
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(AppColors.surfaceElevated)
+                )
+                .frame(maxWidth: 300)
+
+                Spacer()
+
+                Button {
+                    if allSelected {
+                        selectedCourts.removeAll()
+                    } else {
+                        selectedCourts = Set(sortedCourts)
+                    }
+                } label: {
+                    Text(allSelected ? "None Have Cameras" : "All Have Cameras")
+                        .font(AppTypography.callout)
+                }
+                .buttonStyle(.bordered)
+
+                Text("\(selectedCourts.count) of \(groupedByCourt.count) courts with cameras")
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
+            }
+            .padding(AppLayout.contentPadding)
+
+            Divider().overlay(AppColors.border)
+
+            // Court table
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(sortedCourts, id: \.self) { courtName in
+                        let matches = groupedByCourt[courtName] ?? []
+                        let isSelected = selectedCourts.contains(courtName)
+
+                        Button {
+                            if isSelected {
+                                selectedCourts.remove(courtName)
+                            } else {
+                                selectedCourts.insert(courtName)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(isSelected ? AppColors.primary : AppColors.textMuted)
+
+                                Text("Court \(courtName)")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(AppColors.textPrimary)
+
+                                Spacer()
+
+                                Text("\(matches.count) matches")
+                                    .font(AppTypography.caption)
+                                    .foregroundColor(AppColors.textMuted)
+
+                                // Type badges
+                                let hasPool = matches.contains { $0.matchType?.lowercased().contains("pool") == true }
+                                let hasBracket = matches.contains { $0.matchType?.lowercased().contains("bracket") == true }
+
+                                if hasPool {
+                                    Text("Pool")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(AppColors.info))
+                                }
+                                if hasBracket {
+                                    Text("Bracket")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(AppColors.primary))
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(isSelected ? AppColors.primary.opacity(0.1) : Color.clear)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(8)
+            }
+        }
+    }
+
+    private func extractNumber(from name: String) -> Int? {
+        let digits = name.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
+    }
+}
+
+// MARK: - Step 3: Configure Output (Court Mapping)
 
 struct CourtMappingStep: View {
     let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
     let onProceed: () -> Void
     let onSkip: () -> Void
     let onBack: () -> Void
-    
+
     @StateObject private var mappingStore = CourtMappingStore.shared
-    @State private var courtAssignments: [String: Int] = [:]  // courtName -> cameraId
-    
+    @State private var courtAssignments: [String: Int] = [:]
+
     private var sortedCourts: [String] {
-        // Sort courts by number if possible, else alphabetically
         groupedByCourt.keys.sorted { a, b in
             let numA = extractNumber(from: a)
             let numB = extractNumber(from: b)
@@ -607,68 +671,44 @@ struct CourtMappingStep: View {
             return a < b
         }
     }
-    
-    private var allAssigned: Bool {
-        sortedCourts.allSatisfy { courtAssignments[$0] ?? 0 > 0 }
-    }
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Map Courts to Cameras")
-                        .font(AppTypography.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                    
-                    Text("Assign each VBL court to a camera card")
-                        .font(AppTypography.caption)
-                        .foregroundColor(AppColors.textMuted)
-                }
-                
-                Spacer()
-                
+            // Toolbar
+            HStack(spacing: 12) {
                 Button(action: autoAssignCourts) {
                     HStack(spacing: 4) {
                         Image(systemName: "wand.and.stars")
-                        Text("Auto-Assign")
+                        Text("Auto-Map")
                     }
                     .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
-                
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .font(AppTypography.callout)
-                }
-                .buttonStyle(.bordered)
-                
-                // Skip button - allows manual assignment
-                Button(action: onSkip) {
-                    Text("Skip")
+                .tint(AppColors.info)
+
+                Button {
+                    courtAssignments.removeAll()
+                } label: {
+                    Text("Reset")
                         .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
-                
-                Button(action: applyMappingsAndProceed) {
-                    HStack(spacing: 4) {
-                        Text("Continue")
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColors.success)
+
+                Spacer()
+
+                let assignedCount = courtAssignments.values.filter { $0 > 0 }.count
+                Text("\(assignedCount) of \(sortedCourts.count) mapped")
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
             }
-            .padding(AppLayout.contentPadding)
-            .background(AppColors.surface)
-            
-            // Court mapping list
+            .padding(.horizontal, AppLayout.contentPadding)
+            .padding(.vertical, 12)
+
+            Divider().overlay(AppColors.border)
+
+            // Mapping table
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 8) {
                     ForEach(sortedCourts, id: \.self) { courtName in
                         CourtMappingRow(
                             courtName: courtName,
@@ -684,7 +724,6 @@ struct CourtMappingStep: View {
             }
         }
         .onAppear {
-            // Initialize from existing mappings
             for courtName in groupedByCourt.keys {
                 if let existingCamera = mappingStore.cameraId(for: courtName) {
                     courtAssignments[courtName] = existingCamera
@@ -692,67 +731,50 @@ struct CourtMappingStep: View {
             }
         }
     }
-    
+
     private func autoAssignCourts() {
-        // Priority courts (stadium, center, etc.) -> Core 1
-        // Numbered courts -> sequential cameras
         let priorityPatterns = ["stadium", "center", "main", "feature", "show"]
-        
-        var cameraIndex = 2  // Start at Mevo 2 (camera 1 = Core 1)
-        
+        var cameraIndex = 2
+
         for courtName in sortedCourts {
             let lowerName = courtName.lowercased()
-            
             if priorityPatterns.contains(where: { lowerName.contains($0) }) {
-                courtAssignments[courtName] = 1  // Core 1
+                courtAssignments[courtName] = 1
             } else {
                 courtAssignments[courtName] = min(cameraIndex, AppConfig.maxCourts)
                 cameraIndex += 1
             }
         }
     }
-    
-    private func applyMappingsAndProceed() {
-        // Save mappings to store
-        for (courtName, cameraId) in courtAssignments where cameraId > 0 {
-            mappingStore.setMapping(courtNames: [courtName], to: cameraId)
-        }
-        onProceed()
-    }
-    
+
     private func extractNumber(from name: String) -> Int? {
         let digits = name.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
         return Int(digits)
     }
 }
 
-// MARK: - Court Mapping Row
-
 struct CourtMappingRow: View {
     let courtName: String
     let matchCount: Int
     @Binding var selectedCamera: Int
-    
+
     var body: some View {
         HStack(spacing: 16) {
-            // Court info
             VStack(alignment: .leading, spacing: 4) {
                 Text("Court \(courtName)")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(AppColors.textPrimary)
-                
+
                 Text("\(matchCount) matches")
                     .font(AppTypography.caption)
                     .foregroundColor(AppColors.textMuted)
             }
-            
+
             Spacer()
-            
-            // Arrow indicator
+
             Image(systemName: "arrow.right")
                 .foregroundColor(AppColors.textMuted)
-            
-            // Camera picker - uses CourtNaming for proper "Core 1, Mevo 2..." names
+
             Picker("Camera", selection: $selectedCamera) {
                 Text("Not Assigned").tag(0)
                 ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
@@ -766,212 +788,583 @@ struct CourtMappingRow: View {
         .padding(AppLayout.cardPadding)
         .background(
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
-                .fill(selectedCamera > 0 ? AppColors.success.opacity(0.1) : AppColors.surface)
+                .fill(selectedCamera > 0 ? AppColors.success.opacity(0.08) : AppColors.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
-                .stroke(selectedCamera > 0 ? AppColors.success.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(selectedCamera > 0 ? AppColors.success.opacity(0.3) : AppColors.border, lineWidth: 1)
         )
     }
 }
 
-// MARK: - Step 4: Assignment
+// MARK: - Step 4: Kanban Queue Management
 
-struct AssignmentStep: View {
+struct KanbanQueueStep: View {
     let scanResults: [ScannerViewModel.VBLMatch]
-    let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
+    var liveCourts: Set<String> = []
     @Binding var assignments: [UUID: Int]
-    let onAutoAssign: () -> Void
     let onImport: () -> Void
-    let onBack: () -> Void
-    
-    private var assignedCount: Int {
-        assignments.values.filter { $0 > 0 }.count
+
+    @State private var autoAssignDone = false
+
+    private var unassignedMatches: [ScannerViewModel.VBLMatch] {
+        scanResults.filter { (assignments[$0.id] ?? 0) == 0 }
     }
-    
+
+    private func matchesForCamera(_ cameraId: Int) -> [ScannerViewModel.VBLMatch] {
+        scanResults.filter { assignments[$0.id] == cameraId }
+    }
+
+    private var sortedCourtNames: [String] {
+        let grouped = Dictionary(grouping: scanResults) { $0.courtDisplay }
+        return grouped.keys.sorted { a, b in
+            let numA = extractNumber(from: a)
+            let numB = extractNumber(from: b)
+            if let nA = numA, let nB = numB { return nA < nB }
+            return a < b
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Action bar
+            // Toolbar
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Assign to Courts")
-                        .font(AppTypography.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                    
-                    Text("\(assignedCount) of \(scanResults.count) assigned")
-                        .font(AppTypography.caption)
-                        .foregroundColor(AppColors.textMuted)
-                }
-                
-                Spacer()
-                
-                Button(action: onBack) {
+                Button {
+                    autoAssignAll()
+                } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
+                        Image(systemName: "wand.and.stars")
+                        Text("Auto-Assign All")
                     }
                     .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
-                
-                Button("Auto-Assign All") {
-                    onAutoAssign()
+                .tint(AppColors.info)
+
+                Button {
+                    for match in scanResults {
+                        assignments[match.id] = 0
+                    }
+                } label: {
+                    Text("Clear All")
+                        .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
-                .tint(AppColors.info)
-                
-                Button(action: onImport) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.down")
-                        Text("Import as Queue")
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColors.success)
-                .disabled(assignedCount == 0)
+
+                Spacer()
+
+                let assignedCount = assignments.values.filter { $0 > 0 }.count
+                Text("\(assignedCount) of \(scanResults.count) assigned")
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
             }
-            .padding(AppLayout.contentPadding)
-            .background(AppColors.surface)
-            
-            // Assignment list
+            .padding(.horizontal, AppLayout.contentPadding)
+            .padding(.vertical, 12)
+
+            Divider().overlay(AppColors.border)
+
+            // Two-panel layout
+            HSplitView {
+                // Left panel — All Matches
+                sourceMatchPanel
+                    .frame(minWidth: 400, idealWidth: 550)
+
+                // Right panel — Camera Queues
+                cameraQueuePanel
+                    .frame(minWidth: 280, idealWidth: 380)
+            }
+        }
+        .onAppear {
+            if !autoAssignDone {
+                autoAssignAll()
+                autoAssignDone = true
+            }
+        }
+    }
+
+    // MARK: - Left Panel: All Matches
+
+    private var sourceMatchPanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("All Matches")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+                Spacer()
+                Text("\(scanResults.count) total")
+                    .font(AppTypography.caption)
+                    .foregroundColor(AppColors.textMuted)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(AppColors.surfaceElevated)
+
+            Divider().overlay(AppColors.border)
+
             ScrollView {
-                LazyVStack(spacing: AppLayout.itemSpacing) {
-                    ForEach(Array(groupedByCourt.keys.sorted()), id: \.self) { courtName in
-                        if let matches = groupedByCourt[courtName] {
-                            CourtAssignmentCard(
-                                courtName: courtName,
-                                matches: matches,
-                                assignments: $assignments
+                LazyVStack(spacing: 0) {
+                    ForEach(sortedCourtNames, id: \.self) { courtName in
+                        let courtMatches = scanResults.filter { $0.courtDisplay == courtName }
+                        let isLive = liveCourts.contains(courtName)
+
+                        // Section header
+                        HStack(spacing: 8) {
+                            Image(systemName: isLive ? "video.fill" : "video.slash.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(isLive ? AppColors.success : AppColors.textMuted)
+
+                            Text("Court \(courtName)")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(AppColors.textPrimary)
+
+                            Text("\(courtMatches.count) matches")
+                                .font(.system(size: 11))
+                                .foregroundColor(AppColors.textMuted)
+
+                            if !isLive {
+                                Text("No Camera")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(AppColors.warning)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(AppColors.warning.opacity(0.2)))
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(AppColors.surface)
+
+                        // Match cards
+                        ForEach(courtMatches, id: \.id) { match in
+                            SourceMatchCard(
+                                match: match,
+                                currentCamera: assignments[match.id] ?? 0,
+                                onAssign: { cameraId in
+                                    assignments[match.id] = cameraId
+                                }
+                            )
+                        }
+
+                        Divider().overlay(AppColors.border)
+                    }
+                }
+            }
+        }
+        .background(AppColors.background)
+    }
+
+    // MARK: - Right Panel: Camera Queues
+
+    private var cameraQueuePanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Camera Queues")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(AppColors.surfaceElevated)
+
+            Divider().overlay(AppColors.border)
+
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    // Camera sections
+                    ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
+                        let cameraMatches = matchesForCamera(cameraId)
+                        if !cameraMatches.isEmpty || cameraId <= 4 {
+                            CameraQueueSection(
+                                cameraId: cameraId,
+                                matches: cameraMatches,
+                                onRemove: { matchId in
+                                    assignments[matchId] = 0
+                                }
                             )
                         }
                     }
+
+                    // Standby section
+                    if !unassignedMatches.isEmpty {
+                        CameraQueueSection(
+                            cameraId: 0,
+                            matches: unassignedMatches,
+                            onRemove: { _ in }
+                        )
+                    }
                 }
-                .padding(AppLayout.contentPadding)
+                .padding(12)
             }
+        }
+        .background(AppColors.background)
+    }
+
+    private func autoAssignAll() {
+        let priorityCourtPatterns = ["stadium", "center", "main", "feature", "show"]
+
+        let grouped = Dictionary(grouping: scanResults) { $0.courtDisplay }
+        var priorityCourts: [String] = []
+        var numberedCourts: [(name: String, number: Int)] = []
+        var otherCourts: [String] = []
+
+        for courtName in grouped.keys {
+            let lowerName = courtName.lowercased()
+            if priorityCourtPatterns.contains(where: { lowerName.contains($0) }) {
+                priorityCourts.append(courtName)
+            } else if let num = extractNumber(from: courtName) {
+                numberedCourts.append((name: courtName, number: num))
+            } else {
+                otherCourts.append(courtName)
+            }
+        }
+
+        numberedCourts.sort { $0.number < $1.number }
+
+        for courtName in priorityCourts {
+            if let matches = grouped[courtName] {
+                for match in matches { assignments[match.id] = 1 }
+            }
+        }
+
+        for (index, court) in numberedCourts.enumerated() {
+            let overlayId = min(index + 2, AppConfig.maxCourts)
+            if let matches = grouped[court.name] {
+                for match in matches { assignments[match.id] = overlayId }
+            }
+        }
+
+        let nextStart = numberedCourts.count + 2
+        for (index, courtName) in otherCourts.enumerated() {
+            let overlayId = min(nextStart + index, AppConfig.maxCourts)
+            if let matches = grouped[courtName] {
+                for match in matches { assignments[match.id] = overlayId }
+            }
+        }
+    }
+
+    private func extractNumber(from name: String) -> Int? {
+        let digits = name.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
+    }
+}
+
+struct KanbanColumn: View {
+    let title: String
+    let cameraId: Int
+    let matches: [ScannerViewModel.VBLMatch]
+    @Binding var assignments: [UUID: Int]
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Column header
+            HStack {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+
+                Spacer()
+
+                Text("\(matches.count)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(color.opacity(0.15))
+                    )
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(AppColors.surfaceElevated)
+            .cornerRadius(8)
+
+            // Match cards
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(matches, id: \.id) { match in
+                        KanbanMatchCard(match: match)
+                            .draggable(match.id.uuidString) {
+                                Text(match.displayName)
+                                    .padding(8)
+                                    .background(AppColors.surface)
+                                    .cornerRadius(6)
+                            }
+                    }
+                }
+            }
+        }
+        .frame(width: 220)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(AppColors.surface.opacity(0.5))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppColors.border, lineWidth: 1)
+        )
+        .dropDestination(for: String.self) { items, _ in
+            for item in items {
+                if let uuid = UUID(uuidString: item) {
+                    assignments[uuid] = cameraId
+                }
+            }
+            return true
         }
     }
 }
 
-struct CourtAssignmentCard: View {
-    let courtName: String
-    let matches: [ScannerViewModel.VBLMatch]
-    @Binding var assignments: [UUID: Int]
-    
-    @StateObject private var mappingStore = CourtMappingStore.shared
-    
-    // Get pre-assigned camera from court mapping
-    private var mappedCamera: Int {
-        mappingStore.cameraId(for: courtName) ?? 0
-    }
-    
+struct KanbanMatchCard: View {
+    let match: ScannerViewModel.VBLMatch
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Court \(courtName)")
-                        .font(AppTypography.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                    
-                    Text("\(matches.count) matches")
-                        .font(AppTypography.caption)
-                        .foregroundColor(AppColors.textMuted)
+        VStack(alignment: .leading, spacing: 4) {
+            // Teams
+            Text(match.displayName)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(AppColors.textPrimary)
+                .lineLimit(2)
+
+            HStack(spacing: 6) {
+                if let matchNum = match.matchNumber {
+                    Text("M\(matchNum)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(AppColors.primary)
                 }
-                
+
+                if let type = match.matchType {
+                    let isPool = type.lowercased().contains("pool")
+                    Text(isPool ? "Pool" : "Bracket")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(isPool ? AppColors.info : AppColors.primary))
+                }
+
                 Spacer()
-                
-                // Show current mapping or bulk assign picker
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.right")
+
+                if !match.timeDisplay.isEmpty {
+                    Text(match.timeDisplay)
+                        .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(AppColors.textMuted)
-                    
-                    // Bulk assign picker with CourtNaming
-                    Picker("Assign All", selection: Binding(
-                        get: { assignments[matches.first?.id ?? UUID()] ?? mappedCamera },
-                        set: { newValue in
-                            for match in matches {
-                                assignments[match.id] = newValue
-                            }
-                        }
-                    )) {
-                        Text("Not Assigned").tag(0)
-                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
-                            Text(CourtNaming.displayName(for: id)).tag(id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 140)
                 }
             }
-            
-            Divider()
-            
-            ForEach(Array(matches.enumerated()), id: \.offset) { index, match in
-                HStack(spacing: 8) {
-                    // Match number badge
+
+            HStack(spacing: 6) {
+                Text("Ct \(match.courtDisplay)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(AppColors.warning))
+
+                if let day = match.startDate, !day.isEmpty {
+                    Text(day)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(KanbanMatchCard.dayColor(for: day)))
+                }
+
+                Spacer()
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(AppColors.surfaceElevated)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(AppColors.border, lineWidth: 1)
+        )
+    }
+
+    static func dayColor(for day: String) -> Color {
+        switch day.lowercased().prefix(3) {
+        case "sat": return AppColors.info
+        case "sun": return AppColors.warning
+        case "fri": return AppColors.success
+        case "thu": return Color.purple
+        default: return AppColors.textMuted
+        }
+    }
+}
+
+// MARK: - Source Match Card (Left Panel)
+
+struct SourceMatchCard: View {
+    let match: ScannerViewModel.VBLMatch
+    let currentCamera: Int
+    let onAssign: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Match info
+            VStack(alignment: .leading, spacing: 3) {
+                Text(match.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(1)
+
+                HStack(spacing: 5) {
                     if let matchNum = match.matchNumber {
                         Text("M\(matchNum)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(AppColors.primary)
+                    }
+
+                    Text("Ct \(match.courtDisplay)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(AppColors.warning))
+
+                    if let day = match.startDate, !day.isEmpty {
+                        Text(day)
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(AppColors.primary.opacity(0.8))
-                            .cornerRadius(4)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(KanbanMatchCard.dayColor(for: day)))
                     }
 
-                    // Teams
-                    Text("\(match.team1 ?? "TBD") vs \(match.team2 ?? "TBD")")
-                        .font(AppTypography.body)
-                        .foregroundColor(AppColors.textSecondary)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    // Day + Time
-                    HStack(spacing: 4) {
-                        if let day = match.startDate {
-                            Text(day)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(day == "Sun" ? AppColors.warning : AppColors.info)
-                        }
-                        if !match.timeDisplay.isEmpty {
-                            Text(match.timeDisplay)
-                                .font(AppTypography.caption)
-                                .foregroundColor(AppColors.textMuted)
-                        }
+                    if !match.timeDisplay.isEmpty {
+                        Text(match.timeDisplay)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(AppColors.textMuted)
                     }
-                    .frame(width: 80, alignment: .trailing)
 
-                    // Individual match camera picker
-                    Picker("", selection: Binding(
-                        get: { assignments[match.id] ?? mappedCamera },
-                        set: { assignments[match.id] = $0 }
-                    )) {
-                        Text("—").tag(0)
-                        ForEach(1...AppConfig.maxCourts, id: \.self) { id in
-                            Text(CourtNaming.shortName(for: id)).tag(id)
-                        }
+                    if let type = match.matchType {
+                        let isPool = type.lowercased().contains("pool")
+                        Text(isPool ? "Pool" : "Bracket")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(isPool ? AppColors.info : AppColors.primary))
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 70)
-                    .tint((assignments[match.id] ?? mappedCamera) > 0 ? AppColors.success : AppColors.textMuted)
                 }
             }
+
+            Spacer()
+
+            // Camera picker
+            Picker("", selection: Binding(
+                get: { currentCamera },
+                set: { onAssign($0) }
+            )) {
+                Text("Standby").tag(0)
+                ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
+                    Text(CourtNaming.displayName(for: cameraId)).tag(cameraId)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 120)
+            .tint(currentCamera > 0 ? AppColors.success : AppColors.textMuted)
         }
-        .padding(AppLayout.cardPadding)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(currentCamera > 0 ? AppColors.success.opacity(0.05) : Color.clear)
+    }
+}
+
+// MARK: - Camera Queue Section (Right Panel)
+
+struct CameraQueueSection: View {
+    let cameraId: Int
+    let matches: [ScannerViewModel.VBLMatch]
+    let onRemove: (UUID) -> Void
+
+    private var sectionTitle: String {
+        cameraId == 0 ? "Standby" : CourtNaming.displayName(for: cameraId)
+    }
+
+    private var sectionColor: Color {
+        cameraId == 0 ? AppColors.textMuted : AppColors.primary
+    }
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(spacing: 4) {
+                ForEach(matches, id: \.id) { match in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(match.displayName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(AppColors.textPrimary)
+                                .lineLimit(1)
+
+                            HStack(spacing: 4) {
+                                if let matchNum = match.matchNumber {
+                                    Text("M\(matchNum)")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(AppColors.primary)
+                                }
+                                Text("Ct \(match.courtDisplay)")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(AppColors.textMuted)
+                            }
+                        }
+
+                        Spacer()
+
+                        if cameraId > 0 {
+                            Button {
+                                onRemove(match.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(AppColors.error.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove to Standby")
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(AppColors.surfaceElevated)
+                    )
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: cameraId == 0 ? "moon.zzz.fill" : "video.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(sectionColor)
+
+                Text(sectionTitle)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+
+                Spacer()
+
+                Text("\(matches.count)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(sectionColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(sectionColor.opacity(0.15)))
+            }
+        }
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(AppColors.surface)
         )
-        .onAppear {
-            // Pre-fill assignments from court mapping if not already set
-            if mappedCamera > 0 {
-                for match in matches {
-                    if assignments[match.id] == nil || assignments[match.id] == 0 {
-                        assignments[match.id] = mappedCamera
-                    }
-                }
-            }
-        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppColors.border, lineWidth: 1)
+        )
     }
 }

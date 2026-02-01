@@ -16,6 +16,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var error: AppError?
     @Published var scannerViewModel = ScannerViewModel()
+    @Published var appSettings = ConfigStore().loadSettings()
     
     // MARK: - Services
     private let webSocketHub: WebSocketHub
@@ -49,8 +50,8 @@ final class AppViewModel: ObservableObject {
     
     func startServices() {
         Task {
-            await webSocketHub.start(with: self, port: NetworkConstants.webSocketPort)
-            print("🚀 MultiCourtScore v2 services started")
+            await webSocketHub.start(with: self, port: appSettings.serverPort)
+            print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }
     }
     
@@ -144,7 +145,7 @@ final class AppViewModel: ObservableObject {
         
         // Staggered polling with jitter to avoid thundering herd
         let jitter = Double((courtId * 317) % 1200) / 1000.0
-        let interval = NetworkConstants.pollingInterval + Double((courtId * 97) % 800) / 1000.0
+        let interval = appSettings.pollingInterval + Double((courtId * 97) % 800) / 1000.0
         
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -242,7 +243,7 @@ final class AppViewModel: ObservableObject {
     // MARK: - Overlay URL
     
     func overlayURL(for courtId: Int) -> String {
-        return "http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(courtId)/"
+        return "http://localhost:\(appSettings.serverPort)/overlay/court/\(courtId)/?theme=\(appSettings.overlayTheme)"
     }
     
     // MARK: - Private Methods
