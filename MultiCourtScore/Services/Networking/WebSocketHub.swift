@@ -711,8 +711,8 @@ body {
     </div>
 
     <!-- Intermission Status Bubble (hidden by default) -->
-    <div id="int-status-bar" class="status-bubble bubble-bar hidden-up" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-      <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Match Starting Soon</span>
+    <div id="int-status-bar" class="status-bubble bubble-bar hidden-up" style="padding: 0.25rem 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); white-space: nowrap;">
+      <span style="font-size: 9px; font-weight: 900; letter-spacing: 0.2em; text-transform: uppercase; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; white-space: nowrap;">Match Starting Soon</span>
     </div>
   </div>
 </div>
@@ -1023,16 +1023,34 @@ function showIntermissionImmediate(team1, team2) {
 }
 
 function setIntermissionWidth() {
-  // Temporarily make intermission content visible to measure
-  if (intermissionContent) {
-    intermissionContent.style.visibility = 'visible';
-    intermissionContent.style.position = 'absolute';
-    // Measure the actual content width
-    const contentWidth = intermissionContent.scrollWidth + 80; // Add padding
-    const minWidth = 400;
-    const targetWidth = Math.max(contentWidth, minWidth);
-    scorebug.style.width = targetWidth + 'px';
-  }
+  if (!intermissionContent) return;
+  // Temporarily make content static + auto-width to measure true size
+  const origPos = intermissionContent.style.position;
+  const origInset = intermissionContent.style.inset;
+  const origWidth = intermissionContent.style.width;
+  const origVis = intermissionContent.style.visibility;
+  const origOpacity = intermissionContent.style.opacity;
+
+  intermissionContent.style.position = 'static';
+  intermissionContent.style.inset = 'auto';
+  intermissionContent.style.width = 'auto';
+  intermissionContent.style.visibility = 'hidden';
+  intermissionContent.style.opacity = '0';
+
+  // Force layout recalc
+  const contentWidth = intermissionContent.offsetWidth;
+
+  // Restore
+  intermissionContent.style.position = origPos || '';
+  intermissionContent.style.inset = origInset || '';
+  intermissionContent.style.width = origWidth || '';
+  intermissionContent.style.visibility = origVis || '';
+  intermissionContent.style.opacity = origOpacity || '';
+
+  const padding = 80; // left + right padding around content
+  const minWidth = 300;
+  const targetWidth = Math.max(contentWidth + padding, minWidth);
+  scorebug.style.width = targetWidth + 'px';
 }
 
 // Transition from Scoring → Intermission (animated)
