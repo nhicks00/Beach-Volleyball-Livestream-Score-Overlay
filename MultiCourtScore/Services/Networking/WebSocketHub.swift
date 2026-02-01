@@ -172,45 +172,37 @@ final class WebSocketHub {
                 let team2 = snapshot?.team2Name.isEmpty == false ? snapshot!.team2Name : (currentMatch?.team2Name ?? "")
                 let seed1 = snapshot?.team1Seed ?? currentMatch?.team1Seed ?? ""
                 let seed2 = snapshot?.team2Seed ?? currentMatch?.team2Seed ?? ""
-                
-                // Build response
-                // Current game score comes from setHistory.last (the in-progress or last completed set)
-                // snapshot.team1Score is actually SETS WON in this data model
+
+                // Force scores to 0-0 when court is not actively live or finished
+                // This prevents stale scores from a previous match lingering during auto-advance
+                let isLiveOrFinished = court.status == .live || court.status == .finished
+
                 let currentGame = snapshot?.setHistory.last
-                let gameScore1 = currentGame?.team1Score ?? currentMatch?.team1_score ?? 0
-                let gameScore2 = currentGame?.team2Score ?? currentMatch?.team2_score ?? 0
-                
-                // DEBUG: Log score values
-                print("[Overlay Debug] snapshot exists: \(snapshot != nil), setHistory count: \(snapshot?.setHistory.count ?? -1)")
-                print("[Overlay Debug] currentGame: \(currentGame?.team1Score ?? -1) - \(currentGame?.team2Score ?? -1)")
-                print("[Overlay Debug] gameScore1: \(gameScore1), gameScore2: \(gameScore2)")
-                print("[Overlay Debug] currentMatch?.team1_score: \(currentMatch?.team1_score ?? -1)")
-                
+                let gameScore1 = isLiveOrFinished ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
+                let gameScore2 = isLiveOrFinished ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
+
                 let data: [String: Any] = [
                     "team1": team1,
                     "team2": team2,
-                    "score1": gameScore1,  // Current game score (from setHistory.last)
-                    "score2": gameScore2,  // Current game score (from setHistory.last)
-                    "setsWon1": snapshot?.team1Score ?? 0,  // Sets won by team 1 (this IS sets won in the model)
-                    "setsWon2": snapshot?.team2Score ?? 0,  // Sets won by team 2 (this IS sets won in the model)
-                    "set": snapshot?.setNumber ?? 1,
-                    "status": snapshot?.status ?? "Pre-Match",
-                    "courtStatus": court.status.rawValue,  // "idle", "waiting", "live", "postmatch"
-                    "setsA": snapshot?.totalSetsWon.team1 ?? 0,
-                    "setsB": snapshot?.totalSetsWon.team2 ?? 0,
-                    "serve": snapshot?.serve ?? "none",
-                    "setHistory": snapshot?.setHistory.map { $0.displayString } ?? [],
-                    
-                    // Fields added for seed support
+                    "score1": gameScore1,
+                    "score2": gameScore2,
+                    "setsWon1": isLiveOrFinished ? (snapshot?.team1Score ?? 0) : 0,
+                    "setsWon2": isLiveOrFinished ? (snapshot?.team2Score ?? 0) : 0,
+                    "set": isLiveOrFinished ? (snapshot?.setNumber ?? 1) : 1,
+                    "status": isLiveOrFinished ? (snapshot?.status ?? "Pre-Match") : "Pre-Match",
+                    "courtStatus": court.status.rawValue,
+                    "setsA": isLiveOrFinished ? (snapshot?.totalSetsWon.team1 ?? 0) : 0,
+                    "setsB": isLiveOrFinished ? (snapshot?.totalSetsWon.team2 ?? 0) : 0,
+                    "serve": isLiveOrFinished ? (snapshot?.serve ?? "none") : "none",
+                    "setHistory": isLiveOrFinished ? (snapshot?.setHistory.map { $0.displayString } ?? []) : [] as [String],
+
                     "seed1": seed1,
                     "seed2": seed2,
-                    
-                    // Match format (for determining when match ends)
+
                     "setsToWin": currentMatch?.setsToWin ?? 2,
                     "pointsPerSet": currentMatch?.pointsPerSet ?? 21,
                     "pointCap": currentMatch?.pointCap as Any,
-                    
-                    // Up Next - empty string if no actual next match
+
                     "nextMatch": court.nextMatch?.displayName ?? ""
                 ]
                 
@@ -412,7 +404,8 @@ tailwind.config = {
   -webkit-text-fill-color: transparent;
   font-variant-numeric: tabular-nums;
   font-style: italic;
-  line-height: 1;
+  line-height: 1.15;
+  padding-bottom: 2px;
   padding: 0.25em 0.35em;
 }
 .bubble-bar {
@@ -433,10 +426,25 @@ tailwind.config = {
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
 
 /* Confetti celebration */
-@keyframes confetti-fall {
-  0% { transform: translateY(-5px) rotate(0deg); opacity: 0; }
-  10% { opacity: 0.85; }
-  100% { transform: translateY(80px) rotate(720deg); opacity: 0; }
+@keyframes cf-drift-1 {
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
+  8% { opacity: 0.9; }
+  100% { transform: translateY(90px) translateX(15px) rotate(540deg); opacity: 0; }
+}
+@keyframes cf-drift-2 {
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
+  8% { opacity: 0.85; }
+  100% { transform: translateY(85px) translateX(-12px) rotate(680deg); opacity: 0; }
+}
+@keyframes cf-drift-3 {
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.8; }
+  100% { transform: translateY(95px) translateX(8px) rotate(420deg); opacity: 0; }
+}
+@keyframes cf-drift-4 {
+  0% { transform: translateY(-10px) translateX(0px) rotate(0deg); opacity: 0; }
+  6% { opacity: 0.9; }
+  100% { transform: translateY(80px) translateX(-18px) rotate(760deg); opacity: 0; }
 }
 .confetti-container {
   position: absolute;
@@ -456,19 +464,27 @@ tailwind.config = {
   top: -10%;
   border-radius: 1px;
 }
-.confetti-container.active .confetti-piece {
-  animation: confetti-fall 3s linear infinite;
-}
-.cf-1 { left: 10%; background: #D4AF37; animation-delay: 0s; }
-.cf-2 { left: 22%; background: #FFD700; animation-delay: 0.5s; }
-.cf-3 { left: 35%; background: #FFFFFF; animation-delay: 1.2s; }
-.cf-4 { left: 48%; background: #D4AF37; animation-delay: 0.2s; }
-.cf-5 { left: 60%; background: #FFD700; animation-delay: 1.8s; }
-.cf-6 { left: 72%; background: #F9E29B; animation-delay: 0.9s; }
-.cf-7 { left: 15%; background: #D4AF37; animation-delay: 2.1s; }
-.cf-8 { left: 42%; background: #FFFFFF; animation-delay: 0.7s; }
-.cf-9 { left: 80%; background: #FFD700; animation-delay: 1.5s; }
-.cf-10 { left: 90%; background: #D4AF37; animation-delay: 2.5s; }
+/* Intro: staggered delays so confetti cascades in from top, then loops persistently */
+.confetti-container.active .cf-1  { animation: cf-drift-1 2.4s ease-in-out infinite; animation-delay: 0.0s; }
+.confetti-container.active .cf-2  { animation: cf-drift-3 2.8s ease-in-out infinite; animation-delay: 0.15s; }
+.confetti-container.active .cf-3  { animation: cf-drift-2 3.2s ease-in-out infinite; animation-delay: 0.35s; }
+.confetti-container.active .cf-4  { animation: cf-drift-4 2.6s ease-in-out infinite; animation-delay: 0.1s; }
+.confetti-container.active .cf-5  { animation: cf-drift-1 3.0s ease-in-out infinite; animation-delay: 0.5s; }
+.confetti-container.active .cf-6  { animation: cf-drift-3 2.5s ease-in-out infinite; animation-delay: 0.25s; }
+.confetti-container.active .cf-7  { animation: cf-drift-2 2.9s ease-in-out infinite; animation-delay: 0.6s; }
+.confetti-container.active .cf-8  { animation: cf-drift-4 3.1s ease-in-out infinite; animation-delay: 0.2s; }
+.confetti-container.active .cf-9  { animation: cf-drift-1 2.7s ease-in-out infinite; animation-delay: 0.45s; }
+.confetti-container.active .cf-10 { animation: cf-drift-3 3.3s ease-in-out infinite; animation-delay: 0.7s; }
+.cf-1  { left: 8%;  background: #D4AF37; }
+.cf-2  { left: 24%; background: #FFD700; }
+.cf-3  { left: 38%; background: #FFFFFF; }
+.cf-4  { left: 50%; background: #D4AF37; }
+.cf-5  { left: 65%; background: #FFD700; }
+.cf-6  { left: 75%; background: #F9E29B; }
+.cf-7  { left: 14%; background: #D4AF37; }
+.cf-8  { left: 44%; background: #FFFFFF; }
+.cf-9  { left: 82%; background: #FFD700; }
+.cf-10 { left: 92%; background: #D4AF37; }
 
 /* Trophy & winner styling */
 .trophy-icon {
@@ -738,6 +754,11 @@ let nextMatchTimer = null;
 let transitionInProgress = false;
 let celebrationActive = false;
 
+// Match change detection - track current match to detect manual/auto advances
+let currentMatchTeam1 = '';
+let currentMatchTeam2 = '';
+let pendingMatchChange = null; // { team1, team2, data } when match change detected
+
 // DOM refs
 const scorebug = document.getElementById('scorebug');
 const scoringContent = document.getElementById('scoring-content');
@@ -977,6 +998,152 @@ function clearCelebration() {
   if (sc1El) sc1El.classList.remove('loser-dim');
   if (sc2El) sc2El.classList.remove('loser-dim');
   if (setLabel) setLabel.textContent = 'SET';
+}
+
+/* ===== MATCH CHANGE DETECTION ===== */
+
+// Check if the match has changed (different team names)
+function hasMatchChanged(d) {
+  const newTeam1 = cleanName(d.team1 || '');
+  const newTeam2 = cleanName(d.team2 || '');
+  
+  // Skip if we don't have valid team data yet
+  if (!newTeam1 && !newTeam2) return false;
+  
+  // Skip if current match isn't tracked yet (first load)
+  if (!currentMatchTeam1 && !currentMatchTeam2) return false;
+  
+  // Check if teams are different
+  const team1Changed = newTeam1 !== currentMatchTeam1;
+  const team2Changed = newTeam2 !== currentMatchTeam2;
+  
+  return team1Changed || team2Changed;
+}
+
+// Update the tracked current match
+function updateCurrentMatch(team1, team2) {
+  currentMatchTeam1 = cleanName(team1 || '');
+  currentMatchTeam2 = cleanName(team2 || '');
+}
+
+// Animate match change: scoring → intermission (brief) → scoring with new teams
+function animateMatchChange(newTeam1, newTeam2, newData) {
+  if (transitionInProgress) {
+    // Queue the match change for after current transition
+    pendingMatchChange = { team1: newTeam1, team2: newTeam2, data: newData };
+    return;
+  }
+  
+  transitionInProgress = true;
+  clearCelebration();
+  console.log('[Overlay] Animating match change to:', abbreviateName(newTeam1), 'vs', abbreviateName(newTeam2));
+  
+  // Pre-set the intermission team names (hidden)
+  if (intTeam1) {
+    intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
+    intTeam1.style.transform = 'translateX(30px)';
+    intTeam1.style.opacity = '0';
+  }
+  if (intTeam2) {
+    intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+    intTeam2.style.transform = 'translateX(-30px)';
+    intTeam2.style.opacity = '0';
+  }
+  if (intVs) intVs.style.opacity = '0';
+  
+  // Phase 1 (0-400ms): Retract bubbles
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+  nextBar.classList.remove('visible');
+  nextBar.classList.add('hidden-up');
+  
+  // Phase 2 (400-700ms): Slide scoring elements inward + fade
+  setTimeout(function() {
+    if (scoringContent) scoringContent.classList.add('slide-out');
+  }, 400);
+  
+  // Phase 3 (700-900ms): Swap to intermission content briefly
+  setTimeout(function() {
+    if (scoringContent) {
+      scoringContent.style.opacity = '0';
+      scoringContent.style.pointerEvents = 'none';
+    }
+    if (intermissionContent) intermissionContent.classList.add('visible');
+    
+    // Show team names sliding out
+    requestAnimationFrame(function() {
+      if (intTeam1) {
+        intTeam1.style.transform = 'translateX(0)';
+        intTeam1.style.opacity = '1';
+      }
+      if (intTeam2) {
+        intTeam2.style.transform = 'translateX(0)';
+        intTeam2.style.opacity = '1';
+      }
+      if (intVs) intVs.style.opacity = '1';
+    });
+  }, 700);
+  
+  // Phase 4 (1700-2000ms): Start transitioning back to scoring
+  setTimeout(function() {
+    // Hide intermission content
+    if (intTeam1) {
+      intTeam1.style.transform = 'translateX(30px)';
+      intTeam1.style.opacity = '0';
+    }
+    if (intTeam2) {
+      intTeam2.style.transform = 'translateX(-30px)';
+      intTeam2.style.opacity = '0';
+    }
+    if (intVs) intVs.style.opacity = '0';
+  }, 1700);
+  
+  // Phase 5 (2000-2300ms): Show scoring with new data
+  setTimeout(function() {
+    if (intermissionContent) intermissionContent.classList.remove('visible');
+    
+    // Update current match tracking
+    updateCurrentMatch(newTeam1, newTeam2);
+    
+    // Reset score tracking for serve indicator
+    window.prevScore1 = undefined;
+    window.prevScore2 = undefined;
+    window.lastServe = undefined;
+    lastTriggerScore = -1;
+    
+    // Apply new data
+    applyData(newData);
+    
+    // Reset and show scoring content
+    if (scoringContent) {
+      scoringContent.classList.remove('slide-out');
+      scoringContent.style.opacity = '1';
+      scoringContent.style.pointerEvents = 'auto';
+    }
+    scorebug.style.width = SCORING_WIDTH;
+  }, 2000);
+  
+  // Phase 6 (2300ms): Complete - show social bar
+  setTimeout(function() {
+    socialBar.classList.remove('hidden-up');
+    socialBar.classList.add('visible');
+    
+    overlayState = 'scoring';
+    transitionInProgress = false;
+    matchFinishedAt = null;
+    postMatchTimer = null;
+    
+    console.log('[Overlay] Match change complete');
+    
+    // Handle any queued match change
+    if (pendingMatchChange) {
+      const pending = pendingMatchChange;
+      pendingMatchChange = null;
+      setTimeout(function() {
+        animateMatchChange(pending.team1, pending.team2, pending.data);
+      }, 500);
+    }
+  }, 2300);
 }
 
 /* ===== OVERLAY STATE TRANSITIONS ===== */
@@ -1234,6 +1401,9 @@ async function tick() {
     // First load — set up initial state without animation
     if (firstLoad) {
       firstLoad = false;
+      // Initialize current match tracking
+      updateCurrentMatch(d.team1 || '', d.team2 || '');
+      
       if (newState === 'intermission' || newState === 'scoring' && ((d.score1 || 0) + (d.score2 || 0)) === 0) {
         // Show intermission immediately
         const team1 = d.team1 || '';
@@ -1259,6 +1429,25 @@ async function tick() {
       }
     }
 
+    // *** MATCH CHANGE DETECTION ***
+    // Detect if match changed (manual skip via arrow keys, or auto-advance)
+    if (hasMatchChanged(d) && !transitionInProgress) {
+      const newTeam1 = d.team1 || '';
+      const newTeam2 = d.team2 || '';
+      console.log('[Overlay] Match change detected:', currentMatchTeam1, '->', newTeam1);
+      
+      // If we're in scoring/postmatch, animate the transition
+      if (overlayState === 'scoring' || overlayState === 'postmatch') {
+        animateMatchChange(newTeam1, newTeam2, d);
+        return; // Let the animation handle everything
+      } else if (overlayState === 'intermission') {
+        // Update intermission with new teams
+        updateCurrentMatch(newTeam1, newTeam2);
+        if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
+        if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+      }
+    }
+
     // Handle state transitions
     if (newState === 'postmatch' && overlayState === 'scoring') {
       overlayState = 'postmatch';
@@ -1267,21 +1456,27 @@ async function tick() {
     }
 
     if (newState === 'intermission' && overlayState !== 'intermission' && !transitionInProgress) {
-      const nextMatch = d.nextMatch || '';
+      const courtStatus = (d.courtStatus || '').toLowerCase();
       const team1 = d.team1 || '';
       const team2 = d.team2 || '';
-      const parts = nextMatch.split(/\s+vs\.?\s+/i);
-      if (parts.length >= 2) {
-        transitionToIntermission(parts[0], parts[1]);
-      } else if (nextMatch) {
-        transitionToIntermission(nextMatch, 'TBD');
-      } else {
-        // No next match info — use current team names
+      // After auto-advance, court is 'waiting' and team1/team2 already reflect the new match
+      if (courtStatus === 'waiting' || courtStatus === 'idle') {
         transitionToIntermission(team1, team2);
+      } else {
+        // Coming from postmatch hold — use nextMatch to preview upcoming teams
+        const nextMatch = d.nextMatch || '';
+        const parts = nextMatch.split(/\s+vs\.?\s+/i);
+        if (parts.length >= 2) {
+          transitionToIntermission(parts[0], parts[1]);
+        } else {
+          transitionToIntermission(team1, team2);
+        }
       }
     }
 
     if (newState === 'scoring' && overlayState === 'intermission' && !transitionInProgress) {
+      // Update match tracking before transitioning to scoring
+      updateCurrentMatch(d.team1 || '', d.team2 || '');
       transitionToScoring();
     }
 
