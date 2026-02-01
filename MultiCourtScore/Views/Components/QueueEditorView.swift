@@ -30,7 +30,7 @@ struct QueueEditorView: View {
             HSplitView {
                 // Queue list (left panel)
                 queueList
-                    .frame(minWidth: 500)
+                    .frame(minWidth: 650)
 
                 // Detail panel (right panel)
                 detailPanel
@@ -40,7 +40,7 @@ struct QueueEditorView: View {
             // Bottom toolbar
             toolbar
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 1100, minHeight: 700)
         .background(AppColors.background)
         .onExitCommand { dismiss() }
         .onAppear {
@@ -195,18 +195,6 @@ struct QueueEditorView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
-                    .draggable(row.id.uuidString)
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let droppedId = items.first,
-                              let droppedUUID = UUID(uuidString: droppedId),
-                              let fromIndex = rows.firstIndex(where: { $0.id == droppedUUID }) else {
-                            return false
-                        }
-                        if fromIndex != index {
-                            rows.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: index > fromIndex ? index + 1 : index)
-                        }
-                        return true
-                    }
                 }
                 .onMove { from, to in
                     rows.move(fromOffsets: from, toOffset: to)
