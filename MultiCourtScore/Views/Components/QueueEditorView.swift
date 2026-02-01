@@ -195,6 +195,18 @@ struct QueueEditorView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                    .draggable(row.id.uuidString)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let droppedId = items.first,
+                              let droppedUUID = UUID(uuidString: droppedId),
+                              let fromIndex = rows.firstIndex(where: { $0.id == droppedUUID }) else {
+                            return false
+                        }
+                        if fromIndex != index {
+                            rows.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: index > fromIndex ? index + 1 : index)
+                        }
+                        return true
+                    }
                 }
                 .onMove { from, to in
                     rows.move(fromOffsets: from, toOffset: to)

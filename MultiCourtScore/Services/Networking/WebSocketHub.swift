@@ -541,10 +541,10 @@ body {
     </div>
     
     <!-- Next Match Bar (hidden by default) -->
-    <div id="next-bar" class="bubble-bar hidden-up" style="padding: 0.375rem 1.25rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-      <span style="font-size: 10px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 0.05em;">Next</span>
-      <span style="color: rgba(255,255,255,0.3);">|</span>
-      <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase;">Loading...</span>
+    <div id="next-bar" class="bubble-bar hidden-up" style="padding: 0.375rem 1.25rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5); white-space: nowrap; flex-wrap: nowrap;">
+      <span style="font-size: 10px; font-weight: 900; color: #D4AF37; text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;">Next</span>
+      <span style="color: rgba(255,255,255,0.3); flex-shrink: 0;">|</span>
+      <span id="next-teams" style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.95); text-transform: uppercase; white-space: nowrap;">Loading...</span>
     </div>
   </div>
 </div>
