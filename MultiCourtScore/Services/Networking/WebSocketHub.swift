@@ -408,6 +408,20 @@ tailwind.config = {
   padding-bottom: 2px;
   padding: 0.25em 0.35em;
 }
+/* Status bubble with subtle pulse animation */
+.status-bubble {
+  animation: status-pulse 2.5s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 8px rgba(212,175,55,0.2);
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 15px rgba(212,175,55,0.4);
+    transform: scale(1.02);
+  }
+}
 .bubble-bar {
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(8px);
@@ -905,19 +919,27 @@ function applyData(d) {
       let isLeftServing = false;
       let isRightServing = false;
 
+      // Detect serve based on who just scored (score increased)
       if (window.prevScore1 !== undefined && window.prevScore2 !== undefined) {
         if (d.score1 > window.prevScore1) {
           isLeftServing = true;
         } else if (d.score2 > window.prevScore2) {
           isRightServing = true;
         } else {
+          // No score change - keep previous serve indicator
           isLeftServing = window.lastServe === 'left';
           isRightServing = window.lastServe === 'right';
         }
       } else if (combinedScore === 0) {
+        // Match hasn't started - initialize scores for tracking
+        window.prevScore1 = 0;
+        window.prevScore2 = 0;
         isLeftServing = false;
         isRightServing = false;
       } else {
+        // First time seeing scores > 0 with no prev - use API serve data if available
+        window.prevScore1 = d.score1;
+        window.prevScore2 = d.score2;
         const srv = (d.serve || "").toLowerCase();
         isLeftServing = srv.includes('home') || srv.includes('team1');
         isRightServing = srv.includes('away') || srv.includes('team2');
@@ -1490,6 +1512,11 @@ async function tick() {
       if (combinedScore > 0 || matchFinished) {
         console.log('[Overlay] First load: Active scoring detected (score:', combinedScore, ')');
         overlayState = matchFinished ? 'postmatch' : 'scoring';
+        
+        // Initialize score tracking for serve indicator
+        window.prevScore1 = 0;
+        window.prevScore2 = 0;
+        
         if (scoringContent) {
           scoringContent.style.opacity = '1';
           scoringContent.style.pointerEvents = 'auto';

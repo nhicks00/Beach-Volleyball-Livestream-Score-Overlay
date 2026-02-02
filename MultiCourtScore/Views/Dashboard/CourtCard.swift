@@ -276,36 +276,57 @@ struct CourtCard: View {
 
     private var cardFooter: some View {
         HStack(spacing: 8) {
-            // Navigation buttons
-            HStack(spacing: 4) {
+            // Navigation buttons - larger and more prominent
+            HStack(spacing: 6) {
                 Button {
                     onSkipPrevious()
                 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Prev")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill((court.activeIndex ?? 0) <= 0 ? Color.clear : AppColors.surfaceHover)
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled((court.activeIndex ?? 0) <= 0)
                 
-                Text("\((court.activeIndex ?? 0) + 1)/\(court.queue.count)")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(AppColors.textMuted)
+                    .padding(.horizontal, 4)
                 
                 Button {
                     onSkipNext()
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                    HStack(spacing: 4) {
+                        Text("Next")
+                            .font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill((court.activeIndex ?? 0) >= court.queue.count - 1 ? Color.clear : AppColors.surfaceHover)
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 4)
             .padding(.vertical, 3)
-            .background(AppColors.surfaceElevated.opacity(0.5))
-            .cornerRadius(4)
+            .background(AppColors.surfaceElevated.opacity(0.3))
+            .cornerRadius(6)
             
             Spacer()
 

@@ -44,9 +44,9 @@ struct DashboardView: View {
     // Filter
     @State private var courtFilter: CourtFilter = .all
 
-    // Adaptive grid
+    // Adaptive grid - larger cards to fill fullscreen better
     private let columns = [
-        GridItem(.adaptive(minimum: 420, maximum: 600), spacing: AppLayout.cardSpacing)
+        GridItem(.adaptive(minimum: 480, maximum: 700), spacing: AppLayout.cardSpacing)
     ]
 
     private var filteredCourts: [Court] {
