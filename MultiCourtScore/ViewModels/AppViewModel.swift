@@ -432,39 +432,84 @@ final class AppViewModel: ObservableObject {
         let startIndex = (courts[idx].activeIndex ?? -1) + 1
         guard startIndex < queueCount else { return }
 
-        for i in startIndex..<queueCount {
-            // Re-validate index before each access (queue may have changed)
-            guard let courtIdx = courtIndex(for: courtId),
-                  i < courts[courtIdx].queue.count else {
-                print("⚠️ Queue changed during metadata refresh, stopping early")
-                return
-            }
-
-            let match = courts[courtIdx].queue[i]
-
-            do {
-                // Fetch fresh data for the queued match
-                let data = try await apiClient.fetchData(from: match.apiURL)
-                let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
-
-                // Re-validate again before write
-                guard let writeIdx = courtIndex(for: courtId),
-                      i < courts[writeIdx].queue.count else {
+            for i in startIndex..<queueCount {
+                // Re-validate index before each access (queue may have changed)
+                guard let courtIdx = courtIndex(for: courtId),
+                      i < courts[courtIdx].queue.count else {
                     print("⚠️ Queue changed during metadata refresh, stopping early")
                     return
                 }
 
-                // Update names if changed
-                if snapshot.team1Name != match.team1Name || snapshot.team2Name != match.team2Name {
-                    print("🔄 Updated queue metadata for match \(i): \(snapshot.team1Name) vs \(snapshot.team2Name)")
-                    courts[writeIdx].queue[i].team1Name = snapshot.team1Name
-                    courts[writeIdx].queue[i].team2Name = snapshot.team2Name
+                let match = courts[courtIdx].queue[i]
+
+                do {
+                    // Fetch fresh data for the queued match
+                    let data = try await apiClient.fetchData(from: match.apiURL)
+                    let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
+
+                    // Re-validate again before write
+                    guard let writeIdx = courtIndex(for: courtId),
+                          i < courts[writeIdx].queue.count else {
+                        print("⚠️ Queue changed during metadata refresh, stopping early")
+                        return
+                    }
+                    
+                    var hasChanges = false
+                    let oldMatch = courts[writeIdx].queue[i]
+
+                    // Update Names
+                    if snapshot.team1Name != match.team1Name {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Team 1", old: match.team1Name ?? "", new: snapshot.team1Name)
+                        courts[writeIdx].queue[i].team1Name = snapshot.team1Name
+                        hasChanges = true
+                    }
+                    if snapshot.team2Name != match.team2Name {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Team 2", old: match.team2Name ?? "", new: snapshot.team2Name)
+                        courts[writeIdx].queue[i].team2Name = snapshot.team2Name
+                        hasChanges = true
+                    }
+                    
+                    // Update Time
+                    if let newTime = snapshot.scheduledTime, newTime != match.scheduledTime {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Time", old: match.scheduledTime ?? "", new: newTime)
+                        courts[writeIdx].queue[i].scheduledTime = newTime
+                        hasChanges = true
+                    }
+                    
+                    // Update Match Number
+                    if let newMatchNum = snapshot.matchNumber, newMatchNum != match.matchNumber {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Match #", old: match.matchNumber ?? "", new: newMatchNum)
+                        courts[writeIdx].queue[i].matchNumber = newMatchNum
+                        hasChanges = true
+                    }
+                    
+                    // Update Court Number
+                    if let newCourt = snapshot.courtNumber, newCourt != match.courtNumber {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Court", old: match.courtNumber ?? "", new: newCourt)
+                        courts[writeIdx].queue[i].courtNumber = newCourt
+                        hasChanges = true
+                    }
+                    
+                    // Update Seeds
+                    if let newSeed1 = snapshot.team1Seed, newSeed1 != match.team1Seed {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Seed 1", old: match.team1Seed ?? "", new: newSeed1)
+                        courts[writeIdx].queue[i].team1Seed = newSeed1
+                        hasChanges = true
+                    }
+                    if let newSeed2 = snapshot.team2Seed, newSeed2 != match.team2Seed {
+                        ChangeLogService.shared.logChange(courtId: courtId, match: match, field: "Seed 2", old: match.team2Seed ?? "", new: newSeed2)
+                        courts[writeIdx].queue[i].team2Seed = newSeed2
+                        hasChanges = true
+                    }
+                    
+                    if hasChanges {
+                        print("✅ Updated queue metadata for match \(i)")
+                    }
+                } catch {
+                    print("⚠️ Failed to refresh queue metadata: \(error.localizedDescription)")
                 }
-            } catch {
-                print("⚠️ Failed to refresh queue metadata: \(error.localizedDescription)")
             }
         }
-    }
     
     // MARK: - Court Change Detection (60-second polling)
     
@@ -735,8 +780,11 @@ final class AppViewModel: ObservableObject {
             setNumber: setNum,
             team1Name: name1,
             team2Name: name2,
-            team1Seed: currentMatch?.team1Seed,
-            team2Seed: currentMatch?.team2Seed,
+            team1Seed: (t1["seed"] as? String) ?? currentMatch?.team1Seed,
+            team2Seed: (t2["seed"] as? String) ?? currentMatch?.team2Seed,
+            scheduledTime: (array[0]["time"] as? String) ?? currentMatch?.scheduledTime,
+            matchNumber: (array[0]["match"] as? String) ?? currentMatch?.matchNumber,
+            courtNumber: (array[0]["court"] as? String) ?? currentMatch?.courtNumber,
             team1Score: score1,
             team2Score: score2,
             serve: nil,
@@ -765,8 +813,11 @@ final class AppViewModel: ObservableObject {
             setNumber: setNum,
             team1Name: name1,
             team2Name: name2,
-            team1Seed: currentMatch?.team1Seed,
-            team2Seed: currentMatch?.team2Seed,
+            team1Seed: (dict["seed1"] as? String) ?? currentMatch?.team1Seed,
+            team2Seed: (dict["seed2"] as? String) ?? currentMatch?.team2Seed,
+            scheduledTime: (dict["time"] as? String) ?? currentMatch?.scheduledTime,
+            matchNumber: (dict["matchNumber"] as? String) ?? currentMatch?.matchNumber,
+            courtNumber: (dict["court"] as? String) ?? currentMatch?.courtNumber,
             team1Score: home,
             team2Score: away,
             serve: dict["serve"] as? String,
