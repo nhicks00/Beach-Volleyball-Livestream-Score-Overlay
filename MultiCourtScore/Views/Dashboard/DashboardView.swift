@@ -100,7 +100,11 @@ struct DashboardView: View {
                     }
                 
                 GeometryReader { geo in
-                    QueueEditorView(courtId: config.id)
+                    QueueEditorView(courtId: config.id, onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                editorConfig = nil
+                            }
+                        })
                         .environmentObject(appViewModel)
                         .frame(
                             width: min(max(geo.size.width * 0.85, 900), 1400),

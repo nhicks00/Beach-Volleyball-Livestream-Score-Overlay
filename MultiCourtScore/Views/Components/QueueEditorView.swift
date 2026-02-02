@@ -9,9 +9,9 @@ import SwiftUI
 
 struct QueueEditorView: View {
     @EnvironmentObject var appViewModel: AppViewModel
-    @Environment(\.dismiss) private var dismiss
 
     let courtId: Int
+    var onDismiss: () -> Void = {}
 
     @State private var rows: [QueueRow] = []
     @State private var errorMessage: String?
@@ -42,7 +42,7 @@ struct QueueEditorView: View {
         }
         .frame(minWidth: 1100, minHeight: 700)
         .background(AppColors.background)
-        .onExitCommand { dismiss() }
+        .onExitCommand { onDismiss() }
         .onAppear {
             loadQueue()
         }
@@ -53,7 +53,7 @@ struct QueueEditorView: View {
     private var header: some View {
         HStack(spacing: 16) {
             // Back button
-            Button { dismiss() } label: {
+            Button { onDismiss() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -112,7 +112,7 @@ struct QueueEditorView: View {
             Divider()
                 .frame(height: 24)
 
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { onDismiss() }
                 .buttonStyle(.bordered)
 
             Button {
@@ -128,7 +128,7 @@ struct QueueEditorView: View {
             .tint(errorMessage != nil ? AppColors.error : AppColors.success)
 
             // Prominent close button
-            Button { dismiss() } label: {
+            Button { onDismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -365,7 +365,7 @@ struct QueueEditorView: View {
 
         errorMessage = nil
         appViewModel.replaceQueue(courtId, with: items)
-        dismiss()
+        onDismiss()
     }
 
     private func moveRow(at index: Int, direction: Int) {
