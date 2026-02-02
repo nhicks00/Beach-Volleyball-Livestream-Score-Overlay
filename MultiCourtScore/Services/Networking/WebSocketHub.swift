@@ -1462,6 +1462,16 @@ function transitionToScoring(data) {
   if (transitionInProgress || overlayState === 'scoring') return;
   transitionInProgress = true;
 
+  // IMMEDIATELY hide scoring content and reset scores to prevent flash
+  if (scoringContent) {
+    scoringContent.style.opacity = '0';
+    scoringContent.style.pointerEvents = 'none';
+  }
+  const sc1El = document.getElementById('sc1');
+  const sc2El = document.getElementById('sc2');
+  if (sc1El) sc1El.textContent = '0';
+  if (sc2El) sc2El.textContent = '0';
+
   // Phase 1 (0-400ms): Retract status bubble
   intStatusBar.classList.remove('visible');
   intStatusBar.classList.add('hidden-up');

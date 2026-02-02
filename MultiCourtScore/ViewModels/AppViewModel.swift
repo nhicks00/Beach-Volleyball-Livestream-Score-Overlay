@@ -267,6 +267,9 @@ final class AppViewModel: ObservableObject {
             // Pass matchItem to normalizeData to access seeds
             let snapshot = normalizeData(data, courtId: courtId, currentMatch: matchItem)
             
+            // Smart Queue Switch: If current match is 0-0 but another has scoring, switch to it
+            await checkForSmartQueueSwitch(courtId: courtId, currentSnapshot: snapshot)
+            
             // Inactivity Check: Has score CHANGED (points OR sets) since last poll?
             let currentS1 = snapshot.team1Score
             let currentS2 = snapshot.team2Score
@@ -380,6 +383,43 @@ final class AppViewModel: ObservableObject {
             return snapshot.hasStarted
         } catch {
             return false
+        }
+    }
+    
+    /// Smart Queue Switch: Check if current match is 0-0 but another queue match has active scoring.
+    /// If so, auto-switch to the active match to prioritize live content.
+    private func checkForSmartQueueSwitch(courtId: Int, currentSnapshot: ScoreSnapshot) async {
+        guard let idx = courtIndex(for: courtId) else { return }
+        guard let activeIdx = courts[idx].activeIndex else { return }
+        
+        // Only smart-switch if current match hasn't started (0-0)
+        let currentScore = currentSnapshot.team1Score + currentSnapshot.team2Score
+        guard currentScore == 0 else { return }
+        
+        // Don't switch if we've been live on this match (liveSince set)
+        if courts[idx].liveSince != nil { return }
+        
+        // Scan queue for any match with active scoring
+        for (queueIdx, match) in courts[idx].queue.enumerated() {
+            guard queueIdx != activeIdx else { continue } // Skip current
+            
+            do {
+                let data = try await apiClient.fetchData(from: match.apiURL)
+                let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
+                
+                // Check if this match has active scoring (not finished, not 0-0)
+                let score = snapshot.team1Score + snapshot.team2Score
+                if score > 0 && !snapshot.isFinal {
+                    print("🔄 Smart Queue Switch: Found active match at index \(queueIdx) with score \(score). Switching from 0-0 match at index \(activeIdx)")
+                    courts[idx].activeIndex = queueIdx
+                    courts[idx].lastSnapshot = nil
+                    courts[idx].status = .waiting
+                    return // Only switch to first found active match
+                }
+            } catch {
+                // Ignore errors, just skip this match
+                continue
+            }
         }
     }
     
