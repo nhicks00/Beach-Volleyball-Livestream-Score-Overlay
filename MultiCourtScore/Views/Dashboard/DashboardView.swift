@@ -88,7 +88,27 @@ struct DashboardView: View {
                 // Status bar footer
                 statusBar
             }
+            
+            // Queue Editor Overlay - click outside to dismiss
+            if let config = editorConfig {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            editorConfig = nil
+                        }
+                    }
+                
+                QueueEditorView(courtId: config.id)
+                    .environmentObject(appViewModel)
+                    .frame(minWidth: 1100, minHeight: 700)
+                    .background(AppColors.background)
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.5), radius: 20)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: editorConfig != nil)
         // Rename Alert
         .alert("Rename Overlay", isPresented: Binding(
             get: { renamingCourtId != nil },
@@ -105,13 +125,9 @@ struct DashboardView: View {
         } message: {
             Text("Enter a new name for this overlay")
         }
-        // Modal sheets
+        // Modal sheets (scanner and settings still use sheets)
         .sheet(isPresented: $showScannerSheet) {
             ScanWorkflowView()
-                .environmentObject(appViewModel)
-        }
-        .sheet(item: $editorConfig) { config in
-            QueueEditorView(courtId: config.id)
                 .environmentObject(appViewModel)
         }
         .sheet(isPresented: $showSettingsSheet) {
