@@ -1309,7 +1309,8 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 }
 
 // Transition from Intermission → Scoring (animated)
-function transitionToScoring() {
+// Pass data parameter to pre-populate team names before reveal
+function transitionToScoring(data) {
   if (transitionInProgress || overlayState === 'scoring') return;
   transitionInProgress = true;
 
@@ -1330,10 +1331,15 @@ function transitionToScoring() {
     if (intVs) intVs.style.opacity = '0';
   }, 400);
 
-  // Phase 3 (900-1400ms): Width expands back to scoring
+  // Phase 3 (900-1400ms): Width expands back to scoring + PRE-APPLY DATA
   setTimeout(function() {
     if (intermissionContent) intermissionContent.classList.remove('visible');
     scorebug.style.width = SCORING_WIDTH;
+    
+    // Pre-apply data WHILE hidden to avoid placeholder flash
+    if (data) {
+      applyData(data);
+    }
   }, 900);
 
   // Phase 4 (1400-1900ms): Scoring elements slide outward from center
@@ -1496,7 +1502,7 @@ async function tick() {
     if (newState === 'scoring' && overlayState === 'intermission' && !transitionInProgress) {
       // Update match tracking before transitioning to scoring
       updateCurrentMatch(d.team1 || '', d.team2 || '');
-      transitionToScoring();
+      transitionToScoring(d); // Pass data to pre-populate before reveal
     }
 
     // Apply data to scoring overlay if in scoring or postmatch state
