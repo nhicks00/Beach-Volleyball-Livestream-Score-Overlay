@@ -499,11 +499,11 @@ tailwind.config = {
 .confetti-container.active { opacity: 1; }
 .confetti-piece {
   position: absolute;
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 12px;
   opacity: 0;
   top: -8%;
-  border-radius: 0;
+  border-radius: 1px;
   transform-style: preserve-3d;
 }
 /* Evenly staggered timing ensures 5+ pieces visible at all times */
@@ -677,8 +677,9 @@ body {
           <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
           <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem; position: relative; z-index: 20;">
+        <div style="display: flex; align-items: flex-start; gap: 0.5rem; position: relative; z-index: 20;">
           <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
+          <span id="seed1" style="font-size: 0.75rem; font-weight: 700; color: rgba(212,175,55,0.8); margin-top: 0.1rem; min-width: 1rem; text-align: center;"></span>
           <div style="display: flex; flex-direction: column; justify-content: center;">
             <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
             <div id="pips1" style="display: flex; gap: 0.375rem;">
@@ -686,7 +687,7 @@ body {
               <div class="set-pip bg-gold-muted"></div>
             </div>
           </div>
-          <span id="serve-left" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+          <span id="serve-left" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0; margin-top: -0.1rem;">sports_volleyball</span>
         </div>
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc1" class="score-text">0</span>
@@ -715,8 +716,8 @@ body {
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc2" class="score-text">0</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem; text-align: right; position: relative; z-index: 20;">
-          <span id="serve-right" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+        <div style="display: flex; align-items: flex-start; gap: 0.5rem; text-align: right; position: relative; z-index: 20;">
+          <span id="serve-right" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0; margin-top: -0.1rem;">sports_volleyball</span>
           <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
             <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
             <div id="pips2" style="display: flex; gap: 0.375rem;">
@@ -724,6 +725,7 @@ body {
               <div class="set-pip bg-gold-muted"></div>
             </div>
           </div>
+          <span id="seed2" style="font-size: 0.75rem; font-weight: 700; color: rgba(212,175,55,0.8); margin-top: 0.1rem; min-width: 1rem; text-align: center;"></span>
           <span id="trophy-right" class="material-symbols-outlined trophy-icon">emoji_events</span>
         </div>
       </div>
@@ -936,6 +938,12 @@ function applyData(d) {
   const t2El = document.getElementById('t2');
   if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
   if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
+  
+  // Team seeds (show on outside of team names)
+  const seed1El = document.getElementById('seed1');
+  const seed2El = document.getElementById('seed2');
+  if (seed1El) seed1El.textContent = d.team1Seed || '';
+  if (seed2El) seed2El.textContent = d.team2Seed || '';
 
   // Scores - with flip animation on change
   const sc1El = document.getElementById('sc1');
