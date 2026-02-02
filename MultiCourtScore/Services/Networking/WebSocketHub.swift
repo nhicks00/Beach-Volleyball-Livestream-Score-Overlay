@@ -425,40 +425,46 @@ tailwind.config = {
 .bg-gold { background-color: #D4AF37; }
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
 
-/* Confetti celebration */
+/* Confetti celebration - slow falling leaves effect */
 @keyframes cf-drift-1 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
-  10% { opacity: 0.9; transform: translateY(5px) translateX(12px) rotate(90deg) scale(0.95); }
-  30% { transform: translateY(25px) translateX(-8px) rotate(220deg) scale(1.05); }
-  50% { transform: translateY(45px) translateX(18px) rotate(380deg) scale(0.9); }
-  70% { transform: translateY(65px) translateX(-5px) rotate(500deg) scale(1); }
-  100% { transform: translateY(95px) translateX(10px) rotate(720deg) scale(0.85); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
+  5% { opacity: 0.85; }
+  15% { transform: translateY(10px) translateX(8px) rotate(25deg) scale(0.98); opacity: 0.9; }
+  35% { transform: translateY(35px) translateX(-5px) rotate(55deg) scale(1.02); }
+  55% { transform: translateY(55px) translateX(12px) rotate(90deg) scale(0.95); }
+  75% { transform: translateY(75px) translateX(-3px) rotate(125deg) scale(1); }
+  95% { opacity: 0.8; }
+  100% { transform: translateY(100px) translateX(6px) rotate(160deg) scale(0.9); opacity: 0; }
 }
 @keyframes cf-drift-2 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
-  8% { opacity: 0.85; transform: translateY(3px) translateX(-15px) rotate(45deg) scale(1.1); }
-  25% { transform: translateY(22px) translateX(10px) rotate(180deg) scale(0.9); }
-  45% { transform: translateY(40px) translateX(-20px) rotate(320deg) scale(1.05); }
-  65% { transform: translateY(58px) translateX(8px) rotate(480deg) scale(0.95); }
-  85% { transform: translateY(78px) translateX(-12px) rotate(620deg) scale(1); }
-  100% { transform: translateY(90px) translateX(5px) rotate(800deg) scale(0.8); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
+  6% { opacity: 0.8; }
+  20% { transform: translateY(15px) translateX(-10px) rotate(-20deg) scale(1.03); opacity: 0.85; }
+  40% { transform: translateY(40px) translateX(6px) rotate(-50deg) scale(0.97); }
+  60% { transform: translateY(60px) translateX(-8px) rotate(-85deg) scale(1.01); }
+  80% { transform: translateY(82px) translateX(4px) rotate(-120deg) scale(0.95); }
+  95% { opacity: 0.75; }
+  100% { transform: translateY(105px) translateX(-3px) rotate(-155deg) scale(0.88); opacity: 0; }
 }
 @keyframes cf-drift-3 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(0.9); opacity: 0; }
-  12% { opacity: 0.8; transform: translateY(8px) translateX(20px) rotate(60deg) scale(1); }
-  35% { transform: translateY(30px) translateX(-15px) rotate(200deg) scale(1.1); }
-  55% { transform: translateY(50px) translateX(25px) rotate(360deg) scale(0.85); }
-  75% { transform: translateY(72px) translateX(-10px) rotate(520deg) scale(1.05); }
-  100% { transform: translateY(92px) translateX(15px) rotate(680deg) scale(0.9); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(0.95); opacity: 0; }
+  8% { opacity: 0.75; }
+  25% { transform: translateY(20px) translateX(15px) rotate(30deg) scale(1); opacity: 0.8; }
+  45% { transform: translateY(45px) translateX(-10px) rotate(65deg) scale(1.05); }
+  65% { transform: translateY(68px) translateX(8px) rotate(100deg) scale(0.98); }
+  85% { transform: translateY(88px) translateX(-5px) rotate(135deg) scale(1.02); }
+  95% { opacity: 0.7; }
+  100% { transform: translateY(108px) translateX(10px) rotate(170deg) scale(0.92); opacity: 0; }
 }
 @keyframes cf-drift-4 {
-  0% { transform: translateY(-10px) translateX(0px) rotate(0deg) scale(1.05); opacity: 0; }
-  6% { opacity: 0.9; transform: translateY(2px) translateX(-10px) rotate(30deg) scale(0.95); }
-  20% { transform: translateY(18px) translateX(22px) rotate(150deg) scale(1.1); }
-  40% { transform: translateY(38px) translateX(-18px) rotate(290deg) scale(0.88); }
-  60% { transform: translateY(55px) translateX(15px) rotate(450deg) scale(1.02); }
-  80% { transform: translateY(75px) translateX(-8px) rotate(600deg) scale(0.92); }
-  100% { transform: translateY(88px) translateX(12px) rotate(780deg) scale(0.85); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1.02); opacity: 0; }
+  4% { opacity: 0.9; }
+  18% { transform: translateY(12px) translateX(-12px) rotate(-15deg) scale(0.98); opacity: 0.88; }
+  38% { transform: translateY(38px) translateX(10px) rotate(-45deg) scale(1.04); }
+  58% { transform: translateY(62px) translateX(-6px) rotate(-75deg) scale(0.96); }
+  78% { transform: translateY(85px) translateX(8px) rotate(-110deg) scale(1); }
+  95% { opacity: 0.82; }
+  100% { transform: translateY(102px) translateX(-4px) rotate(-145deg) scale(0.9); opacity: 0; }
 }
 .confetti-container {
   position: absolute;
@@ -467,28 +473,28 @@ tailwind.config = {
   z-index: 10;
   overflow: hidden;
   opacity: 0;
-  transition: opacity 0.6s ease;
+  transition: opacity 1.5s ease-in;
 }
 .confetti-container.active { opacity: 1; }
 .confetti-piece {
   position: absolute;
-  width: 4px;
-  height: 8px;
+  width: 5px;
+  height: 9px;
   opacity: 0;
-  top: -10%;
-  border-radius: 1px;
+  top: -12%;
+  border-radius: 2px;
 }
-/* Intro: staggered delays so confetti cascades in from top, then loops persistently */
-.confetti-container.active .cf-1  { animation: cf-drift-1 2.4s ease-in-out infinite; animation-delay: 0.0s; }
-.confetti-container.active .cf-2  { animation: cf-drift-3 2.8s ease-in-out infinite; animation-delay: 0.15s; }
-.confetti-container.active .cf-3  { animation: cf-drift-2 3.2s ease-in-out infinite; animation-delay: 0.35s; }
-.confetti-container.active .cf-4  { animation: cf-drift-4 2.6s ease-in-out infinite; animation-delay: 0.1s; }
-.confetti-container.active .cf-5  { animation: cf-drift-1 3.0s ease-in-out infinite; animation-delay: 0.5s; }
-.confetti-container.active .cf-6  { animation: cf-drift-3 2.5s ease-in-out infinite; animation-delay: 0.25s; }
-.confetti-container.active .cf-7  { animation: cf-drift-2 2.9s ease-in-out infinite; animation-delay: 0.6s; }
-.confetti-container.active .cf-8  { animation: cf-drift-4 3.1s ease-in-out infinite; animation-delay: 0.2s; }
-.confetti-container.active .cf-9  { animation: cf-drift-1 2.7s ease-in-out infinite; animation-delay: 0.45s; }
-.confetti-container.active .cf-10 { animation: cf-drift-3 3.3s ease-in-out infinite; animation-delay: 0.7s; }
+/* Slow cascade: staggered delays so confetti fades in gradually from top */
+.confetti-container.active .cf-1  { animation: cf-drift-1 6.0s ease-in-out infinite; animation-delay: 0.0s; }
+.confetti-container.active .cf-2  { animation: cf-drift-3 6.8s ease-in-out infinite; animation-delay: 0.4s; }
+.confetti-container.active .cf-3  { animation: cf-drift-2 7.2s ease-in-out infinite; animation-delay: 0.9s; }
+.confetti-container.active .cf-4  { animation: cf-drift-4 5.8s ease-in-out infinite; animation-delay: 0.2s; }
+.confetti-container.active .cf-5  { animation: cf-drift-1 7.0s ease-in-out infinite; animation-delay: 1.2s; }
+.confetti-container.active .cf-6  { animation: cf-drift-3 5.5s ease-in-out infinite; animation-delay: 0.6s; }
+.confetti-container.active .cf-7  { animation: cf-drift-2 6.5s ease-in-out infinite; animation-delay: 1.5s; }
+.confetti-container.active .cf-8  { animation: cf-drift-4 7.5s ease-in-out infinite; animation-delay: 0.3s; }
+.confetti-container.active .cf-9  { animation: cf-drift-1 5.7s ease-in-out infinite; animation-delay: 1.0s; }
+.confetti-container.active .cf-10 { animation: cf-drift-3 6.3s ease-in-out infinite; animation-delay: 1.8s; }
 .cf-1  { left: 8%;  background: #D4AF37; }
 .cf-2  { left: 24%; background: #FFD700; }
 .cf-3  { left: 38%; background: #FFFFFF; }
