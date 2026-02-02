@@ -449,42 +449,45 @@ tailwind.config = {
 .bg-gold { background-color: #D4AF37; }
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
 
-/* Confetti celebration - 3D spinning squares effect */
+/* Confetti celebration - 3D tumbling flat rectangles */
 @keyframes cf-drift-1 {
   0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
-  5% { opacity: 0.9; }
-  20% { transform: translateY(18px) translateX(8px) rotateY(90deg) rotateZ(20deg); opacity: 0.95; }
-  40% { transform: translateY(42px) translateX(-5px) rotateY(180deg) rotateZ(45deg); }
-  60% { transform: translateY(65px) translateX(10px) rotateY(270deg) rotateZ(70deg); }
-  80% { transform: translateY(88px) translateX(-3px) rotateY(360deg) rotateZ(95deg); opacity: 0.85; }
-  100% { transform: translateY(110px) translateX(6px) rotateY(450deg) rotateZ(120deg); opacity: 0; }
+  3% { opacity: 0.9; }
+  20% { transform: translateY(25px) translateX(8px) rotateY(90deg) rotateZ(20deg); opacity: 0.95; }
+  40% { transform: translateY(55px) translateX(-5px) rotateY(180deg) rotateZ(45deg); }
+  60% { transform: translateY(85px) translateX(10px) rotateY(270deg) rotateZ(70deg); }
+  80% { transform: translateY(115px) translateX(-3px) rotateY(360deg) rotateZ(95deg); opacity: 0.9; }
+  90% { opacity: 0.85; }
+  100% { transform: translateY(140px) translateX(6px) rotateY(450deg) rotateZ(120deg); opacity: 0; }
 }
 @keyframes cf-drift-2 {
   0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
-  6% { opacity: 0.85; }
-  22% { transform: translateY(20px) translateX(-10px) rotateY(-80deg) rotateZ(-15deg); opacity: 0.9; }
-  44% { transform: translateY(48px) translateX(6px) rotateY(-160deg) rotateZ(-35deg); }
-  66% { transform: translateY(75px) translateX(-8px) rotateY(-240deg) rotateZ(-55deg); }
-  88% { transform: translateY(100px) translateX(4px) rotateY(-320deg) rotateZ(-75deg); opacity: 0.8; }
-  100% { transform: translateY(115px) translateX(-3px) rotateY(-400deg) rotateZ(-95deg); opacity: 0; }
+  3% { opacity: 0.85; }
+  22% { transform: translateY(28px) translateX(-10px) rotateY(-80deg) rotateZ(-15deg); opacity: 0.9; }
+  44% { transform: translateY(62px) translateX(6px) rotateY(-160deg) rotateZ(-35deg); }
+  66% { transform: translateY(98px) translateX(-8px) rotateY(-240deg) rotateZ(-55deg); }
+  88% { transform: translateY(128px) translateX(4px) rotateY(-320deg) rotateZ(-75deg); opacity: 0.9; }
+  90% { opacity: 0.85; }
+  100% { transform: translateY(145px) translateX(-3px) rotateY(-400deg) rotateZ(-95deg); opacity: 0; }
 }
 @keyframes cf-drift-3 {
   0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
-  8% { opacity: 0.8; }
-  25% { transform: translateY(22px) translateX(12px) rotateY(70deg) rotateZ(25deg); opacity: 0.85; }
-  50% { transform: translateY(55px) translateX(-8px) rotateY(140deg) rotateZ(55deg); }
-  75% { transform: translateY(85px) translateX(6px) rotateY(210deg) rotateZ(85deg); opacity: 0.75; }
-  100% { transform: translateY(112px) translateX(-4px) rotateY(280deg) rotateZ(115deg); opacity: 0; }
+  3% { opacity: 0.8; }
+  25% { transform: translateY(30px) translateX(12px) rotateY(70deg) rotateZ(25deg); opacity: 0.85; }
+  50% { transform: translateY(70px) translateX(-8px) rotateY(140deg) rotateZ(55deg); }
+  75% { transform: translateY(110px) translateX(6px) rotateY(210deg) rotateZ(85deg); opacity: 0.9; }
+  90% { opacity: 0.8; }
+  100% { transform: translateY(142px) translateX(-4px) rotateY(280deg) rotateZ(115deg); opacity: 0; }
 }
 @keyframes cf-drift-4 {
   0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
-  4% { opacity: 0.95; }
-  18% { transform: translateY(16px) translateX(-12px) rotateY(-100deg) rotateZ(-20deg); opacity: 0.9; }
-  36% { transform: translateY(38px) translateX(10px) rotateY(-200deg) rotateZ(-40deg); }
-  54% { transform: translateY(60px) translateX(-6px) rotateY(-300deg) rotateZ(-60deg); }
-  72% { transform: translateY(82px) translateX(8px) rotateY(-400deg) rotateZ(-80deg); opacity: 0.85; }
-  90% { transform: translateY(102px) translateX(-4px) rotateY(-500deg) rotateZ(-100deg); opacity: 0.7; }
-  100% { transform: translateY(118px) translateX(5px) rotateY(-540deg) rotateZ(-110deg); opacity: 0; }
+  3% { opacity: 0.95; }
+  18% { transform: translateY(22px) translateX(-12px) rotateY(-100deg) rotateZ(-20deg); opacity: 0.9; }
+  36% { transform: translateY(50px) translateX(10px) rotateY(-200deg) rotateZ(-40deg); }
+  54% { transform: translateY(78px) translateX(-6px) rotateY(-300deg) rotateZ(-60deg); }
+  72% { transform: translateY(106px) translateX(8px) rotateY(-400deg) rotateZ(-80deg); opacity: 0.9; }
+  90% { transform: translateY(130px) translateX(-4px) rotateY(-500deg) rotateZ(-100deg); opacity: 0.8; }
+  100% { transform: translateY(148px) translateX(5px) rotateY(-540deg) rotateZ(-110deg); opacity: 0; }
 }
 .confetti-container {
   position: absolute;
@@ -499,34 +502,54 @@ tailwind.config = {
 .confetti-container.active { opacity: 1; }
 .confetti-piece {
   position: absolute;
-  width: 4px;
-  height: 12px;
+  width: 8px;
+  height: 5px;
   opacity: 0;
   top: -8%;
   border-radius: 1px;
   transform-style: preserve-3d;
 }
-/* Evenly staggered timing ensures 5+ pieces visible at all times */
-.confetti-container.active .cf-1  { animation: cf-drift-1 5.0s ease-in-out infinite; animation-delay: 0.0s; }
-.confetti-container.active .cf-2  { animation: cf-drift-2 5.5s ease-in-out infinite; animation-delay: 0.5s; }
-.confetti-container.active .cf-3  { animation: cf-drift-3 4.8s ease-in-out infinite; animation-delay: 1.0s; }
-.confetti-container.active .cf-4  { animation: cf-drift-4 5.2s ease-in-out infinite; animation-delay: 1.5s; }
-.confetti-container.active .cf-5  { animation: cf-drift-1 4.5s ease-in-out infinite; animation-delay: 2.0s; }
-.confetti-container.active .cf-6  { animation: cf-drift-2 5.8s ease-in-out infinite; animation-delay: 0.25s; }
-.confetti-container.active .cf-7  { animation: cf-drift-3 5.3s ease-in-out infinite; animation-delay: 0.75s; }
-.confetti-container.active .cf-8  { animation: cf-drift-4 4.6s ease-in-out infinite; animation-delay: 1.25s; }
-.confetti-container.active .cf-9  { animation: cf-drift-1 5.6s ease-in-out infinite; animation-delay: 1.75s; }
-.confetti-container.active .cf-10 { animation: cf-drift-2 4.9s ease-in-out infinite; animation-delay: 2.25s; }
-.cf-1  { left: 8%;  background: #D4AF37; }
-.cf-2  { left: 22%; background: #FFD700; }
-.cf-3  { left: 35%; background: #FFFFFF; }
-.cf-4  { left: 48%; background: #D4AF37; }
-.cf-5  { left: 62%; background: #FFD700; }
-.cf-6  { left: 78%; background: #F9E29B; }
-.cf-7  { left: 15%; background: #D4AF37; }
-.cf-8  { left: 42%; background: #FFFFFF; }
-.cf-9  { left: 55%; background: #FFD700; }
-.cf-10 { left: 88%; background: #D4AF37; }
+/* Co-prime durations + full-cycle delays = persistent even stream */
+.confetti-container.active .cf-1  { animation: cf-drift-1 3.7s ease-in-out infinite; animation-delay: 0.0s; }
+.confetti-container.active .cf-2  { animation: cf-drift-2 4.1s ease-in-out infinite; animation-delay: 0.7s; }
+.confetti-container.active .cf-3  { animation: cf-drift-3 4.9s ease-in-out infinite; animation-delay: 1.4s; }
+.confetti-container.active .cf-4  { animation: cf-drift-4 5.3s ease-in-out infinite; animation-delay: 2.1s; }
+.confetti-container.active .cf-5  { animation: cf-drift-1 5.7s ease-in-out infinite; animation-delay: 2.8s; }
+.confetti-container.active .cf-6  { animation: cf-drift-2 6.1s ease-in-out infinite; animation-delay: 3.5s; }
+.confetti-container.active .cf-7  { animation: cf-drift-3 3.9s ease-in-out infinite; animation-delay: 0.35s; }
+.confetti-container.active .cf-8  { animation: cf-drift-4 4.3s ease-in-out infinite; animation-delay: 1.05s; }
+.confetti-container.active .cf-9  { animation: cf-drift-1 5.1s ease-in-out infinite; animation-delay: 1.75s; }
+.confetti-container.active .cf-10 { animation: cf-drift-2 6.7s ease-in-out infinite; animation-delay: 2.45s; }
+.confetti-container.active .cf-11 { animation: cf-drift-3 4.7s ease-in-out infinite; animation-delay: 3.15s; }
+.confetti-container.active .cf-12 { animation: cf-drift-4 5.9s ease-in-out infinite; animation-delay: 3.85s; }
+.confetti-container.active .cf-13 { animation: cf-drift-1 6.3s ease-in-out infinite; animation-delay: 4.2s; }
+.confetti-container.active .cf-14 { animation: cf-drift-2 3.7s ease-in-out infinite; animation-delay: 4.55s; }
+.confetti-container.active .cf-15 { animation: cf-drift-3 7.1s ease-in-out infinite; animation-delay: 4.9s; }
+.confetti-container.active .cf-16 { animation: cf-drift-4 4.1s ease-in-out infinite; animation-delay: 5.2s; }
+.confetti-container.active .cf-17 { animation: cf-drift-1 5.3s ease-in-out infinite; animation-delay: 0.5s; }
+.confetti-container.active .cf-18 { animation: cf-drift-2 4.9s ease-in-out infinite; animation-delay: 1.55s; }
+.confetti-container.active .cf-19 { animation: cf-drift-3 6.1s ease-in-out infinite; animation-delay: 2.65s; }
+.confetti-container.active .cf-20 { animation: cf-drift-4 5.7s ease-in-out infinite; animation-delay: 5.5s; }
+.cf-1  { left: 5%;  background: #D4AF37; }
+.cf-2  { left: 12%; background: #FFD700; }
+.cf-3  { left: 20%; background: #FFFFFF; }
+.cf-4  { left: 28%; background: #D4AF37; }
+.cf-5  { left: 35%; background: #FFD700; }
+.cf-6  { left: 42%; background: #F9E29B; }
+.cf-7  { left: 50%; background: #D4AF37; }
+.cf-8  { left: 58%; background: #FFFFFF; }
+.cf-9  { left: 65%; background: #FFD700; }
+.cf-10 { left: 72%; background: #D4AF37; }
+.cf-11 { left: 80%; background: #F9E29B; }
+.cf-12 { left: 88%; background: #FFD700; }
+.cf-13 { left: 95%; background: #D4AF37; }
+.cf-14 { left: 8%;  background: #FFFFFF; width: 6px; height: 6px; }
+.cf-15 { left: 18%; background: #D4AF37; width: 10px; height: 4px; }
+.cf-16 { left: 32%; background: #FFD700; width: 6px; height: 6px; }
+.cf-17 { left: 45%; background: #F9E29B; width: 10px; height: 4px; }
+.cf-18 { left: 55%; background: #D4AF37; }
+.cf-19 { left: 75%; background: #FFFFFF; width: 6px; height: 6px; }
+.cf-20 { left: 92%; background: #FFD700; width: 10px; height: 4px; }
 
 /* Trophy & winner styling */
 .trophy-icon {
@@ -676,6 +699,11 @@ body {
           <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
           <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
           <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+          <div class="confetti-piece cf-11"></div><div class="confetti-piece cf-12"></div>
+          <div class="confetti-piece cf-13"></div><div class="confetti-piece cf-14"></div>
+          <div class="confetti-piece cf-15"></div><div class="confetti-piece cf-16"></div>
+          <div class="confetti-piece cf-17"></div><div class="confetti-piece cf-18"></div>
+          <div class="confetti-piece cf-19"></div><div class="confetti-piece cf-20"></div>
         </div>
         <div style="display: flex; align-items: flex-start; gap: 0.5rem; position: relative; z-index: 20;">
           <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
@@ -712,6 +740,11 @@ body {
           <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
           <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
           <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+          <div class="confetti-piece cf-11"></div><div class="confetti-piece cf-12"></div>
+          <div class="confetti-piece cf-13"></div><div class="confetti-piece cf-14"></div>
+          <div class="confetti-piece cf-15"></div><div class="confetti-piece cf-16"></div>
+          <div class="confetti-piece cf-17"></div><div class="confetti-piece cf-18"></div>
+          <div class="confetti-piece cf-19"></div><div class="confetti-piece cf-20"></div>
         </div>
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc2" class="score-text">0</span>
