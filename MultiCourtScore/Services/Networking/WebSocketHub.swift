@@ -510,26 +510,26 @@ tailwind.config = {
   transform-style: preserve-3d;
 }
 /* Co-prime durations + full-cycle delays = persistent even stream */
-.confetti-container.active .cf-1  { animation: cf-drift-1 3.7s ease-in-out infinite; animation-delay: 0.0s; }
-.confetti-container.active .cf-2  { animation: cf-drift-2 4.1s ease-in-out infinite; animation-delay: 0.7s; }
-.confetti-container.active .cf-3  { animation: cf-drift-3 4.9s ease-in-out infinite; animation-delay: 1.4s; }
-.confetti-container.active .cf-4  { animation: cf-drift-4 5.3s ease-in-out infinite; animation-delay: 2.1s; }
-.confetti-container.active .cf-5  { animation: cf-drift-1 5.7s ease-in-out infinite; animation-delay: 2.8s; }
-.confetti-container.active .cf-6  { animation: cf-drift-2 6.1s ease-in-out infinite; animation-delay: 3.5s; }
-.confetti-container.active .cf-7  { animation: cf-drift-3 3.9s ease-in-out infinite; animation-delay: 0.35s; }
-.confetti-container.active .cf-8  { animation: cf-drift-4 4.3s ease-in-out infinite; animation-delay: 1.05s; }
-.confetti-container.active .cf-9  { animation: cf-drift-1 5.1s ease-in-out infinite; animation-delay: 1.75s; }
-.confetti-container.active .cf-10 { animation: cf-drift-2 6.7s ease-in-out infinite; animation-delay: 2.45s; }
-.confetti-container.active .cf-11 { animation: cf-drift-3 4.7s ease-in-out infinite; animation-delay: 3.15s; }
-.confetti-container.active .cf-12 { animation: cf-drift-4 5.9s ease-in-out infinite; animation-delay: 3.85s; }
-.confetti-container.active .cf-13 { animation: cf-drift-1 6.3s ease-in-out infinite; animation-delay: 4.2s; }
-.confetti-container.active .cf-14 { animation: cf-drift-2 3.7s ease-in-out infinite; animation-delay: 4.55s; }
-.confetti-container.active .cf-15 { animation: cf-drift-3 7.1s ease-in-out infinite; animation-delay: 4.9s; }
-.confetti-container.active .cf-16 { animation: cf-drift-4 4.1s ease-in-out infinite; animation-delay: 5.2s; }
-.confetti-container.active .cf-17 { animation: cf-drift-1 5.3s ease-in-out infinite; animation-delay: 0.5s; }
-.confetti-container.active .cf-18 { animation: cf-drift-2 4.9s ease-in-out infinite; animation-delay: 1.55s; }
-.confetti-container.active .cf-19 { animation: cf-drift-3 6.1s ease-in-out infinite; animation-delay: 2.65s; }
-.confetti-container.active .cf-20 { animation: cf-drift-4 5.7s ease-in-out infinite; animation-delay: 5.5s; }
+.confetti-container.active .cf-1  { animation: cf-drift-1 3.7s linear infinite; animation-delay: 0.0s; }
+.confetti-container.active .cf-2  { animation: cf-drift-2 4.1s linear infinite; animation-delay: 0.7s; }
+.confetti-container.active .cf-3  { animation: cf-drift-3 4.9s linear infinite; animation-delay: 1.4s; }
+.confetti-container.active .cf-4  { animation: cf-drift-4 5.3s linear infinite; animation-delay: 2.1s; }
+.confetti-container.active .cf-5  { animation: cf-drift-1 5.7s linear infinite; animation-delay: 2.8s; }
+.confetti-container.active .cf-6  { animation: cf-drift-2 6.1s linear infinite; animation-delay: 3.5s; }
+.confetti-container.active .cf-7  { animation: cf-drift-3 3.9s linear infinite; animation-delay: 0.35s; }
+.confetti-container.active .cf-8  { animation: cf-drift-4 4.3s linear infinite; animation-delay: 1.05s; }
+.confetti-container.active .cf-9  { animation: cf-drift-1 5.1s linear infinite; animation-delay: 1.75s; }
+.confetti-container.active .cf-10 { animation: cf-drift-2 6.7s linear infinite; animation-delay: 2.45s; }
+.confetti-container.active .cf-11 { animation: cf-drift-3 4.7s linear infinite; animation-delay: 3.15s; }
+.confetti-container.active .cf-12 { animation: cf-drift-4 5.9s linear infinite; animation-delay: 3.85s; }
+.confetti-container.active .cf-13 { animation: cf-drift-1 6.3s linear infinite; animation-delay: 4.2s; }
+.confetti-container.active .cf-14 { animation: cf-drift-2 3.7s linear infinite; animation-delay: 4.55s; }
+.confetti-container.active .cf-15 { animation: cf-drift-3 7.1s linear infinite; animation-delay: 4.9s; }
+.confetti-container.active .cf-16 { animation: cf-drift-4 4.1s linear infinite; animation-delay: 5.2s; }
+.confetti-container.active .cf-17 { animation: cf-drift-1 5.3s linear infinite; animation-delay: 0.5s; }
+.confetti-container.active .cf-18 { animation: cf-drift-2 4.9s linear infinite; animation-delay: 1.55s; }
+.confetti-container.active .cf-19 { animation: cf-drift-3 6.1s linear infinite; animation-delay: 2.65s; }
+.confetti-container.active .cf-20 { animation: cf-drift-4 5.7s linear infinite; animation-delay: 5.5s; }
 .cf-1  { left: 5%;  background: #D4AF37; }
 .cf-2  { left: 12%; background: #FFD700; }
 .cf-3  { left: 20%; background: #FFFFFF; }
@@ -1570,6 +1570,11 @@ function determineState(d) {
   const hasScoring = combinedScore > 0;
   const matchFinished = isMatchFinished(d);
   const courtStatus = (d.courtStatus || '').toLowerCase();
+  
+  // Check if match has already started (any sets won)
+  const setsWon1 = d.setsA || d.setsWon1 || 0;
+  const setsWon2 = d.setsB || d.setsWon2 || 0;
+  const matchInProgress = setsWon1 > 0 || setsWon2 > 0;
 
   // If currently in intermission and scoring starts, switch to scoring
   if (overlayState === 'intermission' && hasScoring && !matchFinished) {
@@ -1588,13 +1593,14 @@ function determineState(d) {
     }
   }
 
-  // If court is waiting/idle and score is 0-0, show intermission
-  if ((courtStatus === 'waiting' || courtStatus === 'idle') && combinedScore === 0) {
+  // If court is waiting/idle and score is 0-0 AND NO SETS WON YET, show intermission
+  // (Don't transition if we're between sets in a multi-set match)
+  if ((courtStatus === 'waiting' || courtStatus === 'idle') && combinedScore === 0 && !matchInProgress) {
     return 'intermission';
   }
 
-  // On first load with no scoring, stay in intermission
-  if (firstLoad && !hasScoring) {
+  // On first load with no scoring AND no sets won, stay in intermission
+  if (firstLoad && !hasScoring && !matchInProgress) {
     return 'intermission';
   }
 
