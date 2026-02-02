@@ -871,9 +871,42 @@ function showNextMatchBar(nextMatchText) {
   }, 17000);
 }
 
+// Persistent next match bar for postmatch - stays until transition
+function showNextMatchBarPersistent(nextMatchText) {
+  // Clear any existing timer
+  if (nextMatchTimer) {
+    clearTimeout(nextMatchTimer);
+    nextMatchTimer = null;
+  }
+  
+  if (nextTeamsEl && nextMatchText) {
+    const parts = nextMatchText.split(/\s+vs\.?\s+/i);
+    if (parts.length >= 2) {
+      nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
+    } else {
+      nextTeamsEl.textContent = abbreviateName(nextMatchText);
+    }
+  }
+
+  // Hide social bar
+  socialBar.classList.remove('visible');
+  socialBar.classList.add('hidden-up');
+
+  // Show next bar (no auto-hide timer)
+  setTimeout(function() {
+    nextBar.classList.remove('hidden-up');
+    nextBar.classList.add('visible');
+  }, 400);
+  
+  // Mark as persistent mode
+  window.nextBarPersistent = true;
+  console.log('[Overlay] Showing persistent next match bar for postmatch');
+}
+
 function hideNextMatchBar() {
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
+  window.nextBarPersistent = false;
 
   setTimeout(function() {
     socialBar.classList.remove('hidden-up');
@@ -972,6 +1005,12 @@ function applyData(d) {
     const setsWon2 = d.setsB || d.setsWon2 || 0;
     const winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
     showCelebration(winner);
+    
+    // Show persistent next match bar (stays until transition)
+    const nextMatch = d.nextMatch || '';
+    if (nextMatch && !window.nextBarPersistent) {
+      showNextMatchBarPersistent(nextMatch);
+    }
   } else if (celebrationActive) {
     clearCelebration();
   }
