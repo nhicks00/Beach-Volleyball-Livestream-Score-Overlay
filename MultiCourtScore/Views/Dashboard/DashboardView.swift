@@ -99,13 +99,19 @@ struct DashboardView: View {
                         }
                     }
                 
-                QueueEditorView(courtId: config.id)
-                    .environmentObject(appViewModel)
-                    .frame(minWidth: 1100, minHeight: 700)
-                    .background(AppColors.background)
-                    .cornerRadius(12)
-                    .shadow(color: .black.opacity(0.5), radius: 20)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                GeometryReader { geo in
+                    QueueEditorView(courtId: config.id)
+                        .environmentObject(appViewModel)
+                        .frame(
+                            width: min(max(geo.size.width * 0.85, 900), 1400),
+                            height: min(max(geo.size.height * 0.85, 500), 900)
+                        )
+                        .background(AppColors.background)
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.5), radius: 20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: editorConfig != nil)
