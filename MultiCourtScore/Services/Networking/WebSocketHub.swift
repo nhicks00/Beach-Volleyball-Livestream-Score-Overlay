@@ -975,8 +975,8 @@ function applyData(d) {
   // Team seeds (show on outside of team names)
   const seed1El = document.getElementById('seed1');
   const seed2El = document.getElementById('seed2');
-  if (seed1El) seed1El.textContent = d.team1Seed || '';
-  if (seed2El) seed2El.textContent = d.team2Seed || '';
+  if (seed1El) seed1El.textContent = d.seed1 || '';
+  if (seed2El) seed2El.textContent = d.seed2 || '';
 
   // Scores - with flip animation on change
   const sc1El = document.getElementById('sc1');
