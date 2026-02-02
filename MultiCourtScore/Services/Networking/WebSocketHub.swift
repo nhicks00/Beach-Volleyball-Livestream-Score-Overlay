@@ -407,6 +407,16 @@ tailwind.config = {
   line-height: 1.15;
   padding-bottom: 2px;
   padding: 0.25em 0.35em;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+/* Score flip animation */
+.score-flip {
+  animation: score-flip-anim 0.3s ease-out;
+}
+@keyframes score-flip-anim {
+  0% { transform: rotateX(-90deg) scale(0.8); opacity: 0; }
+  50% { transform: rotateX(15deg) scale(1.1); opacity: 0.8; }
+  100% { transform: rotateX(0deg) scale(1); opacity: 1; }
 }
 /* Status bubble with subtle pulse animation */
 .status-bubble {
@@ -559,12 +569,9 @@ body {
   color: white;
   overflow: hidden;
 }
-.serving-pulse {
-  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-@keyframes pulse-gold {
-  0%, 100% { opacity: 1; transform: scale(1.1); }
-  50% { opacity: 0.5; transform: scale(0.9); }
+/* Serve indicator - static with fade transition */
+.serve-indicator {
+  transition: opacity 0.3s ease-in-out;
 }
 
 /* Bubble animations - slide from behind scoreboard */
@@ -679,7 +686,7 @@ body {
               <div class="set-pip bg-gold-muted"></div>
             </div>
           </div>
-          <span id="serve-left" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+          <span id="serve-left" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
         </div>
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc1" class="score-text">0</span>
@@ -709,7 +716,7 @@ body {
           <span id="sc2" class="score-text">0</span>
         </div>
         <div style="display: flex; align-items: center; gap: 1rem; text-align: right; position: relative; z-index: 20;">
-          <span id="serve-right" class="material-symbols-outlined" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
+          <span id="serve-right" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0;">sports_volleyball</span>
           <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
             <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
             <div id="pips2" style="display: flex; gap: 0.375rem;">
@@ -930,11 +937,23 @@ function applyData(d) {
   if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
   if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
 
-  // Scores
+  // Scores - with flip animation on change
   const sc1El = document.getElementById('sc1');
   const sc2El = document.getElementById('sc2');
-  if (sc1El) sc1El.textContent = score1;
-  if (sc2El) sc2El.textContent = score2;
+  
+  // Trigger flip animation if score changed
+  if (sc1El && sc1El.textContent !== String(score1)) {
+    sc1El.textContent = score1;
+    sc1El.classList.remove('score-flip');
+    void sc1El.offsetWidth; // Force reflow to restart animation
+    sc1El.classList.add('score-flip');
+  }
+  if (sc2El && sc2El.textContent !== String(score2)) {
+    sc2El.textContent = score2;
+    sc2El.classList.remove('score-flip');
+    void sc2El.offsetWidth; // Force reflow to restart animation
+    sc2El.classList.add('score-flip');
+  }
 
   // Set number (API returns 'set', not 'setNumber')
   const setNumEl = document.getElementById('set-num');
@@ -984,9 +1003,7 @@ function applyData(d) {
       if (isRightServing) window.lastServe = 'right';
 
       serveLeft.style.opacity = isLeftServing ? '1' : '0';
-      serveLeft.classList.toggle('serving-pulse', isLeftServing);
       serveRight.style.opacity = isRightServing ? '1' : '0';
-      serveRight.classList.toggle('serving-pulse', isRightServing);
     }
   }
 
@@ -1031,15 +1048,17 @@ function showCelebration(winner) {
   const sc1El = document.getElementById('sc1');
   const sc2El = document.getElementById('sc2');
   const setLabel = document.getElementById('set-label');
+  const setNum = document.getElementById('set-num');
   const serveLeft = document.getElementById('serve-left');
   const serveRight = document.getElementById('serve-right');
 
   // Immediately hide serve indicators
-  if (serveLeft) { serveLeft.style.opacity = '0'; serveLeft.classList.remove('serving-pulse'); }
-  if (serveRight) { serveRight.style.opacity = '0'; serveRight.classList.remove('serving-pulse'); }
+  if (serveLeft) { serveLeft.style.opacity = '0'; }
+  if (serveRight) { serveRight.style.opacity = '0'; }
 
-  // Show FINAL label
+  // Show FINAL label and hide set number
   if (setLabel) setLabel.textContent = 'FINAL';
+  if (setNum) setNum.style.display = 'none';
 
   if (winner === 'team1') {
     if (confettiLeft) confettiLeft.classList.add('active');
@@ -1069,6 +1088,7 @@ function clearCelebration() {
   const sc1El = document.getElementById('sc1');
   const sc2El = document.getElementById('sc2');
   const setLabel = document.getElementById('set-label');
+  const setNum = document.getElementById('set-num');
 
   if (confettiLeft) confettiLeft.classList.remove('active');
   if (confettiRight) confettiRight.classList.remove('active');
@@ -1079,6 +1099,7 @@ function clearCelebration() {
   if (sc1El) sc1El.classList.remove('loser-dim');
   if (sc2El) sc2El.classList.remove('loser-dim');
   if (setLabel) setLabel.textContent = 'SET';
+  if (setNum) setNum.style.display = '';  // Restore set number visibility
 }
 
 /* ===== MATCH CHANGE DETECTION ===== */
