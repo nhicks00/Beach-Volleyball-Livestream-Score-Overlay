@@ -1042,7 +1042,7 @@ function updateCurrentMatch(team1, team2) {
   currentMatchTeam2 = cleanName(team2 || '');
 }
 
-// Animate match change: scoring → intermission (brief) → scoring with new teams
+// Animate match change: scoring → intermission, then either stay or go to scoring based on data
 function animateMatchChange(newTeam1, newTeam2, newData) {
   if (transitionInProgress) {
     // Queue the match change for after current transition
@@ -1053,6 +1053,11 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   transitionInProgress = true;
   clearCelebration();
   console.log('[Overlay] Animating match change to:', abbreviateName(newTeam1), 'vs', abbreviateName(newTeam2));
+  
+  // Determine if new match should end in intermission or scoring
+  const combinedScore = (newData.score1 || 0) + (newData.score2 || 0);
+  const courtStatus = (newData.courtStatus || '').toLowerCase();
+  const shouldEndInIntermission = combinedScore === 0 || courtStatus === 'waiting' || courtStatus === 'idle';
   
   // Pre-set the intermission team names (hidden)
   if (intTeam1) {
@@ -1067,23 +1072,29 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   }
   if (intVs) intVs.style.opacity = '0';
   
-  // Phase 1 (0-400ms): Retract bubbles
+  // Phase 1 (0-400ms): Retract ALL bubbles
   socialBar.classList.remove('visible');
   socialBar.classList.add('hidden-up');
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
+  intStatusBar.classList.remove('visible');
+  intStatusBar.classList.add('hidden-up');
   
   // Phase 2 (400-700ms): Slide scoring elements inward + fade
   setTimeout(function() {
     if (scoringContent) scoringContent.classList.add('slide-out');
   }, 400);
   
-  // Phase 3 (700-900ms): Swap to intermission content briefly
+  // Phase 3 (700-1100ms): Swap to intermission content
   setTimeout(function() {
     if (scoringContent) {
       scoringContent.style.opacity = '0';
       scoringContent.style.pointerEvents = 'none';
     }
+    
+    // Set intermission width for symmetric layout
+    setIntermissionWidth();
+    
     if (intermissionContent) intermissionContent.classList.add('visible');
     
     // Show team names sliding out
@@ -1100,66 +1111,91 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
     });
   }, 700);
   
-  // Phase 4 (1700-2000ms): Start transitioning back to scoring
-  setTimeout(function() {
-    // Hide intermission content
-    if (intTeam1) {
-      intTeam1.style.transform = 'translateX(30px)';
-      intTeam1.style.opacity = '0';
-    }
-    if (intTeam2) {
-      intTeam2.style.transform = 'translateX(-30px)';
-      intTeam2.style.opacity = '0';
-    }
-    if (intVs) intVs.style.opacity = '0';
-  }, 1700);
+  // Update current match tracking
+  updateCurrentMatch(newTeam1, newTeam2);
   
-  // Phase 5 (2000-2300ms): Show scoring with new data
-  setTimeout(function() {
-    if (intermissionContent) intermissionContent.classList.remove('visible');
+  if (shouldEndInIntermission) {
+    // END IN INTERMISSION MODE - show status bubble, stay in intermission
+    setTimeout(function() {
+      intStatusBar.classList.remove('hidden-up');
+      intStatusBar.classList.add('visible');
+      
+      overlayState = 'intermission';
+      transitionInProgress = false;
+      matchFinishedAt = null;
+      postMatchTimer = null;
+      
+      console.log('[Overlay] Match change complete → intermission (0-0)');
+      
+      // Handle any queued match change
+      if (pendingMatchChange) {
+        const pending = pendingMatchChange;
+        pendingMatchChange = null;
+        setTimeout(function() {
+          animateMatchChange(pending.team1, pending.team2, pending.data);
+        }, 500);
+      }
+    }, 1600);
+  } else {
+    // END IN SCORING MODE - transition from intermission to scoring
     
-    // Update current match tracking
-    updateCurrentMatch(newTeam1, newTeam2);
+    // Phase 4 (1700-2000ms): Hide intermission, prepare scoring
+    setTimeout(function() {
+      if (intTeam1) {
+        intTeam1.style.transform = 'translateX(30px)';
+        intTeam1.style.opacity = '0';
+      }
+      if (intTeam2) {
+        intTeam2.style.transform = 'translateX(-30px)';
+        intTeam2.style.opacity = '0';
+      }
+      if (intVs) intVs.style.opacity = '0';
+    }, 1700);
     
-    // Reset score tracking for serve indicator
-    window.prevScore1 = undefined;
-    window.prevScore2 = undefined;
-    window.lastServe = undefined;
-    lastTriggerScore = -1;
+    // Phase 5 (2000-2300ms): Show scoring with new data
+    setTimeout(function() {
+      if (intermissionContent) intermissionContent.classList.remove('visible');
+      
+      // Reset score tracking for serve indicator
+      window.prevScore1 = undefined;
+      window.prevScore2 = undefined;
+      window.lastServe = undefined;
+      lastTriggerScore = -1;
+      
+      // Apply new data
+      applyData(newData);
+      
+      // Reset and show scoring content
+      if (scoringContent) {
+        scoringContent.classList.remove('slide-out');
+        scoringContent.style.opacity = '1';
+        scoringContent.style.pointerEvents = 'auto';
+      }
+      scorebug.style.width = SCORING_WIDTH;
+    }, 2000);
     
-    // Apply new data
-    applyData(newData);
-    
-    // Reset and show scoring content
-    if (scoringContent) {
-      scoringContent.classList.remove('slide-out');
-      scoringContent.style.opacity = '1';
-      scoringContent.style.pointerEvents = 'auto';
-    }
-    scorebug.style.width = SCORING_WIDTH;
-  }, 2000);
-  
-  // Phase 6 (2300ms): Complete - show social bar
-  setTimeout(function() {
-    socialBar.classList.remove('hidden-up');
-    socialBar.classList.add('visible');
-    
-    overlayState = 'scoring';
-    transitionInProgress = false;
-    matchFinishedAt = null;
-    postMatchTimer = null;
-    
-    console.log('[Overlay] Match change complete');
-    
-    // Handle any queued match change
-    if (pendingMatchChange) {
-      const pending = pendingMatchChange;
-      pendingMatchChange = null;
-      setTimeout(function() {
-        animateMatchChange(pending.team1, pending.team2, pending.data);
-      }, 500);
-    }
-  }, 2300);
+    // Phase 6 (2300ms): Complete - show social bar
+    setTimeout(function() {
+      socialBar.classList.remove('hidden-up');
+      socialBar.classList.add('visible');
+      
+      overlayState = 'scoring';
+      transitionInProgress = false;
+      matchFinishedAt = null;
+      postMatchTimer = null;
+      
+      console.log('[Overlay] Match change complete → scoring');
+      
+      // Handle any queued match change
+      if (pendingMatchChange) {
+        const pending = pendingMatchChange;
+        pendingMatchChange = null;
+        setTimeout(function() {
+          animateMatchChange(pending.team1, pending.team2, pending.data);
+        }, 500);
+      }
+    }, 2300);
+  }
 }
 
 /* ===== OVERLAY STATE TRANSITIONS ===== */
