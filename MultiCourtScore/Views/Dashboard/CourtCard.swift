@@ -163,12 +163,29 @@ struct CourtCard: View {
     // MARK: - Header
 
     private var cardHeader: some View {
-        HStack {
+        HStack(spacing: 8) {
+            // Camera name
             Text(court.displayName)
                 .font(AppTypography.headline)
                 .foregroundColor(AppColors.textPrimary)
-
+            
+            // Court number badge (moved from footer)
+            if let match = court.currentMatch,
+               let courtNum = match.courtNumber, !courtNum.isEmpty {
+                Text("Ct \(courtNum)")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(AppColors.warning))
+            }
+            
             Spacer()
+            
+            // Postmatch countdown timer
+            if court.status == .finished, let finishedAt = court.finishedAt {
+                PostmatchTimer(finishedAt: finishedAt)
+            }
 
             StatusBadge(label: statusLabel, color: statusColor, isLive: court.status == .live)
         }
@@ -331,15 +348,7 @@ struct CourtCard: View {
             Spacer()
 
             if let match = court.currentMatch {
-                if let courtNum = match.courtNumber, !courtNum.isEmpty {
-                    Text("Ct \(courtNum)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(AppColors.warning))
-                }
-
+                // Day badge (e.g., "Sat", "Sun")
                 if let day = match.startDate, !day.isEmpty {
                     Text(day)
                         .font(.system(size: 9, weight: .bold))
@@ -349,6 +358,7 @@ struct CourtCard: View {
                         .background(Capsule().fill(courtCardDayColor(for: day)))
                 }
 
+                // Match number badge
                 if let matchNum = match.matchNumber, !matchNum.isEmpty {
                     Text("M\(matchNum)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -477,6 +487,46 @@ struct ConnectionBadge: View {
             Capsule()
                 .fill((isConnected ? AppColors.success : AppColors.error).opacity(0.15))
         )
+    }
+}
+
+// MARK: - Postmatch Countdown Timer
+
+struct PostmatchTimer: View {
+    let finishedAt: Date
+    @State private var remainingSeconds: Int = 180  // 3 minutes
+    
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        let minutes = remainingSeconds / 60
+        let seconds = remainingSeconds % 60
+        
+        HStack(spacing: 4) {
+            Image(systemName: "timer")
+                .font(.system(size: 10, weight: .bold))
+            Text(String(format: "%d:%02d", minutes, seconds))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+        }
+        .foregroundColor(remainingSeconds <= 30 ? AppColors.warning : AppColors.textMuted)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(remainingSeconds <= 30 ? AppColors.warning.opacity(0.15) : AppColors.surfaceHover)
+        )
+        .onAppear {
+            updateRemaining()
+        }
+        .onReceive(timer) { _ in
+            updateRemaining()
+        }
+    }
+    
+    private func updateRemaining() {
+        let elapsed = Date().timeIntervalSince(finishedAt)
+        let remaining = max(0, 180 - Int(elapsed))
+        remainingSeconds = remaining
     }
 }
 
