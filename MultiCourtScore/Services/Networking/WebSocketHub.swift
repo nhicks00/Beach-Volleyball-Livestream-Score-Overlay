@@ -425,46 +425,42 @@ tailwind.config = {
 .bg-gold { background-color: #D4AF37; }
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
 
-/* Confetti celebration - slow falling leaves effect */
+/* Confetti celebration - 3D spinning squares effect */
 @keyframes cf-drift-1 {
-  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
-  5% { opacity: 0.85; }
-  15% { transform: translateY(10px) translateX(8px) rotate(25deg) scale(0.98); opacity: 0.9; }
-  35% { transform: translateY(35px) translateX(-5px) rotate(55deg) scale(1.02); }
-  55% { transform: translateY(55px) translateX(12px) rotate(90deg) scale(0.95); }
-  75% { transform: translateY(75px) translateX(-3px) rotate(125deg) scale(1); }
-  95% { opacity: 0.8; }
-  100% { transform: translateY(100px) translateX(6px) rotate(160deg) scale(0.9); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
+  5% { opacity: 0.9; }
+  20% { transform: translateY(18px) translateX(8px) rotateY(90deg) rotateZ(20deg); opacity: 0.95; }
+  40% { transform: translateY(42px) translateX(-5px) rotateY(180deg) rotateZ(45deg); }
+  60% { transform: translateY(65px) translateX(10px) rotateY(270deg) rotateZ(70deg); }
+  80% { transform: translateY(88px) translateX(-3px) rotateY(360deg) rotateZ(95deg); opacity: 0.85; }
+  100% { transform: translateY(110px) translateX(6px) rotateY(450deg) rotateZ(120deg); opacity: 0; }
 }
 @keyframes cf-drift-2 {
-  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1); opacity: 0; }
-  6% { opacity: 0.8; }
-  20% { transform: translateY(15px) translateX(-10px) rotate(-20deg) scale(1.03); opacity: 0.85; }
-  40% { transform: translateY(40px) translateX(6px) rotate(-50deg) scale(0.97); }
-  60% { transform: translateY(60px) translateX(-8px) rotate(-85deg) scale(1.01); }
-  80% { transform: translateY(82px) translateX(4px) rotate(-120deg) scale(0.95); }
-  95% { opacity: 0.75; }
-  100% { transform: translateY(105px) translateX(-3px) rotate(-155deg) scale(0.88); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
+  6% { opacity: 0.85; }
+  22% { transform: translateY(20px) translateX(-10px) rotateY(-80deg) rotateZ(-15deg); opacity: 0.9; }
+  44% { transform: translateY(48px) translateX(6px) rotateY(-160deg) rotateZ(-35deg); }
+  66% { transform: translateY(75px) translateX(-8px) rotateY(-240deg) rotateZ(-55deg); }
+  88% { transform: translateY(100px) translateX(4px) rotateY(-320deg) rotateZ(-75deg); opacity: 0.8; }
+  100% { transform: translateY(115px) translateX(-3px) rotateY(-400deg) rotateZ(-95deg); opacity: 0; }
 }
 @keyframes cf-drift-3 {
-  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(0.95); opacity: 0; }
-  8% { opacity: 0.75; }
-  25% { transform: translateY(20px) translateX(15px) rotate(30deg) scale(1); opacity: 0.8; }
-  45% { transform: translateY(45px) translateX(-10px) rotate(65deg) scale(1.05); }
-  65% { transform: translateY(68px) translateX(8px) rotate(100deg) scale(0.98); }
-  85% { transform: translateY(88px) translateX(-5px) rotate(135deg) scale(1.02); }
-  95% { opacity: 0.7; }
-  100% { transform: translateY(108px) translateX(10px) rotate(170deg) scale(0.92); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
+  8% { opacity: 0.8; }
+  25% { transform: translateY(22px) translateX(12px) rotateY(70deg) rotateZ(25deg); opacity: 0.85; }
+  50% { transform: translateY(55px) translateX(-8px) rotateY(140deg) rotateZ(55deg); }
+  75% { transform: translateY(85px) translateX(6px) rotateY(210deg) rotateZ(85deg); opacity: 0.75; }
+  100% { transform: translateY(112px) translateX(-4px) rotateY(280deg) rotateZ(115deg); opacity: 0; }
 }
 @keyframes cf-drift-4 {
-  0% { transform: translateY(-15px) translateX(0px) rotate(0deg) scale(1.02); opacity: 0; }
-  4% { opacity: 0.9; }
-  18% { transform: translateY(12px) translateX(-12px) rotate(-15deg) scale(0.98); opacity: 0.88; }
-  38% { transform: translateY(38px) translateX(10px) rotate(-45deg) scale(1.04); }
-  58% { transform: translateY(62px) translateX(-6px) rotate(-75deg) scale(0.96); }
-  78% { transform: translateY(85px) translateX(8px) rotate(-110deg) scale(1); }
-  95% { opacity: 0.82; }
-  100% { transform: translateY(102px) translateX(-4px) rotate(-145deg) scale(0.9); opacity: 0; }
+  0% { transform: translateY(-15px) translateX(0px) rotateY(0deg) rotateZ(0deg); opacity: 0; }
+  4% { opacity: 0.95; }
+  18% { transform: translateY(16px) translateX(-12px) rotateY(-100deg) rotateZ(-20deg); opacity: 0.9; }
+  36% { transform: translateY(38px) translateX(10px) rotateY(-200deg) rotateZ(-40deg); }
+  54% { transform: translateY(60px) translateX(-6px) rotateY(-300deg) rotateZ(-60deg); }
+  72% { transform: translateY(82px) translateX(8px) rotateY(-400deg) rotateZ(-80deg); opacity: 0.85; }
+  90% { transform: translateY(102px) translateX(-4px) rotateY(-500deg) rotateZ(-100deg); opacity: 0.7; }
+  100% { transform: translateY(118px) translateX(5px) rotateY(-540deg) rotateZ(-110deg); opacity: 0; }
 }
 .confetti-container {
   position: absolute;
@@ -473,38 +469,40 @@ tailwind.config = {
   z-index: 10;
   overflow: hidden;
   opacity: 0;
-  transition: opacity 1.5s ease-in;
+  transition: opacity 1.2s ease-in;
+  perspective: 200px;
 }
 .confetti-container.active { opacity: 1; }
 .confetti-piece {
   position: absolute;
-  width: 5px;
-  height: 9px;
+  width: 6px;
+  height: 6px;
   opacity: 0;
-  top: -12%;
-  border-radius: 2px;
+  top: -8%;
+  border-radius: 0;
+  transform-style: preserve-3d;
 }
-/* Slow cascade: staggered delays so confetti fades in gradually from top */
-.confetti-container.active .cf-1  { animation: cf-drift-1 6.0s ease-in-out infinite; animation-delay: 0.0s; }
-.confetti-container.active .cf-2  { animation: cf-drift-3 6.8s ease-in-out infinite; animation-delay: 0.4s; }
-.confetti-container.active .cf-3  { animation: cf-drift-2 7.2s ease-in-out infinite; animation-delay: 0.9s; }
-.confetti-container.active .cf-4  { animation: cf-drift-4 5.8s ease-in-out infinite; animation-delay: 0.2s; }
-.confetti-container.active .cf-5  { animation: cf-drift-1 7.0s ease-in-out infinite; animation-delay: 1.2s; }
-.confetti-container.active .cf-6  { animation: cf-drift-3 5.5s ease-in-out infinite; animation-delay: 0.6s; }
-.confetti-container.active .cf-7  { animation: cf-drift-2 6.5s ease-in-out infinite; animation-delay: 1.5s; }
-.confetti-container.active .cf-8  { animation: cf-drift-4 7.5s ease-in-out infinite; animation-delay: 0.3s; }
-.confetti-container.active .cf-9  { animation: cf-drift-1 5.7s ease-in-out infinite; animation-delay: 1.0s; }
-.confetti-container.active .cf-10 { animation: cf-drift-3 6.3s ease-in-out infinite; animation-delay: 1.8s; }
+/* Evenly staggered timing ensures 5+ pieces visible at all times */
+.confetti-container.active .cf-1  { animation: cf-drift-1 5.0s ease-in-out infinite; animation-delay: 0.0s; }
+.confetti-container.active .cf-2  { animation: cf-drift-2 5.5s ease-in-out infinite; animation-delay: 0.5s; }
+.confetti-container.active .cf-3  { animation: cf-drift-3 4.8s ease-in-out infinite; animation-delay: 1.0s; }
+.confetti-container.active .cf-4  { animation: cf-drift-4 5.2s ease-in-out infinite; animation-delay: 1.5s; }
+.confetti-container.active .cf-5  { animation: cf-drift-1 4.5s ease-in-out infinite; animation-delay: 2.0s; }
+.confetti-container.active .cf-6  { animation: cf-drift-2 5.8s ease-in-out infinite; animation-delay: 0.25s; }
+.confetti-container.active .cf-7  { animation: cf-drift-3 5.3s ease-in-out infinite; animation-delay: 0.75s; }
+.confetti-container.active .cf-8  { animation: cf-drift-4 4.6s ease-in-out infinite; animation-delay: 1.25s; }
+.confetti-container.active .cf-9  { animation: cf-drift-1 5.6s ease-in-out infinite; animation-delay: 1.75s; }
+.confetti-container.active .cf-10 { animation: cf-drift-2 4.9s ease-in-out infinite; animation-delay: 2.25s; }
 .cf-1  { left: 8%;  background: #D4AF37; }
-.cf-2  { left: 24%; background: #FFD700; }
-.cf-3  { left: 38%; background: #FFFFFF; }
-.cf-4  { left: 50%; background: #D4AF37; }
-.cf-5  { left: 65%; background: #FFD700; }
-.cf-6  { left: 75%; background: #F9E29B; }
-.cf-7  { left: 14%; background: #D4AF37; }
-.cf-8  { left: 44%; background: #FFFFFF; }
-.cf-9  { left: 82%; background: #FFD700; }
-.cf-10 { left: 92%; background: #D4AF37; }
+.cf-2  { left: 22%; background: #FFD700; }
+.cf-3  { left: 35%; background: #FFFFFF; }
+.cf-4  { left: 48%; background: #D4AF37; }
+.cf-5  { left: 62%; background: #FFD700; }
+.cf-6  { left: 78%; background: #F9E29B; }
+.cf-7  { left: 15%; background: #D4AF37; }
+.cf-8  { left: 42%; background: #FFFFFF; }
+.cf-9  { left: 55%; background: #FFD700; }
+.cf-10 { left: 88%; background: #D4AF37; }
 
 /* Trophy & winner styling */
 .trophy-icon {
