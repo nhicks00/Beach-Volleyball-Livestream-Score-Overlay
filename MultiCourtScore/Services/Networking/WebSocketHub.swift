@@ -706,7 +706,7 @@ body {
 
     <!-- Intermission Content Layer (overlaid, hidden by default) -->
     <div id="intermission-content">
-      <div style="display: flex; align-items: center; flex-shrink: 0;">
+      <div id="int-team1-container" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
         <span id="int-team1" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 1</span>
       </div>
       <div id="int-vs" style="display: flex; align-items: center; flex-shrink: 0; margin: 0 1rem; opacity: 0; transition: opacity 0.5s ease;">
@@ -714,7 +714,7 @@ body {
         <span style="font-size: 1.125rem; font-weight: 900; font-style: italic; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
         <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
       </div>
-      <div style="display: flex; align-items: center; flex-shrink: 0;">
+      <div id="int-team2-container" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
         <span id="int-team2" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(-30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 2</span>
       </div>
     </div>
@@ -782,6 +782,8 @@ const nextBar = document.getElementById('next-bar');
 const nextTeamsEl = document.getElementById('next-teams');
 const intTeam1 = document.getElementById('int-team1');
 const intTeam2 = document.getElementById('int-team2');
+const intTeam1Container = document.getElementById('int-team1-container');
+const intTeam2Container = document.getElementById('int-team2-container');
 const intVs = document.getElementById('int-vs');
 const intStatusBar = document.getElementById('int-status-bar');
 
@@ -1204,8 +1206,13 @@ function showIntermissionImmediate(team1, team2) {
 }
 
 function setIntermissionWidth() {
-  if (!intermissionContent) return;
-  // Temporarily make content static + auto-width to measure true size
+  if (!intermissionContent || !intTeam1 || !intTeam2) return;
+  
+  // Reset container widths to auto first so we can measure actual text widths
+  if (intTeam1Container) intTeam1Container.style.width = 'auto';
+  if (intTeam2Container) intTeam2Container.style.width = 'auto';
+  
+  // Temporarily make content static + auto-width to measure true sizes
   const origPos = intermissionContent.style.position;
   const origInset = intermissionContent.style.inset;
   const origWidth = intermissionContent.style.width;
@@ -1218,7 +1225,18 @@ function setIntermissionWidth() {
   intermissionContent.style.visibility = 'hidden';
   intermissionContent.style.opacity = '0';
 
-  // Force layout recalc
+  // Force layout recalc and measure individual team name widths
+  const team1Width = intTeam1.offsetWidth;
+  const team2Width = intTeam2.offsetWidth;
+  
+  // Use the LARGER width for BOTH containers (symmetric layout)
+  const maxTeamWidth = Math.max(team1Width, team2Width);
+  
+  // Set both containers to equal width
+  if (intTeam1Container) intTeam1Container.style.width = maxTeamWidth + 'px';
+  if (intTeam2Container) intTeam2Container.style.width = maxTeamWidth + 'px';
+  
+  // Re-measure total content width with equal containers
   const contentWidth = intermissionContent.offsetWidth;
 
   // Restore
