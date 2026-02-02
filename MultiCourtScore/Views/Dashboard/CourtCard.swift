@@ -494,39 +494,28 @@ struct ConnectionBadge: View {
 
 struct PostmatchTimer: View {
     let finishedAt: Date
-    @State private var remainingSeconds: Int = 180  // 3 minutes
-    
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        let minutes = remainingSeconds / 60
-        let seconds = remainingSeconds % 60
-        
-        HStack(spacing: 4) {
-            Image(systemName: "timer")
-                .font(.system(size: 10, weight: .bold))
-            Text(String(format: "%d:%02d", minutes, seconds))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+        TimelineView(.periodic(from: finishedAt, by: 1.0)) { timeline in
+            let elapsed = timeline.date.timeIntervalSince(finishedAt)
+            let remaining = max(0, 180 - Int(elapsed))
+            let minutes = remaining / 60
+            let seconds = remaining % 60
+            
+            HStack(spacing: 4) {
+                Image(systemName: "timer")
+                    .font(.system(size: 10, weight: .bold))
+                Text(String(format: "%d:%02d", minutes, seconds))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+            }
+            .foregroundColor(remaining <= 30 ? AppColors.warning : AppColors.textMuted)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(remaining <= 30 ? AppColors.warning.opacity(0.15) : AppColors.surfaceHover)
+            )
         }
-        .foregroundColor(remainingSeconds <= 30 ? AppColors.warning : AppColors.textMuted)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(remainingSeconds <= 30 ? AppColors.warning.opacity(0.15) : AppColors.surfaceHover)
-        )
-        .onAppear {
-            updateRemaining()
-        }
-        .onReceive(timer) { _ in
-            updateRemaining()
-        }
-    }
-    
-    private func updateRemaining() {
-        let elapsed = Date().timeIntervalSince(finishedAt)
-        let remaining = max(0, 180 - Int(elapsed))
-        remainingSeconds = remaining
     }
 }
 
