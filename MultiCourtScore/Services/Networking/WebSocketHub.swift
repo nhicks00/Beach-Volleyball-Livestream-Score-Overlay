@@ -1590,10 +1590,37 @@ async function tick() {
         animateMatchChange(newTeam1, newTeam2, d);
         return; // Let the animation handle everything
       } else if (overlayState === 'intermission') {
-        // Update intermission with new teams
+        // Animate intermission-to-intermission change with fade
+        transitionInProgress = true;
         updateCurrentMatch(newTeam1, newTeam2);
-        if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
-        if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+        
+        // Fade out the intermission content
+        const intContent = document.getElementById('intermission-content');
+        if (intContent) {
+          intContent.style.transition = 'opacity 0.3s ease-out';
+          intContent.style.opacity = '0';
+          
+          setTimeout(function() {
+            // Update team names while faded out
+            if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
+            if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+            setIntermissionWidth();
+            
+            // Fade back in
+            intContent.style.transition = 'opacity 0.3s ease-in';
+            intContent.style.opacity = '1';
+            
+            setTimeout(function() {
+              transitionInProgress = false;
+            }, 300);
+          }, 300);
+        } else {
+          // Fallback if no content element
+          if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
+          if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+          transitionInProgress = false;
+        }
+        return;
       }
     }
 
