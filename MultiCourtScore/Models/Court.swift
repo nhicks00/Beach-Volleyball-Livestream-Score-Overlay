@@ -187,6 +187,9 @@ struct ScoreSnapshot: Codable {
     var team2Name: String
     var team1Seed: String?
     var team2Seed: String?
+    var scheduledTime: String?
+    var matchNumber: String?
+    var courtNumber: String?
     var team1Score: Int
     var team2Score: Int
     var serve: String?              // "home", "away", or nil

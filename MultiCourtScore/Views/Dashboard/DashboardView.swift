@@ -25,6 +25,11 @@ enum CourtFilter: String, CaseIterable {
     }
 }
 
+enum DashboardTab: String, CaseIterable {
+    case courts = "Courts"
+    case changes = "Change Log"
+}
+
 struct EditorConfig: Identifiable {
     let id: Int
 }
@@ -43,6 +48,7 @@ struct DashboardView: View {
 
     // Filter
     @State private var courtFilter: CourtFilter = .all
+    @State private var selectedTab: DashboardTab = .courts
 
     // Adaptive grid - larger cards for max 10 courts to fill fullscreen
     private let columns = [
@@ -63,26 +69,30 @@ struct DashboardView: View {
                 toolbar
 
                 // Courts grid
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: AppLayout.cardSpacing) {
-                        ForEach(filteredCourts) { court in
-                            CourtCard(
-                                court: court,
-                                onStart: { appViewModel.startPolling(for: court.id) },
-                                onStop: { appViewModel.stopPolling(for: court.id) },
-                                onSkipNext: { appViewModel.skipToNext(court.id) },
-                                onSkipPrevious: { appViewModel.skipToPrevious(court.id) },
-                                onEditQueue: { editorConfig = EditorConfig(id: court.id) },
-                                onRename: {
-                                    renamingCourtId = court.id
-                                    newCourtName = court.name
-                                },
-                                onCopyURL: { copyOverlayURL(for: court.id) }
-                            )
+                if selectedTab == .courts {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: AppLayout.cardSpacing) {
+                            ForEach(filteredCourts) { court in
+                                CourtCard(
+                                    court: court,
+                                    onStart: { appViewModel.startPolling(for: court.id) },
+                                    onStop: { appViewModel.stopPolling(for: court.id) },
+                                    onSkipNext: { appViewModel.skipToNext(court.id) },
+                                    onSkipPrevious: { appViewModel.skipToPrevious(court.id) },
+                                    onEditQueue: { editorConfig = EditorConfig(id: court.id) },
+                                    onRename: {
+                                        renamingCourtId = court.id
+                                        newCourtName = court.name
+                                    },
+                                    onCopyURL: { copyOverlayURL(for: court.id) }
+                                )
+                            }
                         }
+                        .padding(.horizontal, AppLayout.contentPadding)
+                        .padding(.vertical, AppLayout.cardSpacing)
                     }
-                    .padding(.horizontal, AppLayout.contentPadding)
-                    .padding(.vertical, AppLayout.cardSpacing)
+                } else {
+                    ChangeLogView()
                 }
 
                 // Status bar footer
@@ -162,7 +172,17 @@ struct DashboardView: View {
             Spacer()
 
             // Center: Filter segmented control
-            filterPicker
+            Picker("View", selection: $selectedTab) {
+                ForEach(DashboardTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+
+            if selectedTab == .courts {
+                filterPicker
+            }
 
             Spacer()
 
