@@ -43,6 +43,13 @@ class ScannerViewModel: ObservableObject {
     // MARK: - Private State
     private var currentProcess: Process?
     
+    private struct ScannerPaths {
+        let projectRoot: String
+        let scriptPath: String
+        let workingDir: String
+        let venvPython: String
+    }
+    
     // MARK: - Types
     
     struct ScanLogEntry: Identifiable {
@@ -323,31 +330,27 @@ class ScannerViewModel: ObservableObject {
             self.addLog("🔍 performScan() called", type: .info)
         }
         
-        guard let basePath = getBasePath() else {
-            addLog("Could not locate project root (expected MultiCourtScore/Scrapers/vbl_scraper/cli.py)", type: .error)
+        guard let paths = resolveScannerPaths() else {
+            addLog("Could not locate scanner files (expected .../Scrapers/vbl_scraper/cli.py)", type: .error)
             errorMessage = "Scanner paths are unavailable. Open the project root and try again."
             isScanning = false
             scanProgress = "Scan failed - invalid project path"
             return
         }
         
-        // Venv is at project root (NOT in Scrapers folder - that causes Xcode build errors)
-        let venvPython = "\(basePath)/scraper_venv/bin/python3"
-        let scriptPath = "\(basePath)/MultiCourtScore/Scrapers/vbl_scraper/cli.py"
-        let workingDir = "\(basePath)/MultiCourtScore/Scrapers"
-        
         // Fallback to system Python if venv doesn't exist
         let systemPython = "/usr/bin/python3"
         
         // Determine which Python to use
-        let useVenv = FileManager.default.fileExists(atPath: venvPython) &&
-                      FileManager.default.fileExists(atPath: scriptPath)
+        let useVenv = FileManager.default.fileExists(atPath: paths.venvPython) &&
+                      FileManager.default.fileExists(atPath: paths.scriptPath)
         
-        let pythonPath = useVenv ? venvPython : systemPython
+        let pythonPath = useVenv ? paths.venvPython : systemPython
         
         addLog("Using \(useVenv ? "venv" : "system") Python", type: .info)
+        addLog("Project root: \(paths.projectRoot)", type: .info)
         addLog("Python: \(pythonPath)", type: .info)
-        addLog("Script: \(scriptPath)", type: .info)
+        addLog("Script: \(paths.scriptPath)", type: .info)
         
         // PARALLEL MODE: Send all URLs at once for ~4x speedup
         if allURLs.count > 1 {
@@ -357,8 +360,8 @@ class ScannerViewModel: ObservableObject {
             let matches = await scanAllURLsParallel(
                 allURLs,
                 pythonPath: pythonPath,
-                scriptPath: scriptPath,
-                workingDir: workingDir
+                scriptPath: paths.scriptPath,
+                workingDir: paths.workingDir
             )
             
             if !matches.isEmpty {
@@ -376,8 +379,8 @@ class ScannerViewModel: ObservableObject {
                 let matches = await scanSingleURL(
                     url, 
                     pythonPath: pythonPath, 
-                    scriptPath: scriptPath,
-                    workingDir: workingDir
+                    scriptPath: paths.scriptPath,
+                    workingDir: paths.workingDir
                 )
                 
                 if !matches.isEmpty {
@@ -627,21 +630,40 @@ class ScannerViewModel: ObservableObject {
         return match
     }
     
-    private func getBasePath() -> String? {
+    private func resolveScannerPaths() -> ScannerPaths? {
         let fileManager = FileManager.default
+        
+        func buildPaths(root: URL, scriptPath: URL, workingDir: URL) -> ScannerPaths {
+            let rootPath = root.path
+            let rootVenv = root.appendingPathComponent("scraper_venv/bin/python3").path
+            let parentVenv = root.deletingLastPathComponent().appendingPathComponent("scraper_venv/bin/python3").path
+            let selectedVenv = fileManager.fileExists(atPath: rootVenv) ? rootVenv : parentVenv
+            
+            return ScannerPaths(
+                projectRoot: rootPath,
+                scriptPath: scriptPath.path,
+                workingDir: workingDir.path,
+                venvPython: selectedVenv
+            )
+        }
+
+        var candidates: [URL] = []
 
         // 1) Explicit override for custom setups.
         if let envRoot = ProcessInfo.processInfo.environment["MULTICOURTSCORE_ROOT"],
            !envRoot.isEmpty {
-            let scriptPath = URL(fileURLWithPath: envRoot)
-                .appendingPathComponent("MultiCourtScore/Scrapers/vbl_scraper/cli.py").path
-            if fileManager.fileExists(atPath: scriptPath) {
-                return envRoot
-            }
+            candidates.append(URL(fileURLWithPath: envRoot, isDirectory: true))
         }
+        
+        // 2) Compile-time source location fallback (works reliably in local dev builds).
+        let sourceURL = URL(fileURLWithPath: #filePath, isDirectory: false)
+        let sourceDir = sourceURL.deletingLastPathComponent()               // .../ViewModels
+        let appDir = sourceDir.deletingLastPathComponent()                  // .../MultiCourtScore
+        let repoDir = appDir.deletingLastPathComponent()                    // .../<repo-root>
+        candidates.append(appDir)
+        candidates.append(repoDir)
 
-        // 2) Walk up from current working directory (works in Xcode/dev runs).
-        var candidates: [URL] = []
+        // 3) Walk up from current working directory.
         var cursor = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         candidates.append(cursor)
         for _ in 0..<8 {
@@ -649,7 +671,7 @@ class ScannerViewModel: ObservableObject {
             candidates.append(cursor)
         }
 
-        // 3) Walk up from app bundle path (best-effort for app launches).
+        // 4) Walk up from app bundle path (best-effort for app launches).
         var bundleCursor = Bundle.main.bundleURL
         candidates.append(bundleCursor)
         for _ in 0..<6 {
@@ -662,9 +684,18 @@ class ScannerViewModel: ObservableObject {
             let candidatePath = candidate.path
             guard seen.insert(candidatePath).inserted else { continue }
 
-            let scriptPath = candidate.appendingPathComponent("MultiCourtScore/Scrapers/vbl_scraper/cli.py").path
-            if fileManager.fileExists(atPath: scriptPath) {
-                return candidatePath
+            // Layout A: <root>/MultiCourtScore/Scrapers/vbl_scraper/cli.py
+            let nestedScript = candidate.appendingPathComponent("MultiCourtScore/Scrapers/vbl_scraper/cli.py")
+            if fileManager.fileExists(atPath: nestedScript.path) {
+                let nestedWorking = candidate.appendingPathComponent("MultiCourtScore/Scrapers")
+                return buildPaths(root: candidate, scriptPath: nestedScript, workingDir: nestedWorking)
+            }
+            
+            // Layout B: <root>/Scrapers/vbl_scraper/cli.py
+            let flatScript = candidate.appendingPathComponent("Scrapers/vbl_scraper/cli.py")
+            if fileManager.fileExists(atPath: flatScript.path) {
+                let flatWorking = candidate.appendingPathComponent("Scrapers")
+                return buildPaths(root: candidate, scriptPath: flatScript, workingDir: flatWorking)
             }
         }
 
