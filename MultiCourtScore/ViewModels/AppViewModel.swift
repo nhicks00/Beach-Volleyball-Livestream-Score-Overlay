@@ -267,8 +267,12 @@ final class AppViewModel: ObservableObject {
             // Pass matchItem to normalizeData to access seeds
             let snapshot = normalizeData(data, courtId: courtId, currentMatch: matchItem)
             
-            // Smart Queue Switch: If current match is 0-0 but another has scoring, switch to it
-            await checkForSmartQueueSwitch(courtId: courtId, currentSnapshot: snapshot)
+            // Smart Queue Switch: If current match is 0-0 but another has scoring, switch to it.
+            // If we switch, stop processing this stale snapshot.
+            let switchedToDifferentMatch = await checkForSmartQueueSwitch(courtId: courtId, currentSnapshot: snapshot)
+            if switchedToDifferentMatch {
+                return
+            }
             
             // Inactivity Check: Has score CHANGED (points OR sets) since last poll?
             let currentS1 = snapshot.team1Score
@@ -388,16 +392,16 @@ final class AppViewModel: ObservableObject {
     
     /// Smart Queue Switch: Check if current match is 0-0 but another queue match has active scoring.
     /// If so, auto-switch to the active match to prioritize live content.
-    private func checkForSmartQueueSwitch(courtId: Int, currentSnapshot: ScoreSnapshot) async {
-        guard let idx = courtIndex(for: courtId) else { return }
-        guard let activeIdx = courts[idx].activeIndex else { return }
+    private func checkForSmartQueueSwitch(courtId: Int, currentSnapshot: ScoreSnapshot) async -> Bool {
+        guard let idx = courtIndex(for: courtId) else { return false }
+        guard let activeIdx = courts[idx].activeIndex else { return false }
         
         // Only smart-switch if current match hasn't started (0-0)
         let currentScore = currentSnapshot.team1Score + currentSnapshot.team2Score
-        guard currentScore == 0 else { return }
+        guard currentScore == 0 else { return false }
         
         // Don't switch if we've been live on this match (liveSince set)
-        if courts[idx].liveSince != nil { return }
+        if courts[idx].liveSince != nil { return false }
         
         // Scan queue for any match with active scoring
         for (queueIdx, match) in courts[idx].queue.enumerated() {
@@ -414,13 +418,15 @@ final class AppViewModel: ObservableObject {
                     courts[idx].activeIndex = queueIdx
                     courts[idx].lastSnapshot = nil
                     courts[idx].status = .waiting
-                    return // Only switch to first found active match
+                    return true // Only switch to first found active match
                 }
             } catch {
                 // Ignore errors, just skip this match
                 continue
             }
         }
+        
+        return false
     }
     
     // Refresh TBD names in the queue
@@ -549,14 +555,37 @@ final class AppViewModel: ObservableObject {
     
     private func processCourtChange(_ change: (matchId: UUID, fromCourt: Int, toCourt: Int, match: MatchItem)) async {
         guard let fromIdx = courtIndex(for: change.fromCourt),
-              let toIdx = courtIndex(for: change.toCourt) else { return }
+              let toIdx = courtIndex(for: change.toCourt),
+              let removedIndex = courts[fromIdx].queue.firstIndex(where: { $0.id == change.matchId }) else { return }
         
-        // Remove from source queue
-        courts[fromIdx].queue.removeAll { $0.id == change.matchId }
+        let wasLiveMatch = {
+            guard courts[fromIdx].status == .live,
+                  let active = courts[fromIdx].activeIndex,
+                  active < courts[fromIdx].queue.count else {
+                return false
+            }
+            return courts[fromIdx].queue[active].id == change.matchId
+        }()
         
-        // Adjust activeIndex if needed
-        if let active = courts[fromIdx].activeIndex, active >= courts[fromIdx].queue.count {
-            courts[fromIdx].activeIndex = max(0, courts[fromIdx].queue.count - 1)
+        // Remove from source queue at exact index so active index tracking stays correct.
+        courts[fromIdx].queue.remove(at: removedIndex)
+        
+        // Adjust source activeIndex if removal happened before or at active position.
+        if let active = courts[fromIdx].activeIndex {
+            if courts[fromIdx].queue.isEmpty {
+                courts[fromIdx].activeIndex = nil
+            } else if active > removedIndex {
+                courts[fromIdx].activeIndex = active - 1
+            } else if active >= courts[fromIdx].queue.count {
+                courts[fromIdx].activeIndex = courts[fromIdx].queue.count - 1
+            }
+        }
+        
+        if wasLiveMatch {
+            courts[fromIdx].status = courts[fromIdx].queue.isEmpty ? .idle : .waiting
+            courts[fromIdx].liveSince = nil
+            courts[fromIdx].lastSnapshot = nil
+            courts[fromIdx].finishedAt = nil
         }
         
         // Check if target camera has a live match
@@ -581,18 +610,13 @@ final class AppViewModel: ObservableObject {
         print("🔄 Court change: \(matchLabel) moved from \(CourtNaming.displayName(for: change.fromCourt)) to \(CourtNaming.displayName(for: change.toCourt))")
         
         // Send notification
-        // Check if this was the active match by comparing with activeIndex
-        let activeIdx = courts[fromIdx].activeIndex ?? -1
-        let isLiveMatch = activeIdx >= 0 && courts[fromIdx].status == .live &&
-                          activeIdx < courts[fromIdx].queue.count
-        
         let event = CourtChangeEvent(
             matchLabel: matchLabel,
-            oldCourt: change.match.physicalCourt ?? "Unknown",
-            newCourt: change.match.physicalCourt ?? "Unknown",
+            oldCourt: CourtNaming.displayName(for: change.fromCourt),
+            newCourt: CourtNaming.displayName(for: change.toCourt),
             oldCamera: change.fromCourt,
             newCamera: change.toCourt,
-            isLiveMatch: isLiveMatch,
+            isLiveMatch: wasLiveMatch,
             timestamp: Date()
         )
         

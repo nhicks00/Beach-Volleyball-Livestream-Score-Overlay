@@ -8,7 +8,7 @@ Part of MultiCourtScore v2 - Consolidated scraper architecture
 
 import asyncio
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
@@ -80,7 +80,6 @@ class PoolScraper(VBLScraperBase):
                 matches = await self._extract_matches_alternative()
             
             result.matches = matches
-            result.total_matches = len(matches)
             result.status = "success"
             
             logger.info(f"Found {len(matches)} pool matches")
@@ -169,14 +168,27 @@ class PoolScraper(VBLScraperBase):
         
         try:
             text = await container.inner_text()
-            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            lines = [self._normalize_line(l) for l in text.split('\n')]
+            lines = [l for l in lines if l]
         except Exception:
             return None
         
+        # Match number (e.g. "Match 7")
+        match_num = re.search(r'\bMatch\s*(\d+)\b', text, re.I)
+        if match_num:
+            match.match_number = match_num.group(1)
+        
         # Extract team names
-        team1, team2 = self._extract_teams(text)
+        team1, team2, team1_seed, team2_seed = self._extract_teams_from_lines(lines)
+        if not team1 or not team2:
+            fallback_team1, fallback_team2 = self._extract_teams(text)
+            team1 = team1 or fallback_team1
+            team2 = team2 or fallback_team2
+
         match.team1 = team1
         match.team2 = team2
+        match.team1_seed = team1_seed
+        match.team2_seed = team2_seed
         
         # Extract time
         time_match = re.search(r'(\d{1,2}:\d{2}\s*(?:AM|PM)?)', text, re.I)
@@ -184,7 +196,7 @@ class PoolScraper(VBLScraperBase):
             match.start_time = self.parse_time(time_match.group(1))
         
         # Extract court
-        court_match = re.search(r'Court\s*(\d+|[A-Z])', text, re.I)
+        court_match = re.search(r'(?:Court|Ct)\s*([A-Z0-9]+)', text, re.I)
         if court_match:
             match.court = court_match.group(1)
         
@@ -193,28 +205,167 @@ class PoolScraper(VBLScraperBase):
             # Look for vMix button or API link
             vmix_button = container.locator('button:has-text("VMIX"), a:has-text("VMIX")').first
             if await vmix_button.is_visible():
-                await vmix_button.click()
-                await asyncio.sleep(0.5)
-                
-                # Look for API link
-                api_link = self.page.locator('a[href*="api"]').first
-                if await api_link.is_visible():
-                    match.api_url = await api_link.get_attribute('href')
-                
+                captured_before = set(self._captured_api_urls)
+                await vmix_button.click(force=True)
+                await asyncio.sleep(1.2)
+
+                # Prefer newly captured network request URLs for this specific click
+                new_urls = [u for u in self._captured_api_urls if u not in captured_before]
+                if new_urls:
+                    match.api_url = new_urls[-1]
+
+                # Fallback: parse rendered dialog/page content
+                if not match.api_url:
+                    match.api_url = await self._extract_api_url_from_content()
+
                 # Close any overlay
                 await self.page.keyboard.press('Escape')
+                await asyncio.sleep(0.15)
         except Exception:
             pass
         
         # Also check for direct link on container
-        try:
-            api_link = container.locator('a[href*="api"]').first
-            if await api_link.is_visible():
-                match.api_url = await api_link.get_attribute('href')
-        except Exception:
-            pass
+        if not match.api_url:
+            try:
+                api_link = container.locator('a[href*="api"]').first
+                if await api_link.is_visible():
+                    match.api_url = await api_link.get_attribute('href')
+            except Exception:
+                pass
         
         return match
+
+    def _normalize_line(self, line: str) -> str:
+        """Normalize whitespace and strip control characters from text lines."""
+        return re.sub(r'\s+', ' ', line).strip()
+
+    def parse_time(self, raw_time: str) -> Optional[str]:
+        """Normalize time string to VBL app format, e.g. '9:00 AM' -> '9:00AM'."""
+        if not raw_time:
+            return None
+
+        cleaned = re.sub(r'\s+', '', raw_time).upper()
+        m = re.search(r'(\d{1,2}:\d{2})(AM|PM)?', cleaned)
+        if not m:
+            return raw_time.strip()
+
+        hhmm = m.group(1)
+        ampm = m.group(2) or ""
+        return f"{hhmm}{ampm}"
+
+    def clean_team_name(self, raw_name: str) -> Optional[str]:
+        """Clean team/player text while preserving real names."""
+        if not raw_name:
+            return None
+
+        name = self._normalize_line(raw_name)
+        name = re.sub(r'^[#\s]*\d+\s+', '', name)  # Remove leading seeds
+        name = re.sub(r'\s+\d+$', '', name)        # Remove trailing scores
+        name = name.strip(' -|:')
+
+        if not name or not re.search(r'[A-Za-z]', name):
+            return None
+        if re.search(r'\b(match|court|team|ref|vmix|set)\b', name, re.I):
+            return None
+
+        return name
+
+    def _looks_like_name(self, line: str) -> bool:
+        """Heuristic check for a line that likely contains a player/team name."""
+        if not line:
+            return False
+        if re.fullmatch(r'\d+', line):
+            return False
+        return self.clean_team_name(line) is not None
+
+    def _extract_teams_from_lines(
+        self,
+        lines: List[str]
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """
+        Extract teams from VBL pool card lines.
+
+        Current VBL pool cards are typically:
+          seed -> player 1 -> player 2 -> score
+          seed -> player 1 -> player 2 -> score
+        """
+        teams: List[Tuple[str, str]] = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+
+            # Team rows start with a numeric seed followed by a player name line
+            if not re.fullmatch(r'\d{1,3}', line):
+                i += 1
+                continue
+
+            next_line = lines[i + 1] if i + 1 < len(lines) else ""
+            if not self._looks_like_name(next_line):
+                i += 1
+                continue
+
+            seed = line
+            players: List[str] = []
+            j = i + 1
+
+            while j < len(lines):
+                candidate = lines[j]
+                lowered = candidate.lower()
+
+                if lowered.startswith('ref') or lowered == 'vmix':
+                    break
+
+                if re.fullmatch(r'\d{1,3}', candidate):
+                    # Score or next team seed once we've captured at least one player
+                    if players:
+                        break
+                    j += 1
+                    continue
+
+                cleaned = self.clean_team_name(candidate)
+                if cleaned:
+                    players.append(cleaned)
+
+                j += 1
+
+            if players:
+                # Beach teams are usually two player lines; keep a single line if only one was found
+                team_name = " / ".join(players[:2]) if len(players) >= 2 else players[0]
+                teams.append((seed, team_name))
+                if len(teams) == 2:
+                    break
+
+            i = j
+
+        team1_seed = teams[0][0] if len(teams) >= 1 else None
+        team1 = teams[0][1] if len(teams) >= 1 else None
+        team2_seed = teams[1][0] if len(teams) >= 2 else None
+        team2 = teams[1][1] if len(teams) >= 2 else None
+
+        return team1, team2, team1_seed, team2_seed
+
+    async def _extract_api_url_from_content(self) -> Optional[str]:
+        """Extract vMix API URL from the active page/dialog content."""
+        try:
+            content = await self.page.content()
+            urls = re.findall(
+                r'https://api\.volleyballlife\.com/api/v1\.0/matches/\d+/vmix[^"\s<]*',
+                content,
+                re.I
+            )
+            if urls:
+                # The active dialog appends/updates URLs; newest entry is usually the current match.
+                return urls[-1].replace('&amp;', '&')
+
+            inputs = await self.page.locator('input[value*="api.volleyballlife.com"]').all()
+            for inp in inputs:
+                val = await inp.get_attribute('value')
+                if val and 'vmix' in val:
+                    return val
+        except Exception:
+            pass
+        return None
     
     def _extract_teams(self, text: str) -> tuple:
         """Extract team names from text"""
@@ -222,9 +373,9 @@ class PoolScraper(VBLScraperBase):
         
         patterns = [
             # Name / Name format
-            r'([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*/\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'([A-Za-z][A-Za-z\'\-\.\(\)\s]{1,80})\s*/\s*([A-Za-z][A-Za-z\'\-\.\(\)\s]{1,80})',
             # Name vs Name format
-            r'([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+vs\.?\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)',
+            r'([A-Za-z][A-Za-z\'\-\.\(\)\s]{1,80})\s+vs\.?\s+([A-Za-z][A-Za-z\'\-\.\(\)\s]{1,80})',
             # Two separate lines with names
             r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*$',
         ]
@@ -238,11 +389,12 @@ class PoolScraper(VBLScraperBase):
         
         # Fallback: try to find name-like lines
         if not team1:
-            lines = [l.strip() for l in text.split('\n') if l.strip()]
-            name_lines = [l for l in lines if re.match(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?(?:\s*/\s*[A-Z][a-z]+)?$', l)]
+            lines = [self._normalize_line(l) for l in text.split('\n') if self._normalize_line(l)]
+            name_lines = [self.clean_team_name(l) for l in lines if self._looks_like_name(l)]
+            name_lines = [n for n in name_lines if n]
             if len(name_lines) >= 2:
-                team1 = self.clean_team_name(name_lines[0])
-                team2 = self.clean_team_name(name_lines[1])
+                team1 = name_lines[0]
+                team2 = name_lines[1]
         
         return team1, team2
     

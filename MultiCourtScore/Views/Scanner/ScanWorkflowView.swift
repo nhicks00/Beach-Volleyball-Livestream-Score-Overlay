@@ -42,6 +42,7 @@ struct ScanWorkflowView: View {
 
     @State private var currentStep: ScanWorkflowStep = .scanSources
     @State private var matchAssignments: [UUID: Int] = [:]
+    @State private var courtAssignments: [String: Int] = [:]
     @State private var selectedCourts: Set<String> = []
     @State private var courtSearchText = ""
 
@@ -227,15 +228,7 @@ struct ScanWorkflowView: View {
         case .configureOutput:
             CourtMappingStep(
                 groupedByCourt: groupedByCourt.filter { selectedCourts.contains($0.key) },
-                onProceed: {
-                    initializeAssignments()
-                    currentStep = .queueManagement
-                },
-                onSkip: {
-                    initializeAssignments()
-                    currentStep = .queueManagement
-                },
-                onBack: { currentStep = .selectLiveCourts }
+                courtAssignments: $courtAssignments
             )
         case .queueManagement:
             KanbanQueueStep(
@@ -288,6 +281,7 @@ struct ScanWorkflowView: View {
                             CourtMappingStore.shared.updateUnmappedCourts(from: allCourts)
                         }
                         if currentStep == .configureOutput {
+                            persistCourtMappings()
                             initializeAssignments()
                         }
                         currentStep = next
@@ -316,11 +310,30 @@ struct ScanWorkflowView: View {
 
     private func initializeAssignments() {
         for match in scanResults {
-            if matchAssignments[match.id] == nil {
-                // Matches on courts without cameras default to Standby (0)
+            guard selectedCourts.contains(match.courtDisplay) else {
                 matchAssignments[match.id] = 0
+                continue
+            }
+            
+            // Matches on courts without mapped cameras default to Standby (0).
+            matchAssignments[match.id] = courtAssignments[match.courtDisplay] ?? 0
+        }
+    }
+    
+    private func persistCourtMappings() {
+        let mappingStore = CourtMappingStore.shared
+        let selectedCourtNames = Array(groupedByCourt.keys.filter { selectedCourts.contains($0) })
+        
+        for courtName in selectedCourtNames {
+            let mappedCamera = courtAssignments[courtName] ?? 0
+            if mappedCamera > 0 {
+                mappingStore.setMapping(courtNames: [courtName], to: mappedCamera)
+            } else {
+                mappingStore.removeCourtName(courtName)
             }
         }
+        
+        mappingStore.updateUnmappedCourts(from: selectedCourtNames)
     }
 
     private func importAndClose() {
@@ -657,12 +670,9 @@ struct SelectCourtsStep: View {
 
 struct CourtMappingStep: View {
     let groupedByCourt: [String: [ScannerViewModel.VBLMatch]]
-    let onProceed: () -> Void
-    let onSkip: () -> Void
-    let onBack: () -> Void
+    @Binding var courtAssignments: [String: Int]
 
     @StateObject private var mappingStore = CourtMappingStore.shared
-    @State private var courtAssignments: [String: Int] = [:]
 
     private var sortedCourts: [String] {
         groupedByCourt.keys.sorted { a, b in
@@ -726,7 +736,8 @@ struct CourtMappingStep: View {
         }
         .onAppear {
             for courtName in groupedByCourt.keys {
-                if let existingCamera = mappingStore.cameraId(for: courtName) {
+                if courtAssignments[courtName] == nil,
+                   let existingCamera = mappingStore.cameraId(for: courtName) {
                     courtAssignments[courtName] = existingCamera
                 }
             }
@@ -1005,11 +1016,16 @@ struct KanbanQueueStep: View {
 
     private func autoAssignAll() {
         let priorityCourtPatterns = ["stadium", "center", "main", "feature", "show"]
-
-        let grouped = Dictionary(grouping: scanResults) { $0.courtDisplay }
+        let eligibleMatches = scanResults.filter { liveCourts.contains($0.courtDisplay) }
+        let grouped = Dictionary(grouping: eligibleMatches) { $0.courtDisplay }
         var priorityCourts: [String] = []
         var numberedCourts: [(name: String, number: Int)] = []
         var otherCourts: [String] = []
+        
+        // Any matches from courts without cameras must stay in Standby.
+        for match in scanResults where !liveCourts.contains(match.courtDisplay) {
+            assignments[match.id] = 0
+        }
 
         for courtName in grouped.keys {
             let lowerName = courtName.lowercased()
