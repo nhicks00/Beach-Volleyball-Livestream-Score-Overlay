@@ -323,7 +323,13 @@ class ScannerViewModel: ObservableObject {
             self.addLog("🔍 performScan() called", type: .info)
         }
         
-        let basePath = getBasePath()
+        guard let basePath = getBasePath() else {
+            addLog("Could not locate project root (expected MultiCourtScore/Scrapers/vbl_scraper/cli.py)", type: .error)
+            errorMessage = "Scanner paths are unavailable. Open the project root and try again."
+            isScanning = false
+            scanProgress = "Scan failed - invalid project path"
+            return
+        }
         
         // Venv is at project root (NOT in Scrapers folder - that causes Xcode build errors)
         let venvPython = "\(basePath)/scraper_venv/bin/python3"
@@ -621,9 +627,48 @@ class ScannerViewModel: ObservableObject {
         return match
     }
     
-    private func getBasePath() -> String {
-        // Development path
-        return "/Users/nathanhicks/NATHANS APPS/MultiCourtScore"
+    private func getBasePath() -> String? {
+        let fileManager = FileManager.default
+
+        // 1) Explicit override for custom setups.
+        if let envRoot = ProcessInfo.processInfo.environment["MULTICOURTSCORE_ROOT"],
+           !envRoot.isEmpty {
+            let scriptPath = URL(fileURLWithPath: envRoot)
+                .appendingPathComponent("MultiCourtScore/Scrapers/vbl_scraper/cli.py").path
+            if fileManager.fileExists(atPath: scriptPath) {
+                return envRoot
+            }
+        }
+
+        // 2) Walk up from current working directory (works in Xcode/dev runs).
+        var candidates: [URL] = []
+        var cursor = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
+        candidates.append(cursor)
+        for _ in 0..<8 {
+            cursor.deleteLastPathComponent()
+            candidates.append(cursor)
+        }
+
+        // 3) Walk up from app bundle path (best-effort for app launches).
+        var bundleCursor = Bundle.main.bundleURL
+        candidates.append(bundleCursor)
+        for _ in 0..<6 {
+            bundleCursor.deleteLastPathComponent()
+            candidates.append(bundleCursor)
+        }
+
+        var seen = Set<String>()
+        for candidate in candidates {
+            let candidatePath = candidate.path
+            guard seen.insert(candidatePath).inserted else { continue }
+
+            let scriptPath = candidate.appendingPathComponent("MultiCourtScore/Scrapers/vbl_scraper/cli.py").path
+            if fileManager.fileExists(atPath: scriptPath) {
+                return candidatePath
+            }
+        }
+
+        return nil
     }
     
     private func addLog(_ message: String, type: ScanLogEntry.LogType) {
@@ -726,7 +771,7 @@ class ScannerViewModel: ObservableObject {
                 // Since VBLMatch is a struct with let properties, we need to decode/encode
                 if let data = try? JSONEncoder().encode(match),
                    var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    dict["matchNumber"] = "\(baseLabel) \(index + 1)"
+                    dict["match_number"] = "\(baseLabel) \(index + 1)"
                     if let newData = try? JSONSerialization.data(withJSONObject: dict),
                        let newMatch = try? JSONDecoder().decode(VBLMatch.self, from: newData) {
                         result.append(newMatch)

@@ -34,6 +34,10 @@ class CourtMappingStore: ObservableObject {
     
     private let storageKey = "courtMappings"
     
+    private func normalizedCourtName(_ name: String) -> String {
+        name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
     init() {
         loadMappings()
     }
@@ -42,9 +46,9 @@ class CourtMappingStore: ObservableObject {
     
     /// Get camera ID for a court name, returns nil if not mapped
     func cameraId(for courtName: String) -> Int? {
-        let normalized = courtName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = normalizedCourtName(courtName)
         return mappings.first { mapping in
-            mapping.courtNames.contains { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == normalized }
+            mapping.courtNames.contains { normalizedCourtName($0) == normalized }
         }?.cameraId
     }
     
@@ -62,36 +66,52 @@ class CourtMappingStore: ObservableObject {
     
     /// Add or update a mapping for court names to a camera
     func setMapping(courtNames: [String], to cameraId: Int) {
+        let cleanedNames = courtNames
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        
+        guard !cleanedNames.isEmpty else { return }
+        
         // Remove these court names from any existing mappings
-        for courtName in courtNames {
-            removeCourtName(courtName)
+        for courtName in cleanedNames {
+            removeCourtName(courtName, shouldSave: false)
         }
         
         // Check if camera already has a mapping
         if let existingIndex = mappings.firstIndex(where: { $0.cameraId == cameraId }) {
-            // Add to existing mapping
-            mappings[existingIndex].courtNames.append(contentsOf: courtNames)
+            // Add to existing mapping without duplicates.
+            for courtName in cleanedNames where !mappings[existingIndex].courtNames.contains(where: { normalizedCourtName($0) == normalizedCourtName(courtName) }) {
+                mappings[existingIndex].courtNames.append(courtName)
+            }
         } else {
             // Create new mapping
-            mappings.append(CourtMapping(courtNames: courtNames, cameraId: cameraId))
+            mappings.append(CourtMapping(courtNames: cleanedNames, cameraId: cameraId))
         }
         
         // Remove from unmapped list
-        unmappedCourts.removeAll { courtNames.contains($0) }
+        let normalizedIncoming = Set(cleanedNames.map(normalizedCourtName))
+        unmappedCourts.removeAll { normalizedIncoming.contains(normalizedCourtName($0)) }
         
         saveMappings()
     }
     
     /// Remove a specific court name from all mappings
     func removeCourtName(_ courtName: String) {
+        removeCourtName(courtName, shouldSave: true)
+    }
+    
+    private func removeCourtName(_ courtName: String, shouldSave: Bool) {
+        let normalized = normalizedCourtName(courtName)
         for i in mappings.indices {
             mappings[i].courtNames.removeAll { 
-                $0.lowercased() == courtName.lowercased() 
+                normalizedCourtName($0) == normalized
             }
         }
         // Clean up empty mappings
         mappings.removeAll { $0.courtNames.isEmpty }
-        saveMappings()
+        if shouldSave {
+            saveMappings()
+        }
     }
     
     /// Clear all mappings (for new tournament)
