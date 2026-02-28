@@ -30,7 +30,8 @@ logger = logging.getLogger('vbl_scraper')
 class ScraperConfig:
     """Configuration for the VBL scraper"""
     headless: bool = True
-    timeout: int = 30000
+    timeout: int = 60000
+    navigation_timeout: int = 45000
     session_file: Optional[Path] = None
     results_file: Optional[Path] = None
     slow_mo: int = 0  # Milliseconds to slow down operations
@@ -152,6 +153,7 @@ class VBLScraperBase:
         
         self.page = await self.context.new_page()
         self.page.set_default_timeout(self.config.timeout)
+        self.page.set_default_navigation_timeout(self.config.navigation_timeout)
         
         # Set up network request interception for API URL capture
         self.page.on('request', self._capture_api_requests)
@@ -244,20 +246,23 @@ class VBLScraperBase:
     async def phase_1_initial_setup(self):
         """
         Phase 1: Navigate to VBL and check for V3 view switch
+        Uses 'domcontentloaded' instead of 'networkidle' because VBL's SPA
+        keeps persistent connections (analytics, websockets) that prevent
+        networkidle from resolving.
         """
         logger.info("PHASE 1: Initial setup and V3 view check")
-        
-        await self.page.goto('https://volleyballlife.com')
-        await self.page.wait_for_load_state('networkidle')
-        
+
+        await self.page.goto('https://volleyballlife.com', wait_until='load')
+        # Give Vue.js time to hydrate
+        await asyncio.sleep(2.0)
+
         # Check for V3 switch button
         try:
             v3_selector = 'button:has-text("SWITCH TO V3 VIEW")'
             if await self.page.is_visible(v3_selector):
                 logger.info("Found V3 switch button - clicking...")
                 await self.page.click(v3_selector)
-                await self.page.wait_for_load_state('networkidle')
-                await asyncio.sleep(1.2)
+                await asyncio.sleep(2.0)
                 logger.info("Switched to V3 view")
             else:
                 logger.info("Already in V3 view")

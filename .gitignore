@@ -26,6 +26,10 @@ __pycache__/
 venv/
 .env
 
+# Credentials (never commit secrets)
+credentials.json
+**/credentials.json
+
 # Misc
 .idea/
 .vscode/
