@@ -157,6 +157,16 @@ def _parse_point_cap(text: str) -> Optional[int]:
     cap_at = re.search(r'cap(?:ped)?\s+(?:at\s+)?(\d+)', text)
     if cap_at:
         return int(cap_at.group(1))
+
+    # Pattern: "23 point cap" / "23 pt cap"
+    point_cap = re.search(r'(\d+)\s*(?:point|pt)s?\s*cap', text)
+    if point_cap:
+        return int(point_cap.group(1))
+
+    # Pattern: "cap of 23" / "cap is 23"
+    cap_of = re.search(r'cap\s*(?:of|is)\s*(\d+)', text)
+    if cap_of:
+        return int(cap_of.group(1))
     
     # Pattern: "win by 2" implies no cap
     if re.search(r'win\s+by\s+2', text):

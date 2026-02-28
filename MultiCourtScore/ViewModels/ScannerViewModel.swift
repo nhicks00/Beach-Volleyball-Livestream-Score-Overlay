@@ -621,6 +621,16 @@ class ScannerViewModel: ObservableObject {
             enrichedDict["type_detail"] = typeDetail
         }
         
+        // Fallback when scanner output doesn't provide match_type at the URL result level.
+        if enrichedDict["match_type"] == nil,
+           let apiURL = (enrichedDict["api_url"] as? String)?.lowercased() {
+            if apiURL.contains("bracket=false") {
+                enrichedDict["match_type"] = "Pool Play"
+            } else if apiURL.contains("bracket=true") {
+                enrichedDict["match_type"] = "Bracket Play"
+            }
+        }
+        
         // Convert dictionary to JSON data and decode
         guard let jsonData = try? JSONSerialization.data(withJSONObject: enrichedDict),
               let match = try? JSONDecoder().decode(VBLMatch.self, from: jsonData) else {

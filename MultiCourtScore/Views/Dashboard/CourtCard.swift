@@ -112,6 +112,7 @@ struct CourtCard: View {
                 .padding(.horizontal, AppLayout.cardPadding)
                 .padding(.vertical, 8)
         }
+        .frame(maxWidth: .infinity, minHeight: 220)
         .background(cardBackground)
         .overlay(cardBorder)
         .shadow(
@@ -163,21 +164,15 @@ struct CourtCard: View {
     // MARK: - Header
 
     private var cardHeader: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // Camera name
             Text(court.displayName)
-                .font(AppTypography.headline)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundColor(AppColors.textPrimary)
+                .lineLimit(1)
             
-            // Court number badge (moved from footer)
-            if let match = court.currentMatch,
-               let courtNum = match.courtNumber, !courtNum.isEmpty {
-                Text("Ct \(courtNum)")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(AppColors.warning))
+            if let match = court.currentMatch {
+                topMetadataBadges(for: match)
             }
             
             Spacer()
@@ -186,16 +181,103 @@ struct CourtCard: View {
             if court.status == .finished, let finishedAt = court.finishedAt {
                 PostmatchTimer(finishedAt: finishedAt)
             }
+            
+            Button {
+                onCopyURL()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "link")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Copy URL")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundColor(AppColors.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(AppColors.surfaceHover)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Copy overlay URL")
 
             StatusBadge(label: statusLabel, color: statusColor, isLive: court.status == .live)
         }
+    }
+    
+    @ViewBuilder
+    private func topMetadataBadges(for match: MatchItem) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                courtBadge(for: match)
+                matchBadge(for: match)
+                timeBadge(for: match)
+                dayBadge(for: match)
+            }
+            
+            HStack(spacing: 6) {
+                courtBadge(for: match)
+                matchBadge(for: match)
+                timeBadge(for: match)
+            }
+            
+            HStack(spacing: 6) {
+                courtBadge(for: match)
+                matchBadge(for: match)
+            }
+            
+            HStack(spacing: 6) {
+                courtBadge(for: match)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func courtBadge(for match: MatchItem) -> some View {
+        if let courtNum = match.courtNumber, !courtNum.isEmpty {
+            metadataBadge("Ct \(courtNum)", textColor: .white, fill: AppColors.warning)
+        }
+    }
+    
+    @ViewBuilder
+    private func matchBadge(for match: MatchItem) -> some View {
+        if let matchNum = match.matchNumber, !matchNum.isEmpty {
+            let isNumeric = Int(matchNum.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+            let label = isNumeric ? "M\(matchNum)" : matchNum
+            metadataBadge(label, textColor: .white, fill: AppColors.primary)
+        }
+    }
+    
+    @ViewBuilder
+    private func timeBadge(for match: MatchItem) -> some View {
+        if let startTime = match.scheduledTime, !startTime.isEmpty {
+            metadataBadge(startTime, textColor: AppColors.textPrimary, fill: AppColors.surfaceHover)
+        }
+    }
+    
+    @ViewBuilder
+    private func dayBadge(for match: MatchItem) -> some View {
+        if let day = match.startDate, !day.isEmpty {
+            metadataBadge(day, textColor: .white, fill: courtCardDayColor(for: day))
+        }
+    }
+    
+    private func metadataBadge(_ text: String, textColor: Color, fill: Color) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .foregroundColor(textColor)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(fill))
     }
 
     // MARK: - Score Rows
 
     @ViewBuilder
     private func scoreRows(snapshot: ScoreSnapshot) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 12) {
             teamRow(
                 seed: snapshot.team1Seed,
                 name: snapshot.team1Name,
@@ -215,14 +297,16 @@ struct CourtCard: View {
     private enum Team { case team1, team2 }
 
     private func currentSetScore(for team: Team, snapshot: ScoreSnapshot) -> Int {
-        guard let lastSet = snapshot.setHistory.last, !lastSet.isComplete else {
-            return 0
+        if let lastSet = snapshot.setHistory.last {
+            return team == .team1 ? lastSet.team1Score : lastSet.team2Score
         }
-        return team == .team1 ? lastSet.team1Score : lastSet.team2Score
+
+        // Fallback for payloads without set history.
+        return team == .team1 ? snapshot.team1Score : snapshot.team2Score
     }
 
     private func teamRow(seed: String?, name: String, isServing: Bool, score: Int) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // Seed badge
             if let seed = seed, !seed.isEmpty {
                 SeedBadge(seed: seed)
@@ -230,14 +314,14 @@ struct CourtCard: View {
 
             // Team name
             Text(abbreviateName(name))
-                .font(AppTypography.callout)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(AppColors.textPrimary)
                 .lineLimit(1)
 
             // Serve indicator
             if isServing {
                 Image(systemName: "volleyball.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundColor(AppColors.warning)
             }
 
@@ -271,17 +355,17 @@ struct CourtCard: View {
     private var nextMatchPreview: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("NEXT MATCH")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundColor(AppColors.textMuted)
 
             if let match = court.currentMatch {
                 Text(abbreviatedDisplayName(for: match))
-                    .font(AppTypography.callout)
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(AppColors.textPrimary)
                     .lineLimit(2)
             } else {
                 Text("Waiting...")
-                    .font(AppTypography.callout)
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(AppColors.textSecondary)
                     .italic()
             }
@@ -292,7 +376,7 @@ struct CourtCard: View {
     // MARK: - Footer
 
     private var cardFooter: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // Navigation buttons - larger and more prominent
             HStack(spacing: 6) {
                 Button {
@@ -300,9 +384,9 @@ struct CourtCard: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                         Text("Prev")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
                     .padding(.horizontal, 8)
@@ -316,7 +400,7 @@ struct CourtCard: View {
                 .disabled((court.activeIndex ?? 0) <= 0)
                 
                 Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(AppColors.textMuted)
                     .padding(.horizontal, 4)
                 
@@ -325,9 +409,9 @@ struct CourtCard: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text("Next")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                     }
                     .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
                     .padding(.horizontal, 8)
@@ -345,26 +429,53 @@ struct CourtCard: View {
             .background(AppColors.surfaceElevated.opacity(0.3))
             .cornerRadius(6)
             
-            Spacer()
-
-            if let match = court.currentMatch {
-                // Day badge (e.g., "Sat", "Sun")
-                if let day = match.startDate, !day.isEmpty {
-                    Text(day)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(courtCardDayColor(for: day)))
+            HStack(spacing: 6) {
+                Button {
+                    onStart()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Start")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .foregroundColor(court.status.isPolling ? AppColors.textMuted : AppColors.success)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(court.status.isPolling ? Color.clear : AppColors.success.opacity(0.15))
+                    )
                 }
-
-                // Match number badge
-                if let matchNum = match.matchNumber, !matchNum.isEmpty {
-                    Text("M\(matchNum)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(AppColors.textMuted)
+                .buttonStyle(.plain)
+                .disabled(court.queue.isEmpty || court.status.isPolling)
+                
+                Button {
+                    onStop()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Stop")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .foregroundColor(court.status.isPolling ? AppColors.error : AppColors.textMuted)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(court.status.isPolling ? AppColors.error.opacity(0.15) : Color.clear)
+                    )
                 }
+                .buttonStyle(.plain)
+                .disabled(!court.status.isPolling)
             }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(AppColors.surfaceElevated.opacity(0.3))
+            .cornerRadius(6)
+            
+            Spacer()
         }
     }
 
@@ -430,7 +541,7 @@ struct StatusBadge: View {
         HStack(spacing: 6) {
             Circle()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 9, height: 9)
                 .overlay(
                     Circle()
                         .stroke(color.opacity(0.5), lineWidth: 2)
@@ -440,11 +551,12 @@ struct StatusBadge: View {
                 .animation(isLive ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : .default, value: isLive)
 
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundColor(color)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
         .background(
             Capsule()
                 .fill(color.opacity(0.15))
@@ -457,10 +569,10 @@ struct SeedBadge: View {
 
     var body: some View {
         Text(seed)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .font(.system(size: 13, weight: .bold, design: .monospaced))
             .foregroundColor(AppColors.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 4)
                     .fill(AppColors.surfaceHover)
@@ -478,8 +590,10 @@ struct ConnectionBadge: View {
                 .frame(width: 8, height: 8)
 
             Text(isConnected ? "Connected" : "Disconnected")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(isConnected ? AppColors.success : AppColors.error)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -504,9 +618,9 @@ struct PostmatchTimer: View {
             
             HStack(spacing: 4) {
                 Image(systemName: "timer")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                 Text(String(format: "%d:%02d", minutes, seconds))
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
             }
             .foregroundColor(remaining <= 30 ? AppColors.warning : AppColors.textMuted)
             .padding(.horizontal, 8)

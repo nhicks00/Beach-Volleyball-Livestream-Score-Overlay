@@ -71,6 +71,10 @@ class PoolScraper(VBLScraperBase):
             
             # Wait for pool content
             await self._wait_for_pool_content()
+
+            # Extract pool-specific match format (often differs from bracket rules).
+            match_format = await self._extract_pool_match_format()
+            logger.info(f"Pool format: {match_format.get('format_text', 'Not found')}")
             
             # Extract matches using multiple strategies
             matches = await self._extract_pool_matches()
@@ -78,6 +82,13 @@ class PoolScraper(VBLScraperBase):
             if not matches:
                 # Try alternative extraction
                 matches = await self._extract_matches_alternative()
+
+            # Apply the discovered format to every match from this pool URL.
+            for match in matches:
+                match.sets_to_win = match_format['sets_to_win']
+                match.points_per_set = match_format['points_per_set']
+                match.point_cap = match_format['point_cap']
+                match.format_text = match_format['format_text']
             
             result.matches = matches
             result.status = "success"
@@ -90,6 +101,52 @@ class PoolScraper(VBLScraperBase):
             logger.error(f"Pool scan failed: {e}")
         
         return result
+
+    async def _extract_pool_match_format(self) -> dict:
+        """
+        Extract and parse match format for pool pages.
+        Falls back to scanning body text when the standard v-alert selector isn't present.
+        """
+        from .parse_format import parse_format_text
+
+        # First try the shared extractor used by bracket pages.
+        parsed = await self.extract_match_format()
+        if parsed.get('format_text'):
+            return parsed
+
+        # Fallback for pool layouts where the format text is not in v-alert__content.
+        try:
+            body_text = await self.page.inner_text('body')
+        except Exception:
+            return parsed
+
+        for raw_line in body_text.split('\n'):
+            line = self._normalize_line(raw_line)
+            if not line:
+                continue
+
+            lower = line.lower()
+
+            # Narrow candidates to lines that likely describe tournament format.
+            has_header_hint = re.search(r'\ball\s+matches?\b', lower) is not None
+            has_format_hint = any(token in lower for token in [
+                "match play",
+                "best",
+                "game to",
+                "set to",
+                "cap at",
+                "no cap",
+                "win by 2",
+            ])
+            if not (has_header_hint and has_format_hint):
+                continue
+
+            format_values = parse_format_text(line)
+            format_values['format_text'] = line
+            logger.info(f"Parsed pool format from body text: {format_values}")
+            return format_values
+
+        return parsed
     
     async def _requires_login(self) -> bool:
         """Check if the page requires login"""
