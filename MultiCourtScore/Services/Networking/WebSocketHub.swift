@@ -375,6 +375,7 @@ final class WebSocketHub {
                     "pointsPerSet": currentMatch?.pointsPerSet ?? 21,
                     "pointCap": currentMatch?.pointCap as Any,
 
+                    "matchNumber": currentMatch?.matchNumber ?? "",
                     "nextMatch": court.nextMatch?.displayName ?? ""
                 ]
                 
@@ -1062,6 +1063,7 @@ function endTransition() {
 // Match change detection - track current match to detect manual/auto advances
 var currentMatchTeam1 = '';
 var currentMatchTeam2 = '';
+var currentMatchNumber = '';
 var pendingMatchChange = null; // { team1, team2, data } when match change detected
 
 // DOM refs
@@ -1158,7 +1160,7 @@ function abbreviateName(teamName) {
     const lower = player.toLowerCase();
     if (lower.includes("winner") || lower.includes("loser") ||
         lower.includes("team ") || lower.includes("seed ") ||
-        lower.includes("match ")) {
+        lower.includes("match ") || lower.includes("this match")) {
       return player;
     }
     const parts = player.split(/\s+/);
@@ -1166,6 +1168,14 @@ function abbreviateName(teamName) {
     return parts[parts.length - 1];
   });
   return abbreviated.join(" / ");
+}
+
+/* Replace "Match N" with "this match" when N is the current match */
+function localizeMatchRef(text) {
+  if (!text || !currentMatchNumber) return text;
+  // Match patterns like "Winner of Match 5", "Loser of Match 12", "Match 5 Winner"
+  var re = new RegExp('(Match\\s+)' + currentMatchNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+  return text.replace(re, 'this match');
 }
 
 /* Set Pips */
@@ -1189,11 +1199,12 @@ function showNextMatchBar(nextMatchText) {
   animationInProgress = true;
 
   if (nextTeamsEl && nextMatchText) {
-    const parts = nextMatchText.split(/\s+vs\.?\s+/i);
+    const localized = localizeMatchRef(nextMatchText);
+    const parts = localized.split(/\s+vs\.?\s+/i);
     if (parts.length >= 2) {
       nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
     } else {
-      nextTeamsEl.textContent = abbreviateName(nextMatchText);
+      nextTeamsEl.textContent = abbreviateName(localized);
     }
   }
 
@@ -1219,11 +1230,12 @@ function showNextMatchBarPersistent(nextMatchText) {
   }
   
   if (nextTeamsEl && nextMatchText) {
-    const parts = nextMatchText.split(/\s+vs\.?\s+/i);
+    const localized = localizeMatchRef(nextMatchText);
+    const parts = localized.split(/\s+vs\.?\s+/i);
     if (parts.length >= 2) {
       nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
     } else {
-      nextTeamsEl.textContent = abbreviateName(nextMatchText);
+      nextTeamsEl.textContent = abbreviateName(localized);
     }
   }
 
@@ -1257,6 +1269,9 @@ function hideNextMatchBar() {
 /* Main score update */
 function applyData(d) {
   if (!d) return;
+
+  // Track current match number for "this match" substitution
+  if (d.matchNumber) currentMatchNumber = String(d.matchNumber);
 
   const score1 = d.score1 || 0;
   const score2 = d.score2 || 0;
