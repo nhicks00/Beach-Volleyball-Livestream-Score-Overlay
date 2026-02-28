@@ -41,6 +41,7 @@ struct SettingsView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var showPassword = false
+    @State private var showClearCredsConfirmation = false
     @State private var showingCredentialsSaved = false
     @State private var showSettingsSaved = false
     @State private var searchText = ""
@@ -344,9 +345,15 @@ struct SettingsView: View {
 
                 HStack(spacing: 16) {
                     Button("Clear") {
-                        clearCredentials()
+                        showClearCredsConfirmation = true
                     }
                     .buttonStyle(.bordered)
+                    .alert("Clear Credentials?", isPresented: $showClearCredsConfirmation) {
+                        Button("Cancel", role: .cancel) {}
+                        Button("Clear", role: .destructive) { clearCredentials() }
+                    } message: {
+                        Text("This will remove your saved VBL login credentials. You will need to re-enter them to scan.")
+                    }
 
                     Button("Save Credentials") {
                         saveCredentials()

@@ -231,7 +231,7 @@ struct ScoreSnapshot: Codable {
         var t1 = 0, t2 = 0
         for set in setHistory where set.isComplete {
             if set.team1Score > set.team2Score { t1 += 1 }
-            else { t2 += 1 }
+            else if set.team2Score > set.team1Score { t2 += 1 }
         }
         return (t1, t2)
     }
