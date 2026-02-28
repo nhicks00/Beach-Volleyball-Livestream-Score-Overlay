@@ -8,6 +8,12 @@
 import Foundation
 
 struct ChangeLogItem: Identifiable, Codable {
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .medium
+        return f
+    }()
+
     var id = UUID()
     var timestamp: Date
     var courtId: Int
@@ -16,11 +22,9 @@ struct ChangeLogItem: Identifiable, Codable {
     var fieldName: String        // e.g. "Start Time", "Court", "Team 1"
     var oldValue: String
     var newValue: String
-    
+
     var displayTime: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .medium
-        return formatter.string(from: timestamp)
+        Self.timeFormatter.string(from: timestamp)
     }
 }
 

@@ -19,13 +19,7 @@ final class WebSocketHub {
     // Vapor app
     private var app: Application?
     public private(set) var isRunning = false
-    
-    // Score data cache for overlays
-    private var latestScoreData: [Int: Data] = [:]
-    
-    // Hold mechanism for showing final scores
-    private var holdQueue: [Int: (data: [String: Any], expires: Date)] = [:]
-    
+
     private init() {}
     
     // MARK: - Lifecycle
@@ -89,25 +83,22 @@ final class WebSocketHub {
     }
     
     func stop() {
-        Task {
+        guard isRunning else { return }
+        let appToStop = app
+        app = nil
+        isRunning = false
+        Task.detached {
             print("🛑 Stopping overlay server...")
             do {
-                try await app?.asyncShutdown()
+                try await appToStop?.asyncShutdown()
             } catch {
                 print("⚠️ Error shutting down app: \(error)")
             }
-            app = nil
-            isRunning = false
             print("🛑 Overlay server stopped")
         }
     }
-    
-    // MARK: - Data Update
-    
-    func updateScore(courtId: Int, data: Data) {
-        latestScoreData[courtId] = data
-    }
-    
+
+    // MARK: - Routes
     // MARK: - Routes
     
     private func installRoutes(_ app: Application) {
@@ -260,9 +251,12 @@ final class WebSocketHub {
                 return try Self.json(["a": NSNull(), "b": NSNull(), "label": NSNull()])
             }
             
-            // Fetch names from API (off MainActor)
+            // Fetch names from API (off MainActor) with timeout
             do {
-                let (responseData, _) = try await URLSession.shared.data(from: data.url)
+                var request = URLRequest(url: data.url)
+                request.timeoutInterval = 5.0
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                let (responseData, _) = try await URLSession.shared.data(for: request)
                 let (a, b) = Self.extractNames(from: responseData)
                 
                 return try Self.json([

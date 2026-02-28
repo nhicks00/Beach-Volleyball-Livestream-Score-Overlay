@@ -523,38 +523,45 @@ final class AppViewModel: ObservableObject {
     private func checkForSmartQueueSwitch(courtId: Int, currentSnapshot: ScoreSnapshot) async -> Bool {
         guard let idx = courtIndex(for: courtId) else { return false }
         guard let activeIdx = courts[idx].activeIndex else { return false }
-        
+
         // Only smart-switch if the current match is not actively in progress.
         guard !isMatchActive(currentSnapshot) else { return false }
-        
+
         // Don't switch if we've been live on this match (liveSince set)
         if courts[idx].liveSince != nil { return false }
-        
-        // Scan queue for any match with active scoring
-        for (queueIdx, match) in courts[idx].queue.enumerated() {
-            guard queueIdx != activeIdx else { continue } // Skip current
-            
-            do {
-                let data = try await apiClient.fetchData(from: match.apiURL)
-                let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
-                
-                // Check if this match appears actively in progress.
-                if isMatchActive(snapshot) {
-                    guard queueIdx < courts[idx].queue.count else { continue }
-                    print("🔄 Smart Queue Switch: Found active match at index \(queueIdx). Switching from index \(activeIdx)")
-                    courts[idx].activeIndex = queueIdx
-                    courts[idx].lastSnapshot = nil
-                    courts[idx].status = .waiting
-                    observedActiveScoring[courtId] = false
-                    return true // Only switch to first found active match
+
+        // Scan queue in parallel for any match with active scoring
+        let queue = courts[idx].queue
+        let result: Int? = await withTaskGroup(of: (Int, Bool).self) { group in
+            for (queueIdx, match) in queue.enumerated() {
+                guard queueIdx != activeIdx else { continue }
+                group.addTask { [apiClient] in
+                    guard let data = try? await apiClient.fetchData(from: match.apiURL) else {
+                        return (queueIdx, false)
+                    }
+                    let snapshot = await MainActor.run { self.normalizeData(data, courtId: 0, currentMatch: match) }
+                    let active = await MainActor.run { self.isMatchActive(snapshot) }
+                    return (queueIdx, active)
                 }
-            } catch {
-                // Ignore errors, just skip this match
-                continue
             }
+            for await (queueIdx, isActive) in group {
+                if isActive { return queueIdx }
+            }
+            return nil
         }
-        
-        return false
+
+        guard let switchIdx = result,
+              let currentIdx = courtIndex(for: courtId),
+              switchIdx < courts[currentIdx].queue.count else {
+            return false
+        }
+
+        print("🔄 Smart Queue Switch: Found active match at index \(switchIdx). Switching from index \(activeIdx)")
+        courts[currentIdx].activeIndex = switchIdx
+        courts[currentIdx].lastSnapshot = nil
+        courts[currentIdx].status = .waiting
+        observedActiveScoring[courtId] = false
+        return true
     }
 
     private func advanceToFirstPlayableMatchIfNeeded(courtId: Int) async {
@@ -796,12 +803,15 @@ final class AppViewModel: ObservableObject {
         return false
     }
     
+    private static let timeRegex = try! NSRegularExpression(
+        pattern: #"(\d{1,2}):(\d{2})\s*(AM|PM)"#,
+        options: .caseInsensitive
+    )
+
     private func compareTimeStrings(_ a: String, _ b: String) -> Int {
-        let pattern = #"(\d{1,2}):(\d{2})\s*(AM|PM)"#
-        guard let regexA = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let regexB = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-              let matchA = regexA.firstMatch(in: a, range: NSRange(a.startIndex..., in: a)),
-              let matchB = regexB.firstMatch(in: b, range: NSRange(b.startIndex..., in: b)) else {
+        let regex = Self.timeRegex
+        guard let matchA = regex.firstMatch(in: a, range: NSRange(a.startIndex..., in: a)),
+              let matchB = regex.firstMatch(in: b, range: NSRange(b.startIndex..., in: b)) else {
             return 0
         }
         
