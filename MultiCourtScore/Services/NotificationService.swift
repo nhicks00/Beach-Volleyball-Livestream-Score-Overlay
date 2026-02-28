@@ -101,28 +101,36 @@ class NotificationService: ObservableObject {
         print("📧 Notification: [\(notification.urgency)] \(notification.title) - \(notification.message)")
     }
     
+    static let iso8601Formatter = ISO8601DateFormatter()
+    static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
     private func sendWebhook(_ notification: NotificationEvent) async {
         guard let url = URL(string: webhookURL) else {
             print("⚠️ Invalid webhook URL")
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+        request.timeoutInterval = 5.0
+
         let payload: [String: Any] = [
             "title": notification.title,
             "message": notification.message,
             "urgency": String(describing: notification.urgency),
-            "timestamp": ISO8601DateFormatter().string(from: notification.timestamp),
+            "timestamp": Self.iso8601Formatter.string(from: notification.timestamp),
             "app": "MultiCourtScore"
         ]
-        
+
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             let (_, response) = try await URLSession.shared.data(for: request)
-            
+
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 print("✅ Webhook notification sent successfully")
             } else {
@@ -144,8 +152,6 @@ struct NotificationEvent: Identifiable {
     let timestamp: Date
     
     var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: timestamp)
+        NotificationService.timeFormatter.string(from: timestamp)
     }
 }

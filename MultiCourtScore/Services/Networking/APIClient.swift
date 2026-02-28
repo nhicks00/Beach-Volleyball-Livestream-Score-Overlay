@@ -52,9 +52,9 @@ actor APIClient {
                     throw error
                 }
                 
-                // Wait before retry
+                // Wait before retry (propagate cancellation)
                 if attempt < maxRetries - 1 {
-                    try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+                    try await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
                 }
             }
         }
