@@ -56,6 +56,24 @@ struct DashboardView: View {
         appViewModel.courts.filter { courtFilter.matches($0) }
     }
 
+    private var courtStatusCounts: [CourtFilter: Int] {
+        var counts: [CourtFilter: Int] = [:]
+        counts[.all] = appViewModel.courts.count
+        counts[.live] = 0
+        counts[.waiting] = 0
+        counts[.idle] = 0
+        for court in appViewModel.courts {
+            switch court.status {
+            case .live: counts[.live, default: 0] += 1
+            case .waiting: counts[.waiting, default: 0] += 1
+            case .idle: counts[.idle, default: 0] += 1
+            case .finished: counts[.live, default: 0] += 1
+            case .error: counts[.idle, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
     var body: some View {
         ZStack {
             AppColors.background
@@ -423,7 +441,7 @@ struct DashboardView: View {
     private var filterPicker: some View {
         HStack(spacing: 0) {
             ForEach(CourtFilter.allCases, id: \.self) { filter in
-                let count = appViewModel.courts.filter { filter.matches($0) }.count
+                let count = courtStatusCounts[filter] ?? 0
                 let isSelected = courtFilter == filter
 
                 Button {

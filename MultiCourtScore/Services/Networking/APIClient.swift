@@ -11,7 +11,8 @@ actor APIClient {
     private let session: URLSession
     private let maxRetries: Int
     private let retryDelay: TimeInterval
-    
+    private let jsonDecoder = JSONDecoder()
+
     init(
         session: URLSession = .shared,
         maxRetries: Int = NetworkConstants.maxRetries,
@@ -64,7 +65,7 @@ actor APIClient {
     
     func fetchJSON<T: Decodable>(from url: URL, as type: T.Type) async throws -> T {
         let data = try await fetchData(from: url)
-        return try JSONDecoder().decode(type, from: data)
+        return try jsonDecoder.decode(type, from: data)
     }
 }
 
