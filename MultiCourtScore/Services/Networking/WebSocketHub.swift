@@ -36,18 +36,18 @@ final class WebSocketHub {
         appViewModel = viewModel
         
         // Ensure old app is cleaned up
-        if let oldApp = app { 
-            print("🧹 Cleaning up existing server instance...")
+        if let oldApp = app {
+            print("Cleaning up existing server instance...")
             do {
                 try await oldApp.asyncShutdown()
             } catch {
-                print("⚠️ Error shutting down old app: \(error)")
+                print("Error shutting down old app: \(error)")
             }
             app = nil
         }
-        
+
         // Initialize with explicit arguments to ignore Xcode/OS flags that crash Vapor
-        let env = Environment(name: "development", arguments: ["vapor"])
+        let env = Environment(name: "production", arguments: ["vapor"])
         do {
             let newApp = try await Application.make(env)
             self.app = newApp
@@ -831,7 +831,7 @@ var celebrationActive = false;
 
 // Safety: ensure transitionInProgress never gets permanently stuck
 function beginTransition() {
-  beginTransition();
+  transitionInProgress = true;
   clearTimeout(transitionSafetyTimer);
   transitionSafetyTimer = setTimeout(function() {
     if (transitionInProgress) {

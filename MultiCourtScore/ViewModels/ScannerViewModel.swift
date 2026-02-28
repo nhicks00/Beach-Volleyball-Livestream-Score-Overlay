@@ -80,10 +80,14 @@ class ScannerViewModel: ObservableObject {
             }
         }
         
+        private static let timeFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm:ss"
+            return f
+        }()
+
         var timeDisplay: String {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm:ss"
-            return formatter.string(from: timestamp)
+            Self.timeFormatter.string(from: timestamp)
         }
     }
     
@@ -324,12 +328,69 @@ class ScannerViewModel: ObservableObject {
     }
     
     // MARK: - Private Methods
-    
-    private func performScan() async {
-        Task { @MainActor in
-            self.addLog("🔍 performScan() called", type: .info)
+
+    /// Find the best available Python 3 interpreter
+    private func findPythonPath(venvPath: String) -> (path: String, isVenv: Bool) {
+        let fm = FileManager.default
+
+        // 1) Prefer the project venv
+        if fm.fileExists(atPath: venvPath) {
+            return (venvPath, true)
         }
-        
+
+        // 2) Search common homebrew / system locations
+        let candidates = [
+            "/opt/homebrew/bin/python3",
+            "/opt/homebrew/bin/python3.13",
+            "/opt/homebrew/bin/python3.12",
+            "/opt/homebrew/bin/python3.11",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3"
+        ]
+
+        for candidate in candidates {
+            if fm.fileExists(atPath: candidate) {
+                return (candidate, false)
+            }
+        }
+
+        // 3) Last resort: try PATH via `which`
+        let which = Process()
+        let pipe = Pipe()
+        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        which.arguments = ["python3"]
+        which.standardOutput = pipe
+        which.standardError = Pipe()
+        try? which.run()
+        which.waitUntilExit()
+        if let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !out.isEmpty {
+            return (out, false)
+        }
+
+        return ("/usr/bin/python3", false)
+    }
+
+    /// Check if the Python interpreter has playwright installed
+    private func checkPlaywrightInstalled(pythonPath: String) -> Bool {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: pythonPath)
+        process.arguments = ["-c", "import playwright; print('ok')"]
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func performScan() async {
+        addLog("performScan() called", type: .info)
+
         guard let paths = resolveScannerPaths() else {
             addLog("Could not locate scanner files (expected .../Scrapers/vbl_scraper/cli.py)", type: .error)
             errorMessage = "Scanner paths are unavailable. Open the project root and try again."
@@ -337,17 +398,21 @@ class ScannerViewModel: ObservableObject {
             scanProgress = "Scan failed - invalid project path"
             return
         }
-        
-        // Fallback to system Python if venv doesn't exist
-        let systemPython = "/usr/bin/python3"
-        
-        // Determine which Python to use
-        let useVenv = FileManager.default.fileExists(atPath: paths.venvPython) &&
-                      FileManager.default.fileExists(atPath: paths.scriptPath)
-        
-        let pythonPath = useVenv ? paths.venvPython : systemPython
-        
-        addLog("Using \(useVenv ? "venv" : "system") Python", type: .info)
+
+        // Find the best Python interpreter
+        let (pythonPath, isVenv) = findPythonPath(venvPath: paths.venvPython)
+
+        // Verify playwright is installed
+        if !checkPlaywrightInstalled(pythonPath: pythonPath) {
+            addLog("Playwright is not installed for \(pythonPath)", type: .error)
+            addLog("Run: \(pythonPath) -m pip install playwright && \(pythonPath) -m playwright install chromium", type: .error)
+            errorMessage = "Playwright not installed. Run in Terminal:\n\(pythonPath) -m pip install playwright\n\(pythonPath) -m playwright install chromium"
+            isScanning = false
+            scanProgress = "Scan failed - playwright not installed"
+            return
+        }
+
+        addLog("Using \(isVenv ? "venv" : "system") Python", type: .info)
         addLog("Project root: \(paths.projectRoot)", type: .info)
         addLog("Python: \(pythonPath)", type: .info)
         addLog("Script: \(paths.scriptPath)", type: .info)
@@ -404,91 +469,63 @@ class ScannerViewModel: ObservableObject {
     }
     
     private func scanSingleURL(_ url: String, pythonPath: String, scriptPath: String, workingDir: String) async -> [VBLMatch] {
+        let outputFile = URL(fileURLWithPath: workingDir)
+            .appendingPathComponent("scan_results_\(UUID().uuidString.prefix(8)).json")
+
+        // Set up the process on the main actor so currentProcess is assigned before run()
+        let process = Process()
+        self.currentProcess = process
+
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
                 let pipe = Pipe()
                 let errorPipe = Pipe()
-                
-                // Generate unique output file to avoid conflicts
-                let outputFile = URL(fileURLWithPath: workingDir)
-                    .appendingPathComponent("scan_results_\(UUID().uuidString.prefix(8)).json")
-                
-                // Validate paths before running
-                Task { @MainActor in
-                    self.addLog("Validating paths...", type: .info)
-                    self.addLog("Python exists: \(FileManager.default.fileExists(atPath: pythonPath))", type: .info)
-                    self.addLog("Script exists: \(FileManager.default.fileExists(atPath: scriptPath))", type: .info)
-                    self.addLog("Working dir exists: \(FileManager.default.fileExists(atPath: workingDir))", type: .info)
-                }
-                
+
                 process.executableURL = URL(fileURLWithPath: pythonPath)
                 process.arguments = ["-m", "vbl_scraper.cli", url, "-o", outputFile.path]
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
                 process.standardOutput = pipe
                 process.standardError = errorPipe
-                
-                // Add environment for Python
+
                 var env = ProcessInfo.processInfo.environment
                 env["PYTHONPATH"] = workingDir
                 process.environment = env
-                
+
                 Task { @MainActor in
-                    self.currentProcess = process
-                    self.addLog("Launching: \(pythonPath) -m vbl_scraper.cli \(url) -o \(outputFile.path)", type: .info)
+                    self.addLog("Launching: \(pythonPath) -m vbl_scraper.cli \(url)", type: .info)
                 }
-                
-                // Synchronous validation before launching
-                print("📍 Python path: \(pythonPath)")
-                print("📍 Python exists: \(FileManager.default.fileExists(atPath: pythonPath))")
-                print("📍 Script path: \(scriptPath)")
-                print("📍 Script exists: \(FileManager.default.fileExists(atPath: scriptPath))")
-                print("📍 Working dir: \(workingDir)")
-                print("📍 Output file: \(outputFile.path)")
-                print("📍 About to call process.run()...")
-                
+
+                defer {
+                    // Always clean up temp file
+                    try? FileManager.default.removeItem(at: outputFile)
+                }
+
                 do {
-                    Task { @MainActor in
-                        self.addLog("Running Python process...", type: .info)
-                    }
-                    
                     try process.run()
-                    print("✅ process.run() succeeded")
                     process.waitUntilExit()
-                    
+
                     let exitCode = process.terminationStatus
-                    print("📊 Exit code: \(exitCode)")
-                    
+
                     // Read stderr for debugging
                     let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                     if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
-                        print("🔴 Python stderr:\n\(errorString)")
                         Task { @MainActor in
-                            for line in errorString.split(separator: "\n").prefix(5) {
+                            let lines = errorString.split(separator: "\n")
+                            for line in lines.prefix(5) {
                                 self.addLog("Python: \(line)", type: .warning)
                             }
                         }
                     }
-                    
-                    // Read stdout too
-                    let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-                    if !outputData.isEmpty, let outputString = String(data: outputData, encoding: .utf8) {
-                        print("📗 Python stdout:\n\(outputString)")
-                    }
-                    
+
                     if exitCode != 0 {
                         Task { @MainActor in
                             self.addLog("Python exited with code \(exitCode)", type: .error)
                         }
                     }
-                    
+
                     // Try to load results from output file
                     if let data = try? Data(contentsOf: outputFile),
                        let result = try? JSONDecoder().decode(ScanResultWrapper.self, from: data) {
-                        // Clean up temp file
-                        try? FileManager.default.removeItem(at: outputFile)
-                        
-                        // Handle both single result and array result formats
                         if let matches = result.matches {
                             continuation.resume(returning: matches)
                         } else if let results = result.results, let first = results.first {
@@ -498,14 +535,13 @@ class ScannerViewModel: ObservableObject {
                         }
                     } else {
                         Task { @MainActor in
-                            self.addLog("Could not read results file", type: .error)
+                            self.addLog("Could not read results file at \(outputFile.lastPathComponent)", type: .error)
                         }
                         continuation.resume(returning: [])
                     }
                 } catch {
                     Task { @MainActor in
                         self.addLog("Process launch error: \(error.localizedDescription)", type: .error)
-                        self.addLog("Error details: \(error)", type: .error)
                     }
                     continuation.resume(returning: [])
                 }
@@ -515,71 +551,74 @@ class ScannerViewModel: ObservableObject {
     
     /// Scan all URLs in parallel using --parallel flag (4x faster for multiple brackets)
     private func scanAllURLsParallel(_ urls: [String], pythonPath: String, scriptPath: String, workingDir: String) async -> [VBLMatch] {
+        let outputFile = URL(fileURLWithPath: workingDir)
+            .appendingPathComponent("parallel_results_\(UUID().uuidString.prefix(8)).json")
+
+        // Assign process on main actor before launching
+        let process = Process()
+        self.currentProcess = process
+
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
                 let pipe = Pipe()
                 let errorPipe = Pipe()
-                
-                // Generate unique output file
-                let outputFile = URL(fileURLWithPath: workingDir)
-                    .appendingPathComponent("parallel_results_\(UUID().uuidString.prefix(8)).json")
-                
+
                 process.executableURL = URL(fileURLWithPath: pythonPath)
-                
-                // Build arguments: python -m vbl_scraper.cli url1 url2 url3 --parallel -o output.json
+
                 var args = ["-m", "vbl_scraper.cli"]
                 args.append(contentsOf: urls)
                 args.append("--parallel")
                 args.append("-o")
                 args.append(outputFile.path)
-                
+
                 process.arguments = args
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
                 process.standardOutput = pipe
                 process.standardError = errorPipe
-                
+
                 var env = ProcessInfo.processInfo.environment
                 env["PYTHONPATH"] = workingDir
                 process.environment = env
-                
+
                 Task { @MainActor in
-                    self.currentProcess = process
-                    self.addLog("🚀 Parallel scan: \(urls.count) URLs", type: .info)
+                    self.addLog("Parallel scan: \(urls.count) URLs", type: .info)
                 }
-                
+
+                defer {
+                    try? FileManager.default.removeItem(at: outputFile)
+                }
+
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    
+
                     let exitCode = process.terminationStatus
-                    print("📊 Parallel scan exit code: \(exitCode)")
-                    
-                    // Read stderr for any errors
+
                     let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
                     if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
-                        print("⚠️ Parallel scan stderr:\n\(errorString)")
                         Task { @MainActor in
                             self.addLog("Scan output: \(errorString.prefix(200))", type: .info)
                         }
                     }
-                    
-                    // Parse results - parallel mode returns aggregated results
+
+                    if exitCode != 0 {
+                        Task { @MainActor in
+                            self.addLog("Parallel scan exited with code \(exitCode)", type: .error)
+                        }
+                    }
+
+                    // Parse results
                     if let data = try? Data(contentsOf: outputFile),
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        
-                        // Clean up temp file
-                        try? FileManager.default.removeItem(at: outputFile)
-                        
-                        // Extract matches from all results
+
                         var allMatches: [VBLMatch] = []
-                        
+
                         if let results = json["results"] as? [[String: Any]] {
                             for result in results {
                                 if let matchesData = result["matches"] as? [[String: Any]] {
                                     let matchType = result["match_type"] as? String
                                     let typeDetail = result["type_detail"] as? String
-                                    
+
                                     for matchDict in matchesData {
                                         if let match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
                                             allMatches.append(match)
@@ -588,11 +627,11 @@ class ScannerViewModel: ObservableObject {
                                 }
                             }
                         }
-                        
+
                         Task { @MainActor in
                             self.addLog("Parallel scan found \(allMatches.count) total matches", type: .success)
                         }
-                        
+
                         continuation.resume(returning: allMatches)
                     } else {
                         Task { @MainActor in
