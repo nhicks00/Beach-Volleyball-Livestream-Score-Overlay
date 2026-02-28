@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Combine
 import SwiftUI
 
 @MainActor
@@ -26,11 +25,12 @@ final class AppViewModel: ObservableObject {
     
     // MARK: - Private State
     private var pollingTimers: [Int: Timer] = [:]
-    private var cancellables = Set<AnyCancellable>()
     private var lastQueueRefreshTimes: [Int: Date] = [:]
     private var lastCourtChangeCheck: Date = .distantPast
     private var pollsInFlight: Set<Int> = []
-    
+    private var saveTask: Task<Void, Never>?
+    private var watchdogTimer: Timer?
+
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
     private var lastScoreChangeTime: [Int: Date] = [:]
@@ -50,18 +50,20 @@ final class AppViewModel: ObservableObject {
     }
     
     // MARK: - Services Lifecycle
-    
+
     func startServices() {
         Task {
             await webSocketHub.start(with: self, port: appSettings.serverPort)
             print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }
+        startWatchdog()
     }
-    
+
     func stopServices() {
         stopAllPolling()
+        stopWatchdog()
         webSocketHub.stop()
-        saveConfiguration()
+        saveConfigurationNow()
     }
     
     // MARK: - Court Access
@@ -87,7 +89,7 @@ final class AppViewModel: ObservableObject {
     func renameCourt(_ courtId: Int, to newName: String) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].name = newName
-        saveConfiguration()
+        saveConfigurationNow()
     }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
@@ -97,24 +99,25 @@ final class AppViewModel: ObservableObject {
         courts[idx].status = .idle  // Require manual start - don't auto-set to waiting
         courts[idx].lastSnapshot = nil
         courts[idx].liveSince = nil
+        courts[idx].finishedAt = nil
         observedActiveScoring[courtId] = false
-        saveConfiguration()
+        saveConfigurationNow()
     }
-    
+
     func appendToQueue(_ courtId: Int, items: [MatchItem]) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].queue.append(contentsOf: items.map(normalizeLegacyPoolFormat))
         if courts[idx].activeIndex == nil && !items.isEmpty {
             courts[idx].activeIndex = 0
         }
-        saveConfiguration()
+        saveConfigurationNow()
     }
-    
+
     func clearQueue(_ courtId: Int) {
         replaceQueue(courtId, with: [])
         stopPolling(for: courtId)
     }
-    
+
     func clearAllQueues() {
         stopAllPolling()
         for i in courts.indices {
@@ -124,7 +127,7 @@ final class AppViewModel: ObservableObject {
             courts[i].lastSnapshot = nil
             courts[i].liveSince = nil
         }
-        saveConfiguration()
+        saveConfigurationNow()
     }
     
     // MARK: - Polling Control
@@ -172,7 +175,7 @@ final class AppViewModel: ObservableObject {
             await self.pollOnce(courtId)
         }
         
-        saveConfiguration()
+        saveConfigurationNow()
         print("▶️ Started polling for court \(courtId)")
     }
     
@@ -181,12 +184,14 @@ final class AppViewModel: ObservableObject {
         pollingTimers[courtId] = nil
         pollsInFlight.remove(courtId)
         observedActiveScoring.removeValue(forKey: courtId)
+        lastScoreChangeTime.removeValue(forKey: courtId)
+        lastScoreSnapshot.removeValue(forKey: courtId)
         
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
             courts[idx].liveSince = nil
         }
-        saveConfiguration()
+        scheduleSave()
         print("⏹️ Stopped polling for court \(courtId)")
     }
     
@@ -216,11 +221,11 @@ final class AppViewModel: ObservableObject {
                 courts[idx].liveSince = nil
             }
         }
-        saveConfiguration()
+        saveConfigurationNow()
     }
-    
+
     // MARK: - Navigation
-    
+
     func skipToNext(_ courtId: Int) {
         guard let idx = courtIndex(for: courtId) else { return }
         guard let activeIdx = courts[idx].activeIndex else { return }
@@ -239,10 +244,10 @@ final class AppViewModel: ObservableObject {
             courts[idx].liveSince = nil
             courts[idx].lastSnapshot = nil
             observedActiveScoring[courtId] = false
-            saveConfiguration()
+            saveConfigurationNow()
         }
     }
-    
+
     func skipToPrevious(_ courtId: Int) {
         guard let idx = courtIndex(for: courtId) else { return }
         guard let activeIdx = courts[idx].activeIndex, activeIdx > 0 else { return }
@@ -259,15 +264,42 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].lastSnapshot = nil
         observedActiveScoring[courtId] = false
-        saveConfiguration()
+        saveConfigurationNow()
     }
-    
+
     // MARK: - Overlay URL
     
     func overlayURL(for courtId: Int) -> String {
         return "http://localhost:\(appSettings.serverPort)/overlay/court/\(courtId)/?theme=\(appSettings.overlayTheme)"
     }
     
+    // MARK: - Watchdog
+
+    private func startWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkPollingHealth() }
+        }
+        if let t = watchdogTimer { RunLoop.main.add(t, forMode: .common) }
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    private func checkPollingHealth() {
+        for court in courts where court.status.isPolling {
+            if let lastPoll = court.lastPollTime, Date().timeIntervalSince(lastPoll) > 30 {
+                print("🚨 WATCHDOG: Court \(court.id) stale — restarting")
+                pollingTimers[court.id]?.invalidate()
+                pollingTimers[court.id] = nil
+                pollsInFlight.remove(court.id)
+                startPolling(for: court.id)
+            }
+        }
+    }
+
     // MARK: - Private Methods
     
     private func pollOnce(_ courtId: Int) async {
@@ -430,10 +462,12 @@ final class AppViewModel: ObservableObject {
                 courts[writeIdx].lastPollTime = Date()
                 courts[writeIdx].errorMessage = nil
             }
-            
+            scheduleSave()
+
         } catch {
             if let writeIdx = courtIndex(for: courtId) {
                 courts[writeIdx].errorMessage = error.localizedDescription
+                courts[writeIdx].lastPollTime = Date()
             }
             // Don't change to error status on single failure
             print("⚠️ Poll error for court \(courtId): \(error.localizedDescription)")
@@ -1188,14 +1222,14 @@ final class AppViewModel: ObservableObject {
     }
     
     // MARK: - Configuration Persistence
-    
+
     private var configURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appFolder = appSupport.appendingPathComponent("MultiCourtScore")
         try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
         return appFolder.appendingPathComponent("courts_config.json")
     }
-    
+
     private func loadConfiguration() {
         guard FileManager.default.fileExists(atPath: configURL.path),
               let data = try? Data(contentsOf: configURL),
@@ -1215,15 +1249,32 @@ final class AppViewModel: ObservableObject {
 
         courts = normalizedCourts
         if didNormalize {
-            saveConfiguration()
+            saveConfigurationNow()
             print("🧹 Normalized legacy pool formats in saved queues")
         }
         print("📂 Loaded configuration with \(courts.count) courts")
     }
-    
-    private func saveConfiguration() {
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            saveConfigurationNow()
+        }
+    }
+
+    private func saveConfigurationNow() {
+        saveTask?.cancel()
         guard let data = try? JSONEncoder().encode(courts) else { return }
-        try? data.write(to: configURL)
+        let tmp = configURL.appendingPathExtension("tmp")
+        do {
+            try data.write(to: tmp, options: .atomic)
+            _ = try FileManager.default.replaceItemAt(configURL, withItemAt: tmp)
+        } catch {
+            // Fallback: still use atomic write
+            try? data.write(to: configURL, options: .atomic)
+        }
     }
     
     private func ensureAllCourtsExist() {
@@ -1240,27 +1291,29 @@ final class AppViewModel: ObservableObject {
 
 actor ScoreCache {
     private var cache: [URL: (data: Data, timestamp: Date)] = [:]
-    
+
     func get(_ url: URL) async throws -> Data {
-        if let cached = cache[url], 
+        // Evict stale entries when cache grows large
+        if cache.count > 50 {
+            cache = cache.filter { $0.value.timestamp > Date().addingTimeInterval(-30) }
+        }
+        if let cached = cache[url],
            cached.timestamp.timeIntervalSinceNow > -NetworkConstants.cacheExpiration {
             return cached.data
         }
-        
-        // Force bypass of URLCache to ensure real-time data
+
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 10
-        
+        request.timeoutInterval = NetworkConstants.requestTimeout
         let (data, _) = try await URLSession.shared.data(for: request)
         cache[url] = (data, Date())
         return data
     }
-    
+
     func invalidate(_ url: URL) {
         cache.removeValue(forKey: url)
     }
-    
+
     func clearAll() {
         cache.removeAll()
     }
