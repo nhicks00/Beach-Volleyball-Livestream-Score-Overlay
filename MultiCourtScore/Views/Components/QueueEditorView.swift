@@ -16,9 +16,25 @@ struct QueueEditorView: View {
     @State private var rows: [QueueRow] = []
     @State private var errorMessage: String?
     @State private var selectedRowId: UUID?
+    @State private var showDiscardAlert = false
 
     private var court: Court? {
         appViewModel.court(for: courtId)
+    }
+
+    private var hasUnsavedChanges: Bool {
+        guard let court = court else { return false }
+        let currentURLs = rows.map { $0.urlString }
+        let savedURLs = court.queue.map { $0.apiURL.absoluteString }
+        return currentURLs != savedURLs || rows.count != court.queue.count
+    }
+
+    private func dismissSafely() {
+        if hasUnsavedChanges {
+            showDiscardAlert = true
+        } else {
+            onDismiss()
+        }
     }
 
     var body: some View {
@@ -42,9 +58,15 @@ struct QueueEditorView: View {
         }
         .frame(minWidth: 1100, minHeight: 700)
         .background(AppColors.background)
-        .onExitCommand { onDismiss() }
+        .onExitCommand { dismissSafely() }
         .onAppear {
             loadQueue()
+        }
+        .alert("Discard Changes?", isPresented: $showDiscardAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Discard", role: .destructive) { onDismiss() }
+        } message: {
+            Text("You have unsaved changes to this queue. Discard them?")
         }
     }
 
@@ -53,7 +75,7 @@ struct QueueEditorView: View {
     private var header: some View {
         HStack(spacing: 16) {
             // Back button
-            Button { onDismiss() } label: {
+            Button { dismissSafely() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -112,7 +134,7 @@ struct QueueEditorView: View {
             Divider()
                 .frame(height: 24)
 
-            Button("Cancel") { onDismiss() }
+            Button("Cancel") { dismissSafely() }
                 .buttonStyle(.bordered)
 
             Button {
@@ -128,7 +150,7 @@ struct QueueEditorView: View {
             .tint(errorMessage != nil ? AppColors.error : AppColors.success)
 
             // Prominent close button
-            Button { onDismiss() } label: {
+            Button { dismissSafely() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
