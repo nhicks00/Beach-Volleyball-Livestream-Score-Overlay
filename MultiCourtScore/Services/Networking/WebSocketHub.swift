@@ -302,13 +302,20 @@ final class WebSocketHub {
                 return response
             }
         }
-        
-        // Redirect trailing slash to canonical URL
+
+        // Also serve overlay with trailing slash (no redirect to avoid loops)
         app.get("overlay", "court", ":id", "") { req async throws -> Response in
-            let idStr = req.parameters.get("id") ?? "1"
-            return req.redirect(to: "/overlay/court/\(idStr)", redirectType: .permanent)
+            return try await MainActor.run {
+                let hub = WebSocketHub.shared
+                let idStr = req.parameters.get("id") ?? "1"
+                let html = hub.generateOverlayHTML(courtId: idStr)
+                let response = Response(status: .ok)
+                response.headers.contentType = .html
+                response.body = .init(string: html)
+                return response
+            }
         }
-        
+
         // Score JSON endpoint
         app.get("overlay", "court", ":id", "score.json") { req async throws -> Response in
             // Execute on MainActor to safely access AppViewModel
