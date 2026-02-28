@@ -272,7 +272,7 @@ final class AppViewModel: ObservableObject {
     // MARK: - Overlay URL
     
     func overlayURL(for courtId: Int) -> String {
-        return "http://localhost:\(appSettings.serverPort)/overlay/court/\(courtId)/?theme=\(appSettings.overlayTheme)"
+        return "http://localhost:\(appSettings.serverPort)/overlay/court/\(courtId)/"
     }
     
     // MARK: - Watchdog

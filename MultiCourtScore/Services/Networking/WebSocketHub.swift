@@ -20,6 +20,7 @@ final class WebSocketHub {
     private var app: Application?
     public private(set) var isRunning = false
     private var isStarting = false
+    private var startedAt: Date?
 
     private init() {}
 
@@ -69,6 +70,7 @@ final class WebSocketHub {
                     await MainActor.run {
                         WebSocketHub.shared.isRunning = true
                         WebSocketHub.shared.isStarting = false
+                        WebSocketHub.shared.startedAt = Date()
                         print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
                     }
                 } catch {
@@ -93,6 +95,7 @@ final class WebSocketHub {
         app = nil
         isRunning = false
         isStarting = false
+        startedAt = nil
         Task.detached {
             print("🛑 Stopping overlay server...")
             do {
@@ -105,12 +108,186 @@ final class WebSocketHub {
     }
 
     // MARK: - Routes
-    // MARK: - Routes
-    
+
     private func installRoutes(_ app: Application) {
-        // Health check
-        app.get("health") { _ in "ok" }
-        
+        // Health check — JSON with per-court status
+        app.get("health") { req async throws -> Response in
+            return try await MainActor.run {
+                let hub = WebSocketHub.shared
+                let now = Date()
+
+                let uptimeSeconds: Int
+                if let started = hub.startedAt {
+                    uptimeSeconds = Int(now.timeIntervalSince(started))
+                } else {
+                    uptimeSeconds = 0
+                }
+
+                var courtEntries: [[String: Any]] = []
+                var isDegraded = false
+
+                if let vm = hub.appViewModel {
+                    for court in vm.courts {
+                        let lastPollAgo: Double?
+                        if let lp = court.lastPollTime {
+                            lastPollAgo = now.timeIntervalSince(lp)
+                        } else {
+                            lastPollAgo = nil
+                        }
+
+                        // Flag degraded if a polling court hasn't been polled in 30s
+                        if court.status.isPolling, let ago = lastPollAgo, ago > 30 {
+                            isDegraded = true
+                        }
+
+                        let currentMatch: String
+                        if let idx = court.activeIndex, idx < court.queue.count {
+                            currentMatch = court.queue[idx].label ?? "Match \(idx + 1)"
+                        } else {
+                            currentMatch = ""
+                        }
+
+                        var entry: [String: Any] = [
+                            "id": court.id,
+                            "name": court.name,
+                            "status": court.status.rawValue,
+                            "currentMatch": currentMatch,
+                            "overlayURL": "http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(court.id)/"
+                        ]
+
+                        if let ago = lastPollAgo {
+                            entry["lastPollSecondsAgo"] = Int(ago)
+                        }
+
+                        if let err = court.errorMessage, !err.isEmpty {
+                            entry["errorMessage"] = err
+                        }
+
+                        courtEntries.append(entry)
+                    }
+                }
+
+                let result: [String: Any] = [
+                    "status": isDegraded ? "degraded" : "ok",
+                    "uptime": uptimeSeconds,
+                    "courts": courtEntries
+                ]
+
+                return try Self.json(result)
+            }
+        }
+
+        // Diagnostic page — human-readable overlay debug info
+        app.get("debug", "court", ":id") { req async throws -> Response in
+            return try await MainActor.run {
+                let hub = WebSocketHub.shared
+                guard let idStr = req.parameters.get("id"),
+                      let courtId = Int(idStr) else {
+                    return Response(status: .badRequest, body: .init(string: "Invalid court ID"))
+                }
+
+                var lines: [String] = []
+                lines.append("=== Overlay Debug: Court \(courtId) ===\n")
+
+                guard let vm = hub.appViewModel else {
+                    lines.append("ERROR: appViewModel is nil (weak reference lost)")
+                    lines.append("The server is running but has no connection to the app state.")
+                    lines.append("This means ALL overlay endpoints return empty data.")
+                    let response = Response(status: .ok)
+                    response.headers.contentType = .plainText
+                    response.body = .init(string: lines.joined(separator: "\n"))
+                    return response
+                }
+
+                guard let court = vm.court(for: courtId) else {
+                    lines.append("ERROR: No court found with id=\(courtId)")
+                    lines.append("Available court IDs: \(vm.courts.map { $0.id })")
+                    lines.append("\nThe overlay URL must match an existing court ID.")
+                    lines.append("Try: http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(vm.courts.first?.id ?? 1)/")
+                    let response = Response(status: .ok)
+                    response.headers.contentType = .plainText
+                    response.body = .init(string: lines.joined(separator: "\n"))
+                    return response
+                }
+
+                lines.append("Court: \(court.name) (id=\(court.id))")
+                lines.append("Status: \(court.status.rawValue)")
+                lines.append("Queue size: \(court.queue.count)")
+                lines.append("Active index: \(court.activeIndex.map(String.init) ?? "nil")")
+
+                if let match = court.currentMatch {
+                    lines.append("\n--- Current Match ---")
+                    lines.append("Label: \(match.label ?? "nil")")
+                    lines.append("Team 1: \(match.team1Name ?? "nil")")
+                    lines.append("Team 2: \(match.team2Name ?? "nil")")
+                    lines.append("API URL: \(match.apiURL)")
+                    lines.append("Sets to win: \(match.setsToWin.map(String.init) ?? "nil (default 2)")")
+                } else {
+                    lines.append("\nNo current match (activeIndex is nil or out of bounds)")
+                }
+
+                if let snap = court.lastSnapshot {
+                    lines.append("\n--- Last Snapshot ---")
+                    lines.append("Team 1: \(snap.team1Name) | Team 2: \(snap.team2Name)")
+                    lines.append("Sets won: \(snap.team1Score) - \(snap.team2Score)")
+                    lines.append("Set number: \(snap.setNumber)")
+                    lines.append("Status: \(snap.status)")
+                    lines.append("Set history: \(snap.setHistory.map { "(\($0.team1Score)-\($0.team2Score)\($0.isComplete ? " done" : ""))" }.joined(separator: ", "))")
+                    lines.append("Has started: \(snap.hasStarted)")
+                    lines.append("Is final: \(snap.isFinal)")
+                    lines.append("Timestamp: \(snap.timestamp)")
+                } else {
+                    lines.append("\nlastSnapshot: nil (no API data received yet)")
+                }
+
+                if let lp = court.lastPollTime {
+                    let ago = Date().timeIntervalSince(lp)
+                    lines.append("\nLast poll: \(Int(ago))s ago")
+                } else {
+                    lines.append("\nLast poll: never")
+                }
+
+                if let err = court.errorMessage {
+                    lines.append("Error: \(err)")
+                }
+
+                lines.append("\n--- What the overlay JS sees ---")
+                let isLiveOrFinished = court.status == .live || court.status == .finished
+                let currentGame = court.lastSnapshot?.setHistory.last
+                let score1 = isLiveOrFinished ? (currentGame?.team1Score ?? court.currentMatch?.team1_score ?? 0) : 0
+                let score2 = isLiveOrFinished ? (currentGame?.team2Score ?? court.currentMatch?.team2_score ?? 0) : 0
+                lines.append("score1 (current set points): \(score1)")
+                lines.append("score2 (current set points): \(score2)")
+                lines.append("courtStatus: \(court.status.rawValue)")
+                lines.append("isLiveOrFinished: \(isLiveOrFinished)")
+
+                let combinedScore = score1 + score2
+                let setsWon1 = isLiveOrFinished ? (court.lastSnapshot?.totalSetsWon.team1 ?? 0) : 0
+                let setsWon2 = isLiveOrFinished ? (court.lastSnapshot?.totalSetsWon.team2 ?? 0) : 0
+                let matchInProgress = setsWon1 > 0 || setsWon2 > 0
+
+                if (court.status == .waiting || court.status == .idle) && combinedScore == 0 && !matchInProgress {
+                    lines.append("JS state: INTERMISSION (team names + 'Match Starting Soon')")
+                } else if combinedScore > 0 {
+                    lines.append("JS state: SCORING (live scoreboard visible)")
+                } else if setsWon1 >= (court.currentMatch?.setsToWin ?? 2) || setsWon2 >= (court.currentMatch?.setsToWin ?? 2) {
+                    lines.append("JS state: POSTMATCH (final score + celebration)")
+                } else {
+                    lines.append("JS state: current overlay state preserved")
+                }
+
+                lines.append("\n--- URLs ---")
+                lines.append("Overlay: http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(courtId)/")
+                lines.append("Score JSON: http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(courtId)/score.json")
+                lines.append("This debug: http://localhost:\(NetworkConstants.webSocketPort)/debug/court/\(courtId)")
+
+                let response = Response(status: .ok)
+                response.headers.contentType = .plainText
+                response.body = .init(string: lines.joined(separator: "\n"))
+                return response
+            }
+        }
+
         // Main overlay page
         app.get("overlay", "court", ":id") { req async throws -> Response in
             return try await MainActor.run {
@@ -344,28 +521,7 @@ final class WebSocketHub {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>BVM Scoreboard Overlay</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
-<script>
-tailwind.config = {
-  darkMode: "class",
-  theme: {
-    extend: {
-      colors: {
-        "carbon": "#121212",
-        "gold": "#D4AF37",
-        "gold-bright": "#F9E29B",
-        "gold-muted": "rgba(212, 175, 55, 0.25)",
-      },
-      fontFamily: {
-        "display": ["Roboto Condensed", "sans-serif"]
-      }
-    },
-  },
-}
-</script>
 <style>
 /* Tailwind utility classes compiled inline for overlay */
 .carbon-bar {
@@ -434,12 +590,6 @@ tailwind.config = {
   border-top: none;
   border-radius: 0 0 0.5rem 0.5rem;
   overflow: hidden;
-}
-.insta-gradient {
-  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 .bg-gold { background-color: #D4AF37; }
 .bg-gold-muted { background-color: rgba(212, 175, 55, 0.25); }
@@ -580,7 +730,7 @@ tailwind.config = {
 
 body {
   min-height: 100dvh;
-  background-color: transparent;
+  background-color: #0a0a0a;
   margin: 0;
   padding: 0;
   font-family: "Roboto Condensed", sans-serif;
@@ -666,13 +816,79 @@ body {
   border-radius: 0 0 0.5rem 0.5rem;
   animation: status-pulse 2s infinite ease-in-out;
 }
+/* Stale data indicator */
+#stale-indicator {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+  z-index: 100;
+}
+#stale-indicator.stale {
+  opacity: 1;
+  background: rgba(245, 158, 11, 0.3);
+  color: #FBBF24;
+  animation: stale-pulse 2s ease-in-out infinite;
+}
+#stale-indicator.lost {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.3);
+  color: #F87171;
+}
+@keyframes stale-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+#scorebug.stale-border {
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  box-shadow: 0 8px 30px rgb(0,0,0,0.8), 0 0 8px rgba(245, 158, 11, 0.2) !important;
+}
+/* Connecting fallback */
+#connecting-indicator {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+  z-index: 50;
+}
+#connecting-indicator.visible {
+  opacity: 1;
+}
+#connecting-indicator span {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.4);
+  animation: connecting-pulse 2s ease-in-out infinite;
+}
+@keyframes connecting-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
 </style>
 </head>
 <body style="display: flex; flex-direction: column; align-items: center; padding-top: 2rem;">
 
+<div id="stale-indicator"></div>
+
 <div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem;">
   <!-- Main Scoreboard -->
   <div id="scorebug" class="carbon-bar" style="width: 100%; height: 4rem; border-radius: 0.375rem; display: flex; align-items: center; box-shadow: 0 8px 30px rgb(0,0,0,0.8); position: relative; overflow: hidden; z-index: 20;">
+
+    <!-- Connecting fallback -->
+    <div id="connecting-indicator"><span>Connecting...</span></div>
 
     <!-- Scoring Content Layer -->
     <div id="scoring-content">
@@ -691,7 +907,7 @@ body {
           <div class="confetti-piece cf-19"></div><div class="confetti-piece cf-20"></div>
         </div>
         <div style="display: flex; align-items: flex-start; gap: 0.5rem; position: relative; z-index: 20;">
-          <span id="trophy-left" class="material-symbols-outlined trophy-icon">emoji_events</span>
+          <span id="trophy-left" class="trophy-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
           <span id="seed1" style="font-size: 0.75rem; font-weight: 700; color: rgba(212,175,55,0.8); margin-top: 0.1rem; min-width: 1rem; text-align: center;"></span>
           <div style="display: flex; flex-direction: column; justify-content: center;">
             <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
@@ -700,7 +916,7 @@ body {
               <div class="set-pip bg-gold-muted"></div>
             </div>
           </div>
-          <span id="serve-left" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0; margin-top: -0.1rem;">sports_volleyball</span>
+          <span id="serve-left" class="serve-indicator" style="opacity: 0; margin-top: -0.1rem; display: inline-flex;"><svg width="24" height="24" viewBox="0 0 24 24" fill="#D4AF37"><circle cx="12" cy="12" r="10" fill="none" stroke="#D4AF37" stroke-width="2"/><path d="M6.5 3.5c3.5 2 5 5.5 5 8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M17.5 20.5c-3.5-2-5-5.5-5-8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M2.5 10c3 1.5 7 1.5 10 0s7-1.5 10 0" fill="none" stroke="#D4AF37" stroke-width="1.5"/></svg></span>
         </div>
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc1" class="score-text">0</span>
@@ -735,7 +951,7 @@ body {
           <span id="sc2" class="score-text">0</span>
         </div>
         <div style="display: flex; align-items: flex-start; gap: 0.5rem; text-align: right; position: relative; z-index: 20;">
-          <span id="serve-right" class="material-symbols-outlined serve-indicator" style="font-size: 1.5rem; color: #D4AF37; opacity: 0; margin-top: -0.1rem;">sports_volleyball</span>
+          <span id="serve-right" class="serve-indicator" style="opacity: 0; margin-top: -0.1rem; display: inline-flex;"><svg width="24" height="24" viewBox="0 0 24 24" fill="#D4AF37"><circle cx="12" cy="12" r="10" fill="none" stroke="#D4AF37" stroke-width="2"/><path d="M6.5 3.5c3.5 2 5 5.5 5 8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M17.5 20.5c-3.5-2-5-5.5-5-8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M2.5 10c3 1.5 7 1.5 10 0s7-1.5 10 0" fill="none" stroke="#D4AF37" stroke-width="1.5"/></svg></span>
           <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
             <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
             <div id="pips2" style="display: flex; gap: 0.375rem;">
@@ -744,7 +960,7 @@ body {
             </div>
           </div>
           <span id="seed2" style="font-size: 0.75rem; font-weight: 700; color: rgba(212,175,55,0.8); margin-top: 0.1rem; min-width: 1rem; text-align: center;"></span>
-          <span id="trophy-right" class="material-symbols-outlined trophy-icon">emoji_events</span>
+          <span id="trophy-right" class="trophy-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
         </div>
       </div>
     </div>
@@ -772,9 +988,9 @@ body {
   <div class="bubble-container">
     <!-- Social Media Bar (default visible) -->
     <div id="social-bar" class="bubble-bar visible" style="padding: 0.375rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-      <i class="fa-brands fa-facebook" style="color: #1877F2; font-size: 0.875rem;"></i>
-      <i class="fa-brands fa-instagram insta-gradient" style="font-size: 0.875rem;"></i>
-      <i class="fa-brands fa-youtube" style="color: #FF0000; font-size: 0.875rem;"></i>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24"><defs><radialGradient id="ig" cx="30%" cy="107%" r="150%"><stop offset="0%" stop-color="#fdf497"/><stop offset="5%" stop-color="#fdf497"/><stop offset="45%" stop-color="#fd5949"/><stop offset="60%" stop-color="#d6249f"/><stop offset="90%" stop-color="#285AEB"/></radialGradient></defs><path fill="url(#ig)" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
       <span style="font-size: 0.75rem; font-weight: 600; letter-spacing: 0.025em; color: rgba(255,255,255,0.9);">@BeachVolleyballMedia</span>
     </div>
     
@@ -813,6 +1029,12 @@ var nextMatchTimer = null;
 var transitionInProgress = false;
 var transitionSafetyTimer = null;
 var celebrationActive = false;
+
+// Stale data tracking
+var lastDataChangeTime = Date.now();
+var lastDataJSON = '';
+var consecutiveFetchErrors = 0;
+var staleIndicatorState = 'fresh'; // 'fresh' | 'stale' | 'lost'
 
 // Safety: ensure transitionInProgress never gets permanently stuck
 function beginTransition() {
@@ -855,6 +1077,61 @@ const seed2El = document.getElementById('seed2');
 const sc1El = document.getElementById('sc1');
 const sc2El = document.getElementById('sc2');
 const setNumEl = document.getElementById('set-num');
+const staleIndicator = document.getElementById('stale-indicator');
+const connectingIndicator = document.getElementById('connecting-indicator');
+
+/* Stale data detection */
+function updateStaleState(dataJSON) {
+  if (dataJSON !== lastDataJSON) {
+    lastDataJSON = dataJSON;
+    lastDataChangeTime = Date.now();
+    consecutiveFetchErrors = 0;
+  }
+  var elapsed = (Date.now() - lastDataChangeTime) / 1000;
+  var newState = 'fresh';
+  if (elapsed >= 60) {
+    newState = 'lost';
+  } else if (elapsed >= 15) {
+    newState = 'stale';
+  }
+  if (newState !== staleIndicatorState) {
+    staleIndicatorState = newState;
+    applyStaleIndicator();
+  }
+}
+
+function onFetchError() {
+  consecutiveFetchErrors++;
+  if (consecutiveFetchErrors >= 5) {
+    connectingIndicator.classList.add('visible');
+  }
+  var elapsed = (Date.now() - lastDataChangeTime) / 1000;
+  if (elapsed >= 60 && staleIndicatorState !== 'lost') {
+    staleIndicatorState = 'lost';
+    applyStaleIndicator();
+  } else if (elapsed >= 15 && staleIndicatorState === 'fresh') {
+    staleIndicatorState = 'stale';
+    applyStaleIndicator();
+  }
+}
+
+function applyStaleIndicator() {
+  if (staleIndicatorState === 'fresh') {
+    staleIndicator.className = '';
+    staleIndicator.textContent = '';
+    scorebug.classList.remove('stale-border');
+    connectingIndicator.classList.remove('visible');
+  } else if (staleIndicatorState === 'stale') {
+    staleIndicator.className = 'stale';
+    staleIndicator.textContent = '';
+    scorebug.classList.add('stale-border');
+    connectingIndicator.classList.remove('visible');
+  } else if (staleIndicatorState === 'lost') {
+    staleIndicator.className = 'lost';
+    staleIndicator.textContent = 'Signal Lost';
+    scorebug.classList.add('stale-border');
+  }
+}
 
 /* Helpers */
 async function fetchJSON(u) {
@@ -1618,6 +1895,9 @@ async function tick() {
     const d = await fetchJSON(SRC);
     if (!d) return;
 
+    // Track data freshness
+    updateStaleState(JSON.stringify(d));
+
     const newState = determineState(d);
 
     // First load — set up initial state based on ACTUAL DATA, not overlayState
@@ -1746,6 +2026,7 @@ async function tick() {
 
   } catch (e) {
     console.log('[Overlay] Fetch error:', e);
+    onFetchError();
   } finally {
     setTimeout(tick, POLL_MS);
   }

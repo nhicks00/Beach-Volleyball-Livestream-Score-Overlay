@@ -295,7 +295,7 @@ struct CourtCard: View {
     @ViewBuilder
     private func scoreRows(snapshot: ScoreSnapshot) -> some View {
         VStack(spacing: 12) {
-            // Set score summary (e.g., "Set 2 | 1-0")
+            // Set score summary header
             if snapshot.setHistory.count > 1 || (snapshot.setHistory.count == 1 && snapshot.setHistory[0].isComplete) {
                 HStack(spacing: 8) {
                     Text("Set \(snapshot.setNumber)")
@@ -305,12 +305,6 @@ struct CourtCard: View {
                     Text("\(setsWon.team1)-\(setsWon.team2)")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundColor(AppColors.info)
-                    // Completed set scores
-                    ForEach(snapshot.setHistory.filter { $0.isComplete }, id: \.setNumber) { set in
-                        Text("(\(set.team1Score)-\(set.team2Score))")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(AppColors.textMuted)
-                    }
                     Spacer()
                 }
             }
@@ -319,14 +313,16 @@ struct CourtCard: View {
                 seed: snapshot.team1Seed,
                 name: snapshot.team1Name,
                 isServing: snapshot.serve == "home",
-                score: currentSetScore(for: .team1, snapshot: snapshot)
+                snapshot: snapshot,
+                team: .team1
             )
 
             teamRow(
                 seed: snapshot.team2Seed,
                 name: snapshot.team2Name,
                 isServing: snapshot.serve == "away",
-                score: currentSetScore(for: .team2, snapshot: snapshot)
+                snapshot: snapshot,
+                team: .team2
             )
         }
     }
@@ -342,7 +338,7 @@ struct CourtCard: View {
         return team == .team1 ? snapshot.team1Score : snapshot.team2Score
     }
 
-    private func teamRow(seed: String?, name: String, isServing: Bool, score: Int) -> some View {
+    private func teamRow(seed: String?, name: String, isServing: Bool, snapshot: ScoreSnapshot, team: Team) -> some View {
         HStack(spacing: 10) {
             // Seed badge
             if let seed = seed, !seed.isEmpty {
@@ -364,11 +360,42 @@ struct CourtCard: View {
 
             Spacer()
 
-            // Score
-            Text("\(score)")
-                .font(AppTypography.scoreCompact)
-                .foregroundColor(AppColors.textPrimary)
-                .monospacedDigit()
+            // Per-set score history
+            HStack(spacing: 0) {
+                // Completed sets
+                let completedSets = snapshot.setHistory.filter { $0.isComplete }
+                ForEach(Array(completedSets.enumerated()), id: \.offset) { idx, set in
+                    if idx > 0 {
+                        // Subtle divider between sets
+                        Rectangle()
+                            .fill(AppColors.border)
+                            .frame(width: 1, height: 16)
+                            .padding(.horizontal, 6)
+                    }
+                    let myScore = team == .team1 ? set.team1Score : set.team2Score
+                    let theirScore = team == .team1 ? set.team2Score : set.team1Score
+                    let wonSet = myScore > theirScore
+                    Text("\(myScore)")
+                        .font(.system(size: 15, weight: wonSet ? .bold : .regular, design: .monospaced))
+                        .foregroundColor(wonSet ? AppColors.textPrimary : AppColors.textMuted)
+                        .monospacedDigit()
+                }
+
+                // Divider before current set if there are completed sets
+                if !completedSets.isEmpty {
+                    Rectangle()
+                        .fill(AppColors.border)
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, 6)
+                }
+
+                // Current set score (in-progress)
+                let currentScore = currentSetScore(for: team, snapshot: snapshot)
+                Text("\(currentScore)")
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .foregroundColor(AppColors.warning)
+                    .monospacedDigit()
+            }
         }
     }
 
@@ -574,18 +601,21 @@ struct StatusBadge: View {
     let color: Color
     var isLive: Bool = false
 
+    @State private var isPulsing = false
+
     var body: some View {
         HStack(spacing: 6) {
             Circle()
                 .fill(color)
                 .frame(width: 9, height: 9)
-                .overlay(
-                    Circle()
-                        .stroke(color.opacity(0.5), lineWidth: 2)
-                        .scaleEffect(isLive ? 1.8 : 1)
-                        .opacity(isLive ? 0 : 1)
-                )
-                .animation(isLive ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : .default, value: isLive)
+                .opacity(isLive && isPulsing ? 0.3 : 1.0)
+                .animation(isLive ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : .default, value: isPulsing)
+                .onAppear {
+                    if isLive { isPulsing = true }
+                }
+                .onChange(of: isLive) { newValue in
+                    isPulsing = newValue
+                }
 
             Text(label)
                 .font(.system(size: 13, weight: .bold, design: .rounded))

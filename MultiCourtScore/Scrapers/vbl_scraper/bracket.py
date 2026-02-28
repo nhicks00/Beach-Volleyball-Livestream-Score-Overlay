@@ -97,6 +97,9 @@ class BracketScraper(VBLScraperBase):
             # 'networkidle' times out on VBL due to persistent analytics connections
             await self.page.goto(url, wait_until='load')
 
+            # Let Vue.js SPA start hydrating before checking for content
+            await asyncio.sleep(2.0)
+
             # Wait for Vue.js to render match cards
             await self._wait_for_bracket_content()
 
@@ -106,6 +109,7 @@ class BracketScraper(VBLScraperBase):
                     logger.info("Login required, attempting authentication...")
                     if await self.login(username, password):
                         await self.page.goto(url, wait_until='load')
+                        await asyncio.sleep(2.0)
                         await self._wait_for_bracket_content()
                     else:
                         result.status = "error"
@@ -121,7 +125,7 @@ class BracketScraper(VBLScraperBase):
             logger.info(f"Found {len(containers)} match containers")
 
             if not containers:
-                result.status = "success"
+                result.status = "no_matches"
                 result.error = "No matches found on page"
                 return result
 
@@ -181,7 +185,7 @@ class BracketScraper(VBLScraperBase):
     async def _requires_login(self) -> bool:
         """Check if login is needed"""
         try:
-            return await self.page.is_visible('button:has-text("Sign In")', timeout=3000)
+            return await self.page.is_visible('button:has-text("Sign In")', timeout=10000)
         except Exception:
             return False
 
@@ -194,7 +198,7 @@ class BracketScraper(VBLScraperBase):
         ]
         for selector in selectors:
             try:
-                await self.page.wait_for_selector(selector, timeout=10000)
+                await self.page.wait_for_selector(selector, timeout=30000)
                 logger.info(f"Bracket content loaded (found {selector})")
                 return
             except PlaywrightTimeout:
