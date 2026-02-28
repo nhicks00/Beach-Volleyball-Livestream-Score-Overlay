@@ -40,6 +40,8 @@ struct DashboardView: View {
     // State
     @State private var renamingCourtId: Int?
     @State private var newCourtName = ""
+    @State private var showClearAllConfirmation = false
+    @State private var urlCopiedCourtId: Int?
 
     // Modal state
     @State private var showScannerModal = false
@@ -89,7 +91,8 @@ struct DashboardView: View {
                                                 renamingCourtId = court.id
                                                 newCourtName = court.name
                                             },
-                                            onCopyURL: { copyOverlayURL(for: court.id) }
+                                            onCopyURL: { copyOverlayURL(for: court.id) },
+                                            isCopied: urlCopiedCourtId == court.id
                                         )
                                         .frame(maxWidth: .infinity)
                                         .frame(height: cardHeight)
@@ -213,6 +216,15 @@ struct DashboardView: View {
         } message: {
             Text("Enter a new name for this overlay")
         }
+        // Clear All Confirmation
+        .alert("Clear All Queues?", isPresented: $showClearAllConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear All", role: .destructive) {
+                appViewModel.clearAllQueues()
+            }
+        } message: {
+            Text("This will stop all polling and remove every match from all \(appViewModel.courts.count) court queues. This cannot be undone.")
+        }
     }
 
     // MARK: - Toolbar
@@ -236,7 +248,7 @@ struct DashboardView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.9)
 
-                ConnectionBadge(isConnected: true)
+                ConnectionBadge(isConnected: WebSocketHub.shared.isRunning)
             }
 
             Spacer()
@@ -288,7 +300,7 @@ struct DashboardView: View {
                 .tint(AppColors.primary)
 
                 Button(role: .destructive) {
-                    appViewModel.clearAllQueues()
+                    showClearAllConfirmation = true
                 } label: {
                     Label("Clear All", systemImage: "trash")
                         .font(.system(size: 13, weight: .semibold))
@@ -327,9 +339,9 @@ struct DashboardView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     
-                    ConnectionBadge(isConnected: true)
+                    ConnectionBadge(isConnected: WebSocketHub.shared.isRunning)
                 }
-                
+
                 Spacer(minLength: 8)
                 
                 HStack(spacing: 6) {
@@ -363,7 +375,7 @@ struct DashboardView: View {
                     .help("Scan VBL")
                     
                     Button(role: .destructive) {
-                        appViewModel.clearAllQueues()
+                        showClearAllConfirmation = true
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14, weight: .bold))
@@ -471,7 +483,10 @@ struct DashboardView: View {
                 .frame(height: 12)
 
             let liveCount = appViewModel.courts.filter { $0.status == .live }.count
-            let totalMatches = appViewModel.courts.reduce(0) { $0 + $1.queue.count }
+            let remainingMatches = appViewModel.courts.reduce(0) { total, court in
+                guard let active = court.activeIndex else { return total }
+                return total + max(0, court.queue.count - active)
+            }
 
             HStack(spacing: 4) {
                 Circle()
@@ -482,7 +497,7 @@ struct DashboardView: View {
                     .foregroundColor(AppColors.textMuted)
             }
 
-            Text("\(totalMatches) queued")
+            Text("\(remainingMatches) remaining")
                 .font(.system(size: 11))
                 .foregroundColor(AppColors.textMuted)
 
@@ -490,7 +505,7 @@ struct DashboardView: View {
 
             HStack(spacing: 4) {
                 Circle()
-                    .fill(AppColors.success)
+                    .fill(WebSocketHub.shared.isRunning ? AppColors.success : AppColors.error)
                     .frame(width: 6, height: 6)
                 Text("localhost:\(String(appViewModel.appSettings.serverPort))")
                     .font(.system(size: 11, design: .monospaced))
@@ -513,7 +528,12 @@ struct DashboardView: View {
         let url = appViewModel.overlayURL(for: courtId)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
-        print("Copied overlay URL: \(url)")
+        urlCopiedCourtId = courtId
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if urlCopiedCourtId == courtId {
+                urlCopiedCourtId = nil
+            }
+        }
         #endif
     }
     

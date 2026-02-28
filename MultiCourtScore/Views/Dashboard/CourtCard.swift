@@ -16,6 +16,7 @@ struct CourtCard: View {
     let onEditQueue: () -> Void
     let onRename: () -> Void
     let onCopyURL: () -> Void
+    var isCopied: Bool = false
 
     @State private var isHovered = false
 
@@ -42,22 +43,8 @@ struct CourtCard: View {
     }
 
     private var cardBackground: some View {
-        Group {
-            switch court.status {
-            case .live:
-                RoundedRectangle(cornerRadius: AppLayout.cardCornerRadius)
-                    .fill(AppColors.surface)
-            case .idle:
-                RoundedRectangle(cornerRadius: AppLayout.cardCornerRadius)
-                    .fill(AppColors.surface)
-            case .error:
-                RoundedRectangle(cornerRadius: AppLayout.cardCornerRadius)
-                    .fill(AppColors.surface)
-            default:
-                RoundedRectangle(cornerRadius: AppLayout.cardCornerRadius)
-                    .fill(AppColors.surface)
-            }
-        }
+        RoundedRectangle(cornerRadius: AppLayout.cardCornerRadius)
+            .fill(AppColors.surface)
     }
 
     private var cardBorder: some View {
@@ -100,6 +87,36 @@ struct CourtCard: View {
                 nextMatchPreview
                     .padding(.horizontal, AppLayout.cardPadding)
                     .padding(.vertical, 10)
+            }
+
+            // Error message
+            if let errorMessage = court.errorMessage, !errorMessage.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                    Text(errorMessage)
+                        .font(.system(size: 11))
+                        .lineLimit(2)
+                }
+                .foregroundColor(AppColors.error)
+                .padding(.horizontal, AppLayout.cardPadding)
+                .padding(.bottom, 6)
+            }
+
+            // Data freshness indicator
+            if court.status.isPolling, let lastPoll = court.lastPollTime {
+                let staleness = Date().timeIntervalSince(lastPoll)
+                if staleness > 10 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .font(.system(size: 10))
+                        Text("Data \(Int(staleness))s old")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(staleness > 30 ? AppColors.error : AppColors.warning)
+                    .padding(.horizontal, AppLayout.cardPadding)
+                    .padding(.bottom, 4)
+                }
             }
 
             Spacer(minLength: 0)
@@ -186,12 +203,12 @@ struct CourtCard: View {
                 onCopyURL()
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "link")
+                    Image(systemName: isCopied ? "checkmark" : "link")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Copy URL")
+                    Text(isCopied ? "Copied!" : "Copy URL")
                         .font(.system(size: 13, weight: .bold))
                 }
-                .foregroundColor(AppColors.textSecondary)
+                .foregroundColor(isCopied ? AppColors.success : AppColors.textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(
@@ -608,18 +625,18 @@ struct ConnectionBadge: View {
 
 struct PostmatchTimer: View {
     let finishedAt: Date
-    
+
     var body: some View {
         TimelineView(.periodic(from: finishedAt, by: 1.0)) { timeline in
             let elapsed = timeline.date.timeIntervalSince(finishedAt)
-            let remaining = max(0, 180 - Int(elapsed))
+            let remaining = max(0, Int(AppConfig.holdScoreDuration) - Int(elapsed))
             let minutes = remaining / 60
             let seconds = remaining % 60
-            
+
             HStack(spacing: 4) {
-                Image(systemName: "timer")
-                    .font(.system(size: 12, weight: .bold))
-                Text(String(format: "%d:%02d", minutes, seconds))
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text("Next \(String(format: "%d:%02d", minutes, seconds))")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
             }
             .foregroundColor(remaining <= 30 ? AppColors.warning : AppColors.textMuted)

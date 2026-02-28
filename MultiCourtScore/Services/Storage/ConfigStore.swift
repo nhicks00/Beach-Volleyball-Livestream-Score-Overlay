@@ -47,7 +47,7 @@ class ConfigStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(value)
-        try data.write(to: url)
+        try data.write(to: url, options: .atomic)
     }
     
     func load<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {

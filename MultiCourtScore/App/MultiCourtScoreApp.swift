@@ -53,7 +53,6 @@ struct MultiCourtScoreApp: App {
                 Button("Clear All Queues") {
                     appViewModel.clearAllQueues()
                 }
-                .keyboardShortcut(.delete, modifiers: [.command, .shift])
             }
         }
     }
