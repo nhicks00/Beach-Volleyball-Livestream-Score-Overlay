@@ -126,19 +126,10 @@ final class WebSocketHub {
             }
         }
         
-        // Redirect without trailing slash
+        // Redirect trailing slash to canonical URL
         app.get("overlay", "court", ":id", "") { req async throws -> Response in
-            return try await MainActor.run {
-                let hub = WebSocketHub.shared
-                guard let idStr = req.parameters.get("id") else {
-                    return Response(status: .notFound)
-                }
-                let html = hub.generateOverlayHTML(courtId: idStr)
-                let response = Response(status: .ok)
-                response.headers.contentType = .html
-                response.body = .init(string: html)
-                return response
-            }
+            let idStr = req.parameters.get("id") ?? "1"
+            return req.redirect(to: "/overlay/court/\(idStr)", redirectType: .permanent)
         }
         
         // Score JSON endpoint
@@ -326,18 +317,22 @@ final class WebSocketHub {
     }
     
     // MARK: - Overlay HTML
-    
+
+    // Cache generated HTML per court ID to avoid 3x 50KB string copies per request
+    private var overlayHTMLCache: [String: String] = [:]
+
     private func generateOverlayHTML(courtId: String) -> String {
-        var html = Self.bvmOverlayHTML
-        // Inject court-specific endpoints (new Tailwind overlay format)
-        html = html.replacingOccurrences(
-            of: #"const SRC = "/score.json";"#,
-            with: #"const SRC = "/overlay/court/\#(courtId)/score.json";"#
-        )
-        html = html.replacingOccurrences(
-            of: #"const NEXT_SRC = "/next.json";"#,
-            with: #"const NEXT_SRC = "/overlay/court/\#(courtId)/next.json";"#
-        )
+        if let cached = overlayHTMLCache[courtId] { return cached }
+        let html = Self.bvmOverlayHTML
+            .replacingOccurrences(
+                of: #"const SRC = "/score.json";"#,
+                with: #"const SRC = "/overlay/court/\#(courtId)/score.json";"#
+            )
+            .replacingOccurrences(
+                of: #"const NEXT_SRC = "/next.json";"#,
+                with: #"const NEXT_SRC = "/overlay/court/\#(courtId)/next.json";"#
+            )
+        overlayHTMLCache[courtId] = html
         return html
     }
     
@@ -671,16 +666,6 @@ body {
   border-radius: 0 0 0.5rem 0.5rem;
   animation: status-pulse 2s infinite ease-in-out;
 }
-@keyframes status-pulse {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(212, 175, 55, 0.3), inset 0 0 5px rgba(212, 175, 55, 0.1);
-    border-color: rgba(212, 175, 55, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), inset 0 0 10px rgba(212, 175, 55, 0.2);
-    border-color: rgba(212, 175, 55, 0.9);
-  }
-}
 </style>
 </head>
 <body style="display: flex; flex-direction: column; align-items: center; padding-top: 2rem;">
@@ -863,6 +848,13 @@ const intTeam1Container = document.getElementById('int-team1-container');
 const intTeam2Container = document.getElementById('int-team2-container');
 const intVs = document.getElementById('int-vs');
 const intStatusBar = document.getElementById('int-status-bar');
+const t1El = document.getElementById('t1');
+const t2El = document.getElementById('t2');
+const seed1El = document.getElementById('seed1');
+const seed2El = document.getElementById('seed2');
+const sc1El = document.getElementById('sc1');
+const sc2El = document.getElementById('sc2');
+const setNumEl = document.getElementById('set-num');
 
 /* Helpers */
 async function fetchJSON(u) {
@@ -895,10 +887,13 @@ function abbreviateName(teamName) {
 /* Set Pips */
 function updatePips(pipsEl, setsWon, setsToWin) {
   if (!pipsEl) return;
-  let html = '';
-  for (let i = 0; i < setsToWin; i++) {
-    const filled = i < setsWon;
-    html += '<div class="set-pip ' + (filled ? 'bg-gold' : 'bg-gold-muted') + '"></div>';
+  // Only rebuild if content actually changed
+  var key = setsWon + '-' + setsToWin;
+  if (pipsEl.dataset.lastPips === key) return;
+  pipsEl.dataset.lastPips = key;
+  var html = '';
+  for (var i = 0; i < setsToWin; i++) {
+    html += '<div class="set-pip ' + (i < setsWon ? 'bg-gold' : 'bg-gold-muted') + '"></div>';
   }
   pipsEl.innerHTML = html;
 }
@@ -906,6 +901,7 @@ function updatePips(pipsEl, setsWon, setsToWin) {
 /* Bubble Animation Logic */
 function showNextMatchBar(nextMatchText) {
   if (animationInProgress) return;
+  clearTimeout(nextMatchTimer);
   animationInProgress = true;
 
   if (nextTeamsEl && nextMatchText) {
@@ -984,37 +980,27 @@ function applyData(d) {
   const setsToWin = d.setsToWin || 2;
 
   // Team names
-  const t1El = document.getElementById('t1');
-  const t2El = document.getElementById('t2');
   if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
   if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
-  
+
   // Team seeds (show on outside of team names)
-  const seed1El = document.getElementById('seed1');
-  const seed2El = document.getElementById('seed2');
   if (seed1El) seed1El.textContent = d.seed1 || '';
   if (seed2El) seed2El.textContent = d.seed2 || '';
 
   // Scores - with flip animation on change
-  const sc1El = document.getElementById('sc1');
-  const sc2El = document.getElementById('sc2');
-  
   // Trigger flip animation if score changed
   if (sc1El && sc1El.textContent !== String(score1)) {
     sc1El.textContent = score1;
     sc1El.classList.remove('score-flip');
-    void sc1El.offsetWidth; // Force reflow to restart animation
-    sc1El.classList.add('score-flip');
+    requestAnimationFrame(function() { requestAnimationFrame(function() { sc1El.classList.add('score-flip'); }); });
   }
   if (sc2El && sc2El.textContent !== String(score2)) {
     sc2El.textContent = score2;
     sc2El.classList.remove('score-flip');
-    void sc2El.offsetWidth; // Force reflow to restart animation
-    sc2El.classList.add('score-flip');
+    requestAnimationFrame(function() { requestAnimationFrame(function() { sc2El.classList.add('score-flip'); }); });
   }
 
   // Set number (API returns 'set', not 'setNumber')
-  const setNumEl = document.getElementById('set-num');
   if (setNumEl) setNumEl.textContent = d.set || 1;
 
   // Set pips

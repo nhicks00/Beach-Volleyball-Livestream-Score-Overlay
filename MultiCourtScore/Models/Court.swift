@@ -178,7 +178,7 @@ struct SetScore: Codable, Hashable {
 }
 
 // MARK: - Score Snapshot
-struct ScoreSnapshot: Codable {
+struct ScoreSnapshot: Codable, Equatable {
     var courtId: Int
     var matchId: Int?
     var status: String              // "Pre-Match", "In Progress", "Final"
@@ -257,7 +257,7 @@ struct ScoreSnapshot: Codable {
 }
 
 // MARK: - Court
-struct Court: Identifiable, Codable {
+struct Court: Identifiable, Codable, Equatable {
     var id: Int
     var name: String
     var queue: [MatchItem]

@@ -15,7 +15,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var error: AppError?
     @Published var scannerViewModel = ScannerViewModel()
-    @Published var appSettings = ConfigStore().loadSettings()
+    @Published var appSettings: ConfigStore.AppSettings = ConfigStore.AppSettings()
     
     // MARK: - Services
     private let webSocketHub: WebSocketHub
@@ -30,6 +30,7 @@ final class AppViewModel: ObservableObject {
     private var pollsInFlight: Set<Int> = []
     private var saveTask: Task<Void, Never>?
     private var watchdogTimer: Timer?
+    private var lastSmartSwitchCheck: [Int: Date] = [:]
 
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
@@ -44,6 +45,7 @@ final class AppViewModel: ObservableObject {
         self.configStore = ConfigStore()
         self.apiClient = APIClient()
         self.scoreCache = ScoreCache()
+        self.appSettings = configStore.loadSettings()
         
         loadConfiguration()
         ensureAllCourtsExist()
@@ -423,6 +425,7 @@ final class AppViewModel: ObservableObject {
                         // Trigger immediate metadata refresh for the new sequence
                         await refreshQueueMetadata(for: courtId)
                         lastQueueRefreshTimes[courtId] = Date()
+                        scheduleSave()
                     }
                 }
             } else {
@@ -445,6 +448,7 @@ final class AppViewModel: ObservableObject {
                     print("🔄 Updated current match team names: \(snapshot.team1Name) vs \(snapshot.team2Name)")
                     courts[writeIdx].queue[writeActive].team1Name = snapshot.team1Name
                     courts[writeIdx].queue[writeActive].team2Name = snapshot.team2Name
+                    scheduleSave()
                 }
                 
                 // Update queued matches
@@ -462,7 +466,7 @@ final class AppViewModel: ObservableObject {
                 courts[writeIdx].lastPollTime = Date()
                 courts[writeIdx].errorMessage = nil
             }
-            scheduleSave()
+            // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
             if let writeIdx = courtIndex(for: courtId) {
@@ -481,7 +485,7 @@ final class AppViewModel: ObservableObject {
 
     private func fetchSnapshot(for match: MatchItem, courtId: Int = 0) async -> ScoreSnapshot? {
         do {
-            let data = try await apiClient.fetchData(from: match.apiURL)
+            let data = try await scoreCache.get(match.apiURL)
             return normalizeData(data, courtId: courtId, currentMatch: match)
         } catch {
             return nil
@@ -530,13 +534,17 @@ final class AppViewModel: ObservableObject {
         // Don't switch if we've been live on this match (liveSince set)
         if courts[idx].liveSince != nil { return false }
 
+        // Throttle: only check every 30 seconds per court
+        if Date().timeIntervalSince(lastSmartSwitchCheck[courtId] ?? .distantPast) < 30 { return false }
+        lastSmartSwitchCheck[courtId] = Date()
+
         // Scan queue in parallel for any match with active scoring
         let queue = courts[idx].queue
         let result: Int? = await withTaskGroup(of: (Int, Bool).self) { group in
             for (queueIdx, match) in queue.enumerated() {
                 guard queueIdx != activeIdx else { continue }
-                group.addTask { [apiClient] in
-                    guard let data = try? await apiClient.fetchData(from: match.apiURL) else {
+                group.addTask { [scoreCache] in
+                    guard let data = try? await scoreCache.get(match.apiURL) else {
                         return (queueIdx, false)
                     }
                     let snapshot = await MainActor.run { self.normalizeData(data, courtId: 0, currentMatch: match) }
@@ -611,7 +619,7 @@ final class AppViewModel: ObservableObject {
 
                 do {
                     // Fetch fresh data for the queued match
-                    let data = try await apiClient.fetchData(from: match.apiURL)
+                    let data = try await scoreCache.get(match.apiURL)
                     let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
 
                     // Re-validate again before write
@@ -622,7 +630,6 @@ final class AppViewModel: ObservableObject {
                     }
                     
                     var hasChanges = false
-                    let oldMatch = courts[writeIdx].queue[i]
 
                     // Update Names
                     if snapshot.team1Name != match.team1Name {
@@ -1024,15 +1031,32 @@ final class AppViewModel: ObservableObject {
         )
     }
 
+    // Pre-compiled regexes for match format inference (avoid re-compiling on every poll)
+    private static let formatRegexCache: [String: NSRegularExpression] = {
+        let patterns = [
+            #"(?:game|set)s?\s*(?:\d+\s*(?:&|and)\s*\d+\s*)?to\s*(\d+)"#,
+            #"\bto\s*(\d+)\b"#,
+            #"cap(?:ped)?\s*(?:at|of|is)?\s*(\d+)"#,
+            #"(\d+)\s*(?:point|pt)s?\s*cap"#,
+            #"\b1\s*(?:game|set)\b"#,
+            #"best\s*(\d+)\s*out\s*of\s*(\d+)"#,
+            #"\bmatch\s*play\b"#,
+        ]
+        var cache: [String: NSRegularExpression] = [:]
+        for p in patterns {
+            cache[p] = try? NSRegularExpression(pattern: p, options: .caseInsensitive)
+        }
+        return cache
+    }()
+
     private func extractFirstInt(in text: String, pattern: String) -> Int? {
         guard !text.isEmpty,
-              let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let regex = Self.formatRegexCache[pattern] ?? (try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               match.numberOfRanges > 1,
               let range = Range(match.range(at: 1), in: text) else {
             return nil
         }
-
         return Int(text[range])
     }
 
@@ -1159,10 +1183,7 @@ final class AppViewModel: ObservableObject {
         
         // Calculate current set number
         let setNum = setHistory.count + (setHistory.last?.isComplete == true ? 1 : 0)
-        if setHistory.isEmpty && (g1a_raw > 0 || g1b_raw > 0) {
-             // Currently in set 1
-        }
-        
+
         // Determine status - use actual setsToWin
         let won1 = score1 >= setsToWin
         let won2 = score2 >= setsToWin
@@ -1233,12 +1254,12 @@ final class AppViewModel: ObservableObject {
     
     // MARK: - Configuration Persistence
 
-    private var configURL: URL {
+    private lazy var configURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appFolder = appSupport.appendingPathComponent("MultiCourtScore")
         try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
         return appFolder.appendingPathComponent("courts_config.json")
-    }
+    }()
 
     private func loadConfiguration() {
         guard FileManager.default.fileExists(atPath: configURL.path),
@@ -1274,17 +1295,15 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private static let jsonEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        return e
+    }()
+
     private func saveConfigurationNow() {
         saveTask?.cancel()
-        guard let data = try? JSONEncoder().encode(courts) else { return }
-        let tmp = configURL.appendingPathExtension("tmp")
-        do {
-            try data.write(to: tmp, options: .atomic)
-            _ = try FileManager.default.replaceItemAt(configURL, withItemAt: tmp)
-        } catch {
-            // Fallback: still use atomic write
-            try? data.write(to: configURL, options: .atomic)
-        }
+        guard let data = try? Self.jsonEncoder.encode(courts) else { return }
+        try? data.write(to: configURL, options: .atomic)
     }
     
     private func ensureAllCourtsExist() {
