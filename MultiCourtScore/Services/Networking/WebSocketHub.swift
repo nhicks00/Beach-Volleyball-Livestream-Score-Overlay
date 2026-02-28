@@ -816,16 +816,33 @@ let lastMatchId = null;
 let firstLoad = true;
 
 // Animation state
-let lastTriggerScore = -1;
-let animationInProgress = false;
-let nextMatchTimer = null;
-let transitionInProgress = false;
-let celebrationActive = false;
+var lastTriggerScore = -1;
+var animationInProgress = false;
+var nextMatchTimer = null;
+var transitionInProgress = false;
+var transitionSafetyTimer = null;
+var celebrationActive = false;
+
+// Safety: ensure transitionInProgress never gets permanently stuck
+function beginTransition() {
+  beginTransition();
+  clearTimeout(transitionSafetyTimer);
+  transitionSafetyTimer = setTimeout(function() {
+    if (transitionInProgress) {
+      console.log('[Overlay] Safety: forcing transitionInProgress=false after 10s');
+      transitionInProgress = false;
+    }
+  }, 10000);
+}
+function endTransition() {
+  transitionInProgress = false;
+  clearTimeout(transitionSafetyTimer);
+}
 
 // Match change detection - track current match to detect manual/auto advances
-let currentMatchTeam1 = '';
-let currentMatchTeam2 = '';
-let pendingMatchChange = null; // { team1, team2, data } when match change detected
+var currentMatchTeam1 = '';
+var currentMatchTeam2 = '';
+var pendingMatchChange = null; // { team1, team2, data } when match change detected
 
 // DOM refs
 const scorebug = document.getElementById('scorebug');
@@ -1171,8 +1188,10 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
     return;
   }
   
-  transitionInProgress = true;
+  beginTransition();
   clearCelebration();
+  animationInProgress = false; // Reset next-match animation state
+  clearTimeout(nextMatchTimer);
   console.log('[Overlay] Animating match change to:', abbreviateName(newTeam1), 'vs', abbreviateName(newTeam2));
   
   // Determine if new match should end in intermission or scoring
@@ -1242,7 +1261,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
       intStatusBar.classList.add('visible');
       
       overlayState = 'intermission';
-      transitionInProgress = false;
+      endTransition();
       matchFinishedAt = null;
       postMatchTimer = null;
       
@@ -1301,7 +1320,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
       socialBar.classList.add('visible');
       
       overlayState = 'scoring';
-      transitionInProgress = false;
+      endTransition();
       matchFinishedAt = null;
       postMatchTimer = null;
       
@@ -1412,7 +1431,7 @@ function setIntermissionWidth() {
 // Transition from Scoring → Intermission (animated)
 function transitionToIntermission(nextTeam1, nextTeam2) {
   if (transitionInProgress || overlayState === 'intermission') return;
-  transitionInProgress = true;
+  beginTransition();
 
   // Clear celebration before transitioning
   clearCelebration();
@@ -1478,7 +1497,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
     intStatusBar.classList.add('visible');
 
     overlayState = 'intermission';
-    transitionInProgress = false;
+    endTransition();
     console.log('[Overlay] Transitioned to intermission');
   }, 2100);
 }
@@ -1487,7 +1506,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 // Pass data parameter to pre-populate team names before reveal
 function transitionToScoring(data) {
   if (transitionInProgress || overlayState === 'scoring') return;
-  transitionInProgress = true;
+  beginTransition();
 
   // IMMEDIATELY hide scoring content and reset scores to prevent flash
   if (scoringContent) {
@@ -1543,7 +1562,7 @@ function transitionToScoring(data) {
     socialBar.classList.add('visible');
 
     overlayState = 'scoring';
-    transitionInProgress = false;
+    endTransition();
     matchFinishedAt = null;
     postMatchTimer = null;
     console.log('[Overlay] Transitioned to scoring');
@@ -1663,7 +1682,7 @@ async function tick() {
         return; // Let the animation handle everything
       } else if (overlayState === 'intermission') {
         // Animate intermission-to-intermission change with fade
-        transitionInProgress = true;
+        beginTransition();
         updateCurrentMatch(newTeam1, newTeam2);
         
         // Fade out the intermission content
@@ -1683,14 +1702,14 @@ async function tick() {
             intContent.style.opacity = '1';
             
             setTimeout(function() {
-              transitionInProgress = false;
+              endTransition();
             }, 300);
           }, 300);
         } else {
           // Fallback if no content element
           if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
           if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
-          transitionInProgress = false;
+          endTransition();
         }
         return;
       }
