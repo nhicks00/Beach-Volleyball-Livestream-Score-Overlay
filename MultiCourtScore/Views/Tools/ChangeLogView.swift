@@ -36,10 +36,10 @@ struct ChangeLogView: View {
                 Menu {
                     Button("All Courts") { filterCourt = nil }
                     ForEach(appViewModel.courts) { court in
-                        Button("Court \(court.id)") { filterCourt = court.id }
+                        Button(court.displayName) { filterCourt = court.id }
                     }
                 } label: {
-                    Label(filterCourt == nil ? "All Courts" : "Court \(filterCourt!)", systemImage: "video")
+                    Label(filterCourt == nil ? "All Courts" : CourtNaming.displayName(for: filterCourt!), systemImage: "video")
                         .font(.system(size: 13, weight: .medium))
                 }
                 .menuStyle(.borderedButton)
@@ -117,7 +117,7 @@ struct ChangeLogItemView: View {
                 .padding(.top, 2)
             
             // Court Badge
-            Text("CT\(item.courtId)")
+            Text(CourtNaming.displayName(for: item.courtId))
                 .font(.system(size: 10, weight: .bold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)

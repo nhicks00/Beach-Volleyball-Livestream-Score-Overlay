@@ -111,15 +111,10 @@ struct DashboardView: View {
                 }
             }
             
-            // Queue Editor Overlay - click outside to dismiss
+            // Queue Editor Overlay
             if let config = editorConfig {
                 Color.black.opacity(0.4)
                     .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            editorConfig = nil
-                        }
-                    }
                 
                 GeometryReader { geo in
                     QueueEditorView(courtId: config.id, onDismiss: {

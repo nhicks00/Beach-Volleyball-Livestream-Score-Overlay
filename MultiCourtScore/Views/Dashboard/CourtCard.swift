@@ -295,6 +295,26 @@ struct CourtCard: View {
     @ViewBuilder
     private func scoreRows(snapshot: ScoreSnapshot) -> some View {
         VStack(spacing: 12) {
+            // Set score summary (e.g., "Set 2 | 1-0")
+            if snapshot.setHistory.count > 1 || (snapshot.setHistory.count == 1 && snapshot.setHistory[0].isComplete) {
+                HStack(spacing: 8) {
+                    Text("Set \(snapshot.setNumber)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(AppColors.textMuted)
+                    let setsWon = snapshot.totalSetsWon
+                    Text("\(setsWon.team1)-\(setsWon.team2)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(AppColors.info)
+                    // Completed set scores
+                    ForEach(snapshot.setHistory.filter { $0.isComplete }, id: \.setNumber) { set in
+                        Text("(\(set.team1Score)-\(set.team2Score))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(AppColors.textMuted)
+                    }
+                    Spacer()
+                }
+            }
+
             teamRow(
                 seed: snapshot.team1Seed,
                 name: snapshot.team1Name,
