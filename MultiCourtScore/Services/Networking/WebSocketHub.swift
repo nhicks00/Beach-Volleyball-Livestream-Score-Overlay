@@ -376,7 +376,11 @@ final class WebSocketHub {
                     "pointCap": currentMatch?.pointCap as Any,
 
                     "matchNumber": currentMatch?.matchNumber ?? "",
-                    "nextMatch": court.nextMatch?.displayName ?? ""
+                    "nextMatch": Self.localizeNextMatch(
+                        court.nextMatch?.displayName ?? "",
+                        queue: court.queue,
+                        activeIndex: court.activeIndex
+                    )
                 ]
                 
                 return try Self.json(data)
@@ -476,6 +480,56 @@ final class WebSocketHub {
         response.headers.cacheControl = .init(noStore: true)
         response.body = .init(data: data)
         return response
+    }
+
+    /// Replace "Match N" with "this match" in the next-match display string
+    /// when Match N is the currently active match on this court.
+    private nonisolated static func localizeNextMatch(
+        _ text: String,
+        queue: [MatchItem],
+        activeIndex: Int?
+    ) -> String {
+        guard !text.isEmpty, let activeIdx = activeIndex else { return text }
+
+        guard let regex = try? NSRegularExpression(
+            pattern: #"Match\s+(\d+)"#,
+            options: .caseInsensitive
+        ) else { return text }
+
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        // Build a map: bracket match number → queue index
+        // Method 1: use explicit matchNumber fields
+        var numberToIndex: [String: Int] = [:]
+        for (idx, item) in queue.enumerated() {
+            if let mn = item.matchNumber, !mn.isEmpty {
+                numberToIndex[mn] = idx
+            }
+        }
+
+        // Method 2: if no match numbers are set, assume sequential bracket numbering
+        // (Match 1 = queue[0], Match 2 = queue[1], etc.)
+        let hasAnyMatchNumbers = queue.contains { $0.matchNumber?.isEmpty == false }
+        if !hasAnyMatchNumbers {
+            for idx in queue.indices {
+                numberToIndex[String(idx + 1)] = idx
+            }
+        }
+
+        // Apply substitutions (iterate in reverse to preserve ranges)
+        var result = text
+        for match in matches.reversed() {
+            guard let numRange = Range(match.range(at: 1), in: result) else { continue }
+            let numStr = String(result[numRange])
+            if let queueIdx = numberToIndex[numStr], queueIdx == activeIdx {
+                guard let fullRange = Range(match.range, in: result) else { continue }
+                result.replaceSubrange(fullRange, with: "this match")
+            }
+        }
+
+        return result
     }
     
     private nonisolated static func extractNames(from data: Data) -> (String?, String?) {
