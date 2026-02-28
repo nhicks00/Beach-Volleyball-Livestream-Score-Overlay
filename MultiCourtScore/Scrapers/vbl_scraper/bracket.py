@@ -93,15 +93,20 @@ class BracketScraper(VBLScraperBase):
 
         try:
             logger.info(f"Scanning bracket: {url}")
-            # Use networkidle to ensure JS-rendered match cards are loaded
-            await self.page.goto(url, wait_until='networkidle')
+            # Use 'load' - waits for DOMContentLoaded + all resources (JS/CSS)
+            # 'networkidle' times out on VBL due to persistent analytics connections
+            await self.page.goto(url, wait_until='load')
+
+            # Wait for Vue.js to render match cards
+            await self._wait_for_bracket_content()
 
             # Check if login is needed
             if await self._requires_login():
                 if username and password:
                     logger.info("Login required, attempting authentication...")
                     if await self.login(username, password):
-                        await self.page.goto(url, wait_until='networkidle')
+                        await self.page.goto(url, wait_until='load')
+                        await self._wait_for_bracket_content()
                     else:
                         result.status = "error"
                         result.error = "Login failed"
@@ -110,10 +115,6 @@ class BracketScraper(VBLScraperBase):
                     result.status = "error"
                     result.error = "Login required but no credentials provided"
                     return result
-
-            # Wait for bracket to fully load (VBL renders match cards via JS)
-            logger.info("Waiting for bracket content...")
-            await asyncio.sleep(4.0)
 
             # Phase 1: Find match containers
             containers = await self._phase1_find_containers()
@@ -180,9 +181,28 @@ class BracketScraper(VBLScraperBase):
     async def _requires_login(self) -> bool:
         """Check if login is needed"""
         try:
-            return await self.page.is_visible('button:has-text("Sign In")', timeout=1000)
+            return await self.page.is_visible('button:has-text("Sign In")', timeout=3000)
         except Exception:
             return False
+
+    async def _wait_for_bracket_content(self):
+        """Wait for VBL's Vue.js to render bracket match cards."""
+        selectors = [
+            'div.div-match-card',
+            '.match-card',
+            'div[class*="match-card"]',
+        ]
+        for selector in selectors:
+            try:
+                await self.page.wait_for_selector(selector, timeout=10000)
+                logger.info(f"Bracket content loaded (found {selector})")
+                return
+            except PlaywrightTimeout:
+                continue
+
+        # Fallback: give extra time for slow renders
+        logger.info("No match cards found yet, waiting additional time...")
+        await asyncio.sleep(5.0)
 
     async def _phase1_find_containers(self) -> List:
         """Find all match containers on the bracket page"""

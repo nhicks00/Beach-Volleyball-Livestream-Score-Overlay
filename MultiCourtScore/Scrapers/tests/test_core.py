@@ -11,8 +11,15 @@ import json
 import importlib.util
 
 # Direct import of the dataclasses from core.py, bypassing __init__.py
-# We mock out the playwright import first
+# We temporarily mock out playwright, then restore to avoid polluting
+# other tests (like integration tests) that need the real playwright.
 import unittest.mock
+
+_saved_pw = sys.modules.get('playwright')
+_saved_pw_api = sys.modules.get('playwright.async_api')
+_pw_was_present = 'playwright' in sys.modules
+_pw_api_was_present = 'playwright.async_api' in sys.modules
+
 _mock_playwright = unittest.mock.MagicMock()
 sys.modules['playwright'] = _mock_playwright
 sys.modules['playwright.async_api'] = _mock_playwright
@@ -21,6 +28,17 @@ _scraper_dir = os.path.join(os.path.dirname(__file__), '..', 'vbl_scraper')
 _spec = importlib.util.spec_from_file_location('vbl_scraper_core', os.path.join(_scraper_dir, 'core.py'))
 _core = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_core)
+
+# Restore original modules so integration tests can use real playwright
+if _pw_was_present:
+    sys.modules['playwright'] = _saved_pw
+else:
+    del sys.modules['playwright']
+
+if _pw_api_was_present:
+    sys.modules['playwright.async_api'] = _saved_pw_api
+else:
+    del sys.modules['playwright.async_api']
 
 VBLMatch = _core.VBLMatch
 ScanResult = _core.ScanResult

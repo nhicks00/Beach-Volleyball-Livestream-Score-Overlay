@@ -51,15 +51,16 @@ class PoolScraper(VBLScraperBase):
         
         try:
             logger.info(f"Scanning pool: {url}")
-            await self.page.goto(url, wait_until='networkidle')
-            
+            # Use 'load' - waits for DOMContentLoaded + all resources (JS/CSS)
+            # 'networkidle' times out on VBL due to persistent analytics connections
+            await self.page.goto(url, wait_until='load')
+
             # Check for login required
             if await self._requires_login():
                 if username and password:
                     logger.info("Login required, attempting authentication...")
                     if await self.login(username, password):
-                        result.login_performed = True
-                        await self.page.goto(url, wait_until='networkidle')
+                        await self.page.goto(url, wait_until='load')
                     else:
                         result.status = "error"
                         result.error = "Login failed"
@@ -164,22 +165,23 @@ class PoolScraper(VBLScraperBase):
             return False
     
     async def _wait_for_pool_content(self) -> None:
-        """Wait for pool content to load"""
+        """Wait for pool content to load after domcontentloaded"""
         pool_selectors = [
             'div[class*="pool"]',
             'div.match-row',
             'div[class*="match-card"]',
             'table[class*="pool"]'
         ]
-        
+
         for selector in pool_selectors:
             try:
-                await self.page.wait_for_selector(selector, timeout=5000)
+                await self.page.wait_for_selector(selector, timeout=8000)
                 return
             except PlaywrightTimeout:
                 continue
-        
-        await asyncio.sleep(2)
+
+        # Fallback: give Vue.js extra time to render
+        await asyncio.sleep(3)
     
     async def _extract_pool_matches(self) -> List[VBLMatch]:
         """Extract matches from pool page"""
