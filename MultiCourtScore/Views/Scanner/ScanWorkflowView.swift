@@ -39,6 +39,7 @@ enum ScanWorkflowStep: Int, CaseIterable {
 struct ScanWorkflowView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
+    let onClose: (() -> Void)?
 
     @State private var currentStep: ScanWorkflowStep = .scanSources
     @State private var matchAssignments: [UUID: Int] = [:]
@@ -49,6 +50,10 @@ struct ScanWorkflowView: View {
     private var viewModel: ScannerViewModel { appViewModel.scannerViewModel }
     private var scanResults: [ScannerViewModel.VBLMatch] { viewModel.scanResults }
     private var groupedByCourt: [String: [ScannerViewModel.VBLMatch]] { viewModel.groupedByCourt }
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -62,9 +67,16 @@ struct ScanWorkflowView: View {
                 stepFooter
             }
         }
-        .frame(minWidth: 900, minHeight: 650)
+        .frame(
+            minWidth: 980,
+            idealWidth: 1380,
+            maxWidth: .infinity,
+            minHeight: 700,
+            idealHeight: 980,
+            maxHeight: .infinity
+        )
         .background(AppColors.background)
-        .onExitCommand { dismiss() }
+        .onExitCommand { closeWorkflow() }
         .onAppear {
             if !viewModel.scanResults.isEmpty {
                 currentStep = .selectLiveCourts
@@ -83,7 +95,7 @@ struct ScanWorkflowView: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
-                Button { dismiss() } label: {
+                Button { closeWorkflow() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(AppColors.textMuted)
@@ -179,7 +191,7 @@ struct ScanWorkflowView: View {
             }
             Spacer()
 
-            Button { dismiss() } label: {
+            Button { closeWorkflow() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -336,6 +348,14 @@ struct ScanWorkflowView: View {
         mappingStore.updateUnmappedCourts(from: selectedCourtNames)
     }
 
+    private func closeWorkflow() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+    }
+
     private func importAndClose() {
         var matchesByOverlay: [Int: [ScannerViewModel.VBLMatch]] = [:]
 
@@ -360,7 +380,7 @@ struct ScanWorkflowView: View {
             appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
         }
 
-        dismiss()
+        closeWorkflow()
     }
 }
 
@@ -879,11 +899,11 @@ struct KanbanQueueStep: View {
             HSplitView {
                 // Left panel — All Matches
                 sourceMatchPanel
-                    .frame(minWidth: 400, idealWidth: 550)
+                    .frame(minWidth: 620, idealWidth: 860)
 
                 // Right panel — Camera Queues
                 cameraQueuePanel
-                    .frame(minWidth: 280, idealWidth: 380)
+                    .frame(minWidth: 430, idealWidth: 560)
             }
         }
         .onAppear {
@@ -900,7 +920,7 @@ struct KanbanQueueStep: View {
         VStack(spacing: 0) {
             HStack {
                 Text("All Matches")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
                 Text("\(scanResults.count) total")
@@ -922,23 +942,23 @@ struct KanbanQueueStep: View {
                         // Section header
                         HStack(spacing: 8) {
                             Image(systemName: isLive ? "video.fill" : "video.slash.fill")
-                                .font(.system(size: 11))
+                                .font(.system(size: 13))
                                 .foregroundColor(isLive ? AppColors.success : AppColors.textMuted)
 
                             Text("Court \(courtName)")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(AppColors.textPrimary)
 
                             Text("\(courtMatches.count) matches")
-                                .font(.system(size: 11))
+                                .font(.system(size: 13))
                                 .foregroundColor(AppColors.textMuted)
 
                             if !isLive {
                                 Text("No Camera")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(AppColors.warning)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
                                     .background(Capsule().fill(AppColors.warning.opacity(0.2)))
                             }
 
@@ -973,7 +993,7 @@ struct KanbanQueueStep: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Camera Queues")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
             }
@@ -1137,29 +1157,34 @@ struct KanbanColumn: View {
 
 struct KanbanMatchCard: View {
     let match: ScannerViewModel.VBLMatch
+    
+    private var matchupDisplay: String {
+        compactMatchupText(for: match)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             // Teams
-            Text(match.displayName)
-                .font(.system(size: 12, weight: .medium))
+            Text(matchupDisplay)
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(AppColors.textPrimary)
-                .lineLimit(2)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 if let matchNum = match.matchNumber {
                     Text("M\(matchNum)")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(AppColors.primary)
                 }
 
                 if let type = match.matchType {
                     let isPool = type.lowercased().contains("pool")
                     Text(isPool ? "Pool" : "Bracket")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
                         .background(Capsule().fill(isPool ? AppColors.info : AppColors.primary))
                 }
 
@@ -1167,38 +1192,38 @@ struct KanbanMatchCard: View {
 
                 if !match.timeDisplay.isEmpty {
                     Text(match.timeDisplay)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 13, design: .monospaced))
                         .foregroundColor(AppColors.textMuted)
                 }
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text("Ct \(match.courtDisplay)")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
                     .background(Capsule().fill(AppColors.warning))
 
                 if let day = match.startDate, !day.isEmpty {
                     Text(day)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
                         .background(Capsule().fill(KanbanMatchCard.dayColor(for: day)))
                 }
 
                 Spacer()
             }
         }
-        .padding(8)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(AppColors.surfaceElevated)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(AppColors.border, lineWidth: 1)
         )
     }
@@ -1220,52 +1245,57 @@ struct SourceMatchCard: View {
     let match: ScannerViewModel.VBLMatch
     let currentCamera: Int
     let onAssign: (Int) -> Void
+    
+    private var matchupDisplay: String {
+        compactMatchupText(for: match)
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             // Match info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(match.displayName)
-                    .font(.system(size: 12, weight: .medium))
+            VStack(alignment: .leading, spacing: 7) {
+                Text(matchupDisplay)
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(AppColors.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 5) {
+                HStack(spacing: 8) {
                     if let matchNum = match.matchNumber {
                         Text("M\(matchNum)")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .foregroundColor(AppColors.primary)
                     }
 
                     Text("Ct \(match.courtDisplay)")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
                         .background(Capsule().fill(AppColors.warning))
 
                     if let day = match.startDate, !day.isEmpty {
                         Text(day)
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
                             .background(Capsule().fill(KanbanMatchCard.dayColor(for: day)))
                     }
 
                     if !match.timeDisplay.isEmpty {
                         Text(match.timeDisplay)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: 13, design: .monospaced))
                             .foregroundColor(AppColors.textMuted)
                     }
 
                     if let type = match.matchType {
                         let isPool = type.lowercased().contains("pool")
                         Text(isPool ? "Pool" : "Bracket")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
                             .background(Capsule().fill(isPool ? AppColors.info : AppColors.primary))
                     }
                 }
@@ -1284,11 +1314,11 @@ struct SourceMatchCard: View {
                 }
             }
             .pickerStyle(.menu)
-            .frame(width: 120)
+            .frame(width: 145)
             .tint(currentCamera > 0 ? AppColors.success : AppColors.textMuted)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 6)
+        .padding(.vertical, 12)
         .background(currentCamera > 0 ? AppColors.success.opacity(0.05) : Color.clear)
     }
 }
@@ -1313,21 +1343,40 @@ struct CameraQueueSection: View {
             VStack(spacing: 4) {
                 ForEach(matches, id: \.id) { match in
                     HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(match.displayName)
-                                .font(.system(size: 11, weight: .medium))
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(compactMatchupText(for: match))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(AppColors.textPrimary)
-                                .lineLimit(1)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                            HStack(spacing: 4) {
+                            HStack(spacing: 8) {
                                 if let matchNum = match.matchNumber {
                                     Text("M\(matchNum)")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                                         .foregroundColor(AppColors.primary)
                                 }
                                 Text("Ct \(match.courtDisplay)")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(AppColors.textMuted)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(AppColors.warning))
+                                
+                                if let day = match.startDate, !day.isEmpty {
+                                    Text(day)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(KanbanMatchCard.dayColor(for: day)))
+                                }
+                                
+                                if !match.timeDisplay.isEmpty {
+                                    Text(match.timeDisplay)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(AppColors.textMuted)
+                                }
                             }
                         }
 
@@ -1346,7 +1395,7 @@ struct CameraQueueSection: View {
                         }
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 5)
                             .fill(AppColors.surfaceElevated)
@@ -1384,4 +1433,63 @@ struct CameraQueueSection: View {
                 .stroke(AppColors.border, lineWidth: 1)
         )
     }
+}
+
+private func compactMatchupText(for match: ScannerViewModel.VBLMatch) -> String {
+    if let t1 = match.team1?.trimmingCharacters(in: .whitespacesAndNewlines),
+       let t2 = match.team2?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !t1.isEmpty,
+       !t2.isEmpty {
+        return "\(compactTeamName(t1)) vs \(compactTeamName(t2))"
+    }
+    
+    return compactDisplayName(match.displayName)
+}
+
+private func compactDisplayName(_ value: String) -> String {
+    let parts = value.components(separatedBy: " vs ")
+    if parts.count == 2 {
+        return "\(compactTeamName(parts[0])) vs \(compactTeamName(parts[1]))"
+    }
+    return value
+}
+
+private func compactTeamName(_ team: String) -> String {
+    let trimmed = team.trimmingCharacters(in: .whitespacesAndNewlines)
+    if isPlaceholderTeam(trimmed) {
+        return trimmed
+    }
+    
+    let players = trimmed
+        .components(separatedBy: "/")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    
+    if players.count >= 2 {
+        return players.map(lastName).joined(separator: "/")
+    }
+    
+    return lastName(trimmed)
+}
+
+private func lastName(_ player: String) -> String {
+    let cleaned = player
+        .replacingOccurrences(of: #"\s*\([^)]*\)\s*"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    let parts = cleaned.split(whereSeparator: \.isWhitespace)
+    if let last = parts.last {
+        return String(last)
+    }
+    
+    return cleaned
+}
+
+private func isPlaceholderTeam(_ value: String) -> Bool {
+    let lower = value.lowercased()
+    return lower.contains("winner")
+        || lower.contains("loser")
+        || lower.contains("match ")
+        || lower.contains("team ")
+        || lower == "tbd"
 }

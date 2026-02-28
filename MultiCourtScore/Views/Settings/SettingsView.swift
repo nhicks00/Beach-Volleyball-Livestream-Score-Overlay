@@ -33,6 +33,8 @@ enum SettingsTab: String, CaseIterable {
 
 struct SettingsView: View {
     @EnvironmentObject var appViewModel: AppViewModel
+    @Environment(\.dismiss) private var dismiss
+    let onClose: (() -> Void)?
 
     @State private var selectedTab: SettingsTab = .general
     @State private var settings = ConfigStore().loadSettings()
@@ -44,6 +46,10 @@ struct SettingsView: View {
     @State private var searchText = ""
 
     private let configStore = ConfigStore()
+
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -58,6 +64,15 @@ struct SettingsView: View {
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(AppColors.textPrimary)
                     Spacer()
+                    Button(action: closeSettings) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(AppColors.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(AppColors.surfaceHover))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close (Esc)")
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
@@ -71,10 +86,19 @@ struct SettingsView: View {
                 tabContent
             }
         }
-        .frame(width: 650, height: 480)
+        .frame(minWidth: 650, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .background(AppColors.background)
+        .onExitCommand { closeSettings() }
         .onAppear {
             loadCredentials()
+        }
+    }
+
+    private func closeSettings() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
         }
     }
 

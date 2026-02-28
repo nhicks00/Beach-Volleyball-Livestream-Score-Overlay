@@ -208,10 +208,21 @@ struct ScoreSnapshot: Codable {
     }
     
     var hasStarted: Bool {
+        let lowerStatus = status.lowercased()
+        if lowerStatus.contains("progress") || lowerStatus.contains("live") || lowerStatus.contains("playing") {
+            return true
+        }
+        if lowerStatus.contains("final") || lowerStatus.contains("complete") {
+            return true
+        }
+
         // Any match with points in the current set (or later sets) has started
         if setNumber > 1 { return true }
         if let firstSet = setHistory.first {
             return firstSet.team1Score > 0 || firstSet.team2Score > 0
+        }
+        if team1Score > 0 || team2Score > 0 {
+            return true
         }
         return false
     }

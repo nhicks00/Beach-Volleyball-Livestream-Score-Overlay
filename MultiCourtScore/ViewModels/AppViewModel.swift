@@ -29,10 +29,13 @@ final class AppViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastQueueRefreshTimes: [Int: Date] = [:]
     private var lastCourtChangeCheck: Date = .distantPast
+    private var pollsInFlight: Set<Int> = []
     
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
     private var lastScoreChangeTime: [Int: Date] = [:]
+    // Per-court flag indicating we observed non-final live scoring for current active match.
+    private var observedActiveScoring: [Int: Bool] = [:]
     
     // MARK: - Initialization
     
@@ -89,17 +92,18 @@ final class AppViewModel: ObservableObject {
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
         guard let idx = courtIndex(for: courtId) else { return }
-        courts[idx].queue = items
+        courts[idx].queue = items.map(normalizeLegacyPoolFormat)
         courts[idx].activeIndex = items.isEmpty ? nil : (startIndex ?? 0)
         courts[idx].status = .idle  // Require manual start - don't auto-set to waiting
         courts[idx].lastSnapshot = nil
         courts[idx].liveSince = nil
+        observedActiveScoring[courtId] = false
         saveConfiguration()
     }
     
     func appendToQueue(_ courtId: Int, items: [MatchItem]) {
         guard let idx = courtIndex(for: courtId) else { return }
-        courts[idx].queue.append(contentsOf: items)
+        courts[idx].queue.append(contentsOf: items.map(normalizeLegacyPoolFormat))
         if courts[idx].activeIndex == nil && !items.isEmpty {
             courts[idx].activeIndex = 0
         }
@@ -137,11 +141,17 @@ final class AppViewModel: ObservableObject {
         if courts[idx].activeIndex == nil {
             courts[idx].activeIndex = 0
         }
-        courts[idx].status = .waiting
+        // Idempotent start: avoid resetting live courts back to warmup on repeated Start All clicks.
+        if pollingTimers[courtId] != nil {
+            courts[idx].errorMessage = nil
+            return
+        }
+        if !courts[idx].status.isPolling {
+            courts[idx].status = .waiting
+            courts[idx].liveSince = nil
+        }
+        observedActiveScoring[courtId] = false
         courts[idx].errorMessage = nil
-        
-        // Cancel existing timer
-        pollingTimers[courtId]?.invalidate()
         
         // Staggered polling with jitter to avoid thundering herd
         let jitter = Double((courtId * 317) % 1200) / 1000.0
@@ -156,6 +166,12 @@ final class AppViewModel: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         pollingTimers[courtId] = timer
         
+        // Kick an immediate cycle so completed queues don't appear stuck in warmup.
+        Task { @MainActor in
+            await self.advanceToFirstPlayableMatchIfNeeded(courtId: courtId)
+            await self.pollOnce(courtId)
+        }
+        
         saveConfiguration()
         print("▶️ Started polling for court \(courtId)")
     }
@@ -163,6 +179,8 @@ final class AppViewModel: ObservableObject {
     func stopPolling(for courtId: Int) {
         pollingTimers[courtId]?.invalidate()
         pollingTimers[courtId] = nil
+        pollsInFlight.remove(courtId)
+        observedActiveScoring.removeValue(forKey: courtId)
         
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -179,13 +197,15 @@ final class AppViewModel: ObservableObject {
         }
 
         for court in courts where !court.queue.isEmpty {
-            startPolling(for: court.id)
+            if pollingTimers[court.id] == nil {
+                startPolling(for: court.id)
+            }
         }
     }
     
     func stopAllPolling() {
         // Stop all active timers
-        for courtId in pollingTimers.keys {
+        for courtId in Array(pollingTimers.keys) {
             stopPolling(for: courtId)
         }
         
@@ -218,6 +238,7 @@ final class AppViewModel: ObservableObject {
             
             courts[idx].liveSince = nil
             courts[idx].lastSnapshot = nil
+            observedActiveScoring[courtId] = false
             saveConfiguration()
         }
     }
@@ -237,6 +258,7 @@ final class AppViewModel: ObservableObject {
         
         courts[idx].liveSince = nil
         courts[idx].lastSnapshot = nil
+        observedActiveScoring[courtId] = false
         saveConfiguration()
     }
     
@@ -254,6 +276,11 @@ final class AppViewModel: ObservableObject {
             stopPolling(for: courtId)
             return
         }
+
+        // Prevent overlapping poll cycles for the same court when network calls run long.
+        guard !pollsInFlight.contains(courtId) else { return }
+        pollsInFlight.insert(courtId)
+        defer { pollsInFlight.remove(courtId) }
         
         guard let activeIdx = courts[idx].activeIndex,
               activeIdx < courts[idx].queue.count else {
@@ -293,7 +320,11 @@ final class AppViewModel: ObservableObject {
             let isStale = timeSinceLastScore >= AppConfig.staleMatchTimeout // 15 mins
             
             let previousStatus = courts[idx].status
-            let newStatus = determineStatus(from: snapshot)
+            let matchConcluded = isMatchConcluded(snapshot: snapshot, for: matchItem)
+            let newStatus = determineStatus(from: snapshot, matchConcluded: matchConcluded)
+            if newStatus == .live && !matchConcluded {
+                observedActiveScoring[courtId] = true
+            }
             
             // Update stopwatch
             if previousStatus != .live && newStatus == .live {
@@ -304,8 +335,8 @@ final class AppViewModel: ObservableObject {
             }
             
             // Handle match completion OR Stale timeout
-            if snapshot.isFinal || isStale {
-                if isStale && !snapshot.isFinal {
+            if matchConcluded || isStale {
+                if isStale && !matchConcluded {
                     print("🚨 Court \(courtId) match is stale (no score change for 15m). Auto-advancing.")
                 }
                 
@@ -323,19 +354,39 @@ final class AppViewModel: ObservableObject {
                     let holdDuration = AppConfig.holdScoreDuration  // 3 minutes
                     let timeSinceFinish = Date().timeIntervalSince(courts[idx].finishedAt ?? Date())
                     
-                    // Advance if: hold time exceeded OR next match has started OR match was stale
+                    // Advance if stale, or if this is startup/backlog final data, or when hold conditions are met.
                     let holdExpired = timeSinceFinish >= holdDuration
-                    let nextStarted = await nextMatchHasStarted(courts[idx].queue[nextIndex])
+                    // Keep post-match hold only when this match was observed as actively scoring.
+                    let shouldHoldPostMatch = matchConcluded
+                        && (observedActiveScoring[courtId] ?? false)
+                        && (previousStatus == .live || (previousStatus == .finished && !holdExpired))
+                    let nextStarted = shouldHoldPostMatch ? await nextMatchHasStarted(courts[idx].queue[nextIndex]) : true
+                    let shouldAdvance = isStale || (!shouldHoldPostMatch) || holdExpired || nextStarted
                     
-                    if holdExpired || nextStarted || isStale {
-                        // Advance to next match
-                        courts[idx].activeIndex = nextIndex
-                        courts[idx].lastSnapshot = nil
-                        courts[idx].status = .waiting
-                        courts[idx].liveSince = nil
-                        courts[idx].finishedAt = nil  // Reset for next match
+                    if shouldAdvance {
+                        // Skip over any consecutive already-final matches so we land on the first playable match.
+                        let targetIndex = await firstNonFinalQueueIndex(courtId: courtId, startingAt: nextIndex)
+
+                        guard let writeIdx = courtIndex(for: courtId),
+                              targetIndex < courts[writeIdx].queue.count else {
+                            return
+                        }
+
+                        courts[writeIdx].activeIndex = targetIndex
+                        courts[writeIdx].lastSnapshot = nil
+                        courts[writeIdx].status = .waiting
+                        courts[writeIdx].liveSince = nil
+                        courts[writeIdx].finishedAt = nil  // Reset for next match
+                        observedActiveScoring[courtId] = false
                         lastScoreChangeTime[courtId] = nil
-                        print("⏭️ Auto-advanced court \(courtId) to match \(nextIndex + 1)")
+                        lastScoreSnapshot[courtId] = nil
+
+                        let skippedCompleted = max(0, targetIndex - nextIndex)
+                        if skippedCompleted > 0 {
+                            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1), skipped \(skippedCompleted) completed match(es)")
+                        } else {
+                            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1)")
+                        }
                         
                         // Trigger immediate metadata refresh for the new sequence
                         await refreshQueueMetadata(for: courtId)
@@ -353,10 +404,15 @@ final class AppViewModel: ObservableObject {
             let lastRefresh = lastQueueRefreshTimes[courtId] ?? Date.distantPast
             if Date().timeIntervalSince(lastRefresh) > 15 {
                 // Update current match team names if they've changed (e.g., "Match 1 Winner" → actual names)
-                if snapshot.team1Name != matchItem.team1Name || snapshot.team2Name != matchItem.team2Name {
+                if let writeIdx = courtIndex(for: courtId),
+                   let writeActive = courts[writeIdx].activeIndex,
+                   writeActive < courts[writeIdx].queue.count,
+                   courts[writeIdx].queue[writeActive].id == matchItem.id,
+                   (snapshot.team1Name != courts[writeIdx].queue[writeActive].team1Name
+                    || snapshot.team2Name != courts[writeIdx].queue[writeActive].team2Name) {
                     print("🔄 Updated current match team names: \(snapshot.team1Name) vs \(snapshot.team2Name)")
-                    courts[idx].queue[activeIdx].team1Name = snapshot.team1Name
-                    courts[idx].queue[activeIdx].team2Name = snapshot.team2Name
+                    courts[writeIdx].queue[writeActive].team1Name = snapshot.team1Name
+                    courts[writeIdx].queue[writeActive].team2Name = snapshot.team2Name
                 }
                 
                 // Update queued matches
@@ -370,23 +426,61 @@ final class AppViewModel: ObservableObject {
                 lastCourtChangeCheck = Date()
             }
 
-            courts[idx].lastPollTime = Date()
-            courts[idx].errorMessage = nil
+            if let writeIdx = courtIndex(for: courtId) {
+                courts[writeIdx].lastPollTime = Date()
+                courts[writeIdx].errorMessage = nil
+            }
             
         } catch {
-            courts[idx].errorMessage = error.localizedDescription
+            if let writeIdx = courtIndex(for: courtId) {
+                courts[writeIdx].errorMessage = error.localizedDescription
+            }
             // Don't change to error status on single failure
             print("⚠️ Poll error for court \(courtId): \(error.localizedDescription)")
         }
     }
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {
+        guard let snapshot = await fetchSnapshot(for: match) else { return false }
+        return isMatchConcluded(snapshot: snapshot, for: match) || isMatchActive(snapshot) || snapshot.hasStarted
+    }
+
+    private func fetchSnapshot(for match: MatchItem, courtId: Int = 0) async -> ScoreSnapshot? {
         do {
-            let data = try await apiClient.fetchData(from: match.apiURL) // Uses VBL match URL
-            let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
-            return snapshot.hasStarted
+            let data = try await apiClient.fetchData(from: match.apiURL)
+            return normalizeData(data, courtId: courtId, currentMatch: match)
         } catch {
-            return false
+            return nil
+        }
+    }
+
+    /// Walks forward from `startingAt` to find the first non-final queue index.
+    /// If every remaining match is final (or we fail to fetch), returns the best-known candidate index.
+    private func firstNonFinalQueueIndex(courtId: Int, startingAt startIndex: Int) async -> Int {
+        var candidateIndex = startIndex
+
+        while true {
+            guard let idx = courtIndex(for: courtId),
+                  candidateIndex < courts[idx].queue.count else {
+                return startIndex
+            }
+
+            let candidateMatch = courts[idx].queue[candidateIndex]
+            guard let snapshot = await fetchSnapshot(for: candidateMatch) else {
+                return candidateIndex
+            }
+
+            if !isMatchConcluded(snapshot: snapshot, for: candidateMatch) {
+                return candidateIndex
+            }
+
+            let nextIndex = candidateIndex + 1
+            guard let queueIdx = courtIndex(for: courtId),
+                  nextIndex < courts[queueIdx].queue.count else {
+                return candidateIndex
+            }
+
+            candidateIndex = nextIndex
         }
     }
     
@@ -396,9 +490,8 @@ final class AppViewModel: ObservableObject {
         guard let idx = courtIndex(for: courtId) else { return false }
         guard let activeIdx = courts[idx].activeIndex else { return false }
         
-        // Only smart-switch if current match hasn't started (0-0)
-        let currentScore = currentSnapshot.team1Score + currentSnapshot.team2Score
-        guard currentScore == 0 else { return false }
+        // Only smart-switch if the current match is not actively in progress.
+        guard !isMatchActive(currentSnapshot) else { return false }
         
         // Don't switch if we've been live on this match (liveSince set)
         if courts[idx].liveSince != nil { return false }
@@ -411,13 +504,14 @@ final class AppViewModel: ObservableObject {
                 let data = try await apiClient.fetchData(from: match.apiURL)
                 let snapshot = normalizeData(data, courtId: 0, currentMatch: match)
                 
-                // Check if this match has active scoring (not finished, not 0-0)
-                let score = snapshot.team1Score + snapshot.team2Score
-                if score > 0 && !snapshot.isFinal {
-                    print("🔄 Smart Queue Switch: Found active match at index \(queueIdx) with score \(score). Switching from 0-0 match at index \(activeIdx)")
+                // Check if this match appears actively in progress.
+                if isMatchActive(snapshot) {
+                    guard queueIdx < courts[idx].queue.count else { continue }
+                    print("🔄 Smart Queue Switch: Found active match at index \(queueIdx). Switching from index \(activeIdx)")
                     courts[idx].activeIndex = queueIdx
                     courts[idx].lastSnapshot = nil
                     courts[idx].status = .waiting
+                    observedActiveScoring[courtId] = false
                     return true // Only switch to first found active match
                 }
             } catch {
@@ -427,6 +521,32 @@ final class AppViewModel: ObservableObject {
         }
         
         return false
+    }
+
+    private func advanceToFirstPlayableMatchIfNeeded(courtId: Int) async {
+        guard let idx = courtIndex(for: courtId),
+              let activeIdx = courts[idx].activeIndex,
+              activeIdx < courts[idx].queue.count else {
+            return
+        }
+
+        let targetIdx = await firstNonFinalQueueIndex(courtId: courtId, startingAt: activeIdx)
+        guard targetIdx > activeIdx,
+              let writeIdx = courtIndex(for: courtId),
+              targetIdx < courts[writeIdx].queue.count else {
+            return
+        }
+
+        courts[writeIdx].activeIndex = targetIdx
+        courts[writeIdx].lastSnapshot = nil
+        courts[writeIdx].status = courts[writeIdx].status.isPolling ? .waiting : .idle
+        courts[writeIdx].liveSince = nil
+        courts[writeIdx].finishedAt = nil
+        observedActiveScoring[courtId] = false
+        lastScoreChangeTime[courtId] = nil
+        lastScoreSnapshot[courtId] = nil
+
+        print("⏭️ Preflight advanced court \(courtId) to match \(targetIdx + 1)")
     }
     
     // Refresh TBD names in the queue
@@ -672,14 +792,228 @@ final class AppViewModel: ObservableObject {
         return Int(digits)
     }
 
-    private func determineStatus(from snapshot: ScoreSnapshot) -> CourtStatus {
-        if snapshot.isFinal {
+    private func determineStatus(from snapshot: ScoreSnapshot, matchConcluded: Bool) -> CourtStatus {
+        if matchConcluded {
             return .finished
-        } else if snapshot.hasStarted {
+        } else if isMatchActive(snapshot) || snapshot.hasStarted {
             return .live
         } else {
             return .waiting
         }
+    }
+    
+    private func isMatchConcluded(snapshot: ScoreSnapshot, for match: MatchItem?) -> Bool {
+        if snapshot.status.lowercased().contains("final") {
+            return true
+        }
+
+        let inferred = inferMatchFormat(from: match)
+        let normalizedURL = match?.apiURL.absoluteString.lowercased() ?? ""
+        let isPoolURL = normalizedURL.contains("bracket=false")
+
+        var formats: [(setsToWin: Int, pointsPerSet: Int, pointCap: Int?)] = [inferred]
+        if isPoolURL && (inferred.setsToWin > 1 || inferred.pointsPerSet > 23 || inferred.pointsPerSet < 15) {
+            // Recovery path for legacy or misclassified pool formats.
+            formats.append((setsToWin: 1, pointsPerSet: 21, pointCap: 23))
+        }
+
+        for format in formats {
+            let setsWon = setsWon(in: snapshot, format: format)
+            if setsWon.team1 >= format.setsToWin || setsWon.team2 >= format.setsToWin {
+                return true
+            }
+
+            // Some payloads omit set history and only expose the active game score directly.
+            if snapshot.setHistory.isEmpty && format.setsToWin == 1 {
+                if isSetComplete(
+                    team1: snapshot.team1Score,
+                    team2: snapshot.team2Score,
+                    target: format.pointsPerSet,
+                    cap: format.pointCap
+                ) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    private func setsWon(
+        in snapshot: ScoreSnapshot,
+        format: (setsToWin: Int, pointsPerSet: Int, pointCap: Int?)
+    ) -> (team1: Int, team2: Int) {
+        var team1 = 0
+        var team2 = 0
+
+        for set in snapshot.setHistory {
+            let target: Int
+            let cap: Int?
+
+            if format.setsToWin > 1 && set.setNumber >= 3 {
+                target = 15
+                cap = nil
+            } else {
+                target = format.pointsPerSet
+                cap = format.pointCap
+            }
+
+            guard isSetComplete(team1: set.team1Score, team2: set.team2Score, target: target, cap: cap) else {
+                continue
+            }
+
+            if set.team1Score > set.team2Score {
+                team1 += 1
+            } else if set.team2Score > set.team1Score {
+                team2 += 1
+            }
+        }
+
+        return (team1: team1, team2: team2)
+    }
+
+    private func isSetComplete(team1: Int, team2: Int, target: Int, cap: Int?) -> Bool {
+        let maxScore = max(team1, team2)
+        let diff = abs(team1 - team2)
+
+        guard maxScore > 0 else {
+            return false
+        }
+
+        if let cap, maxScore >= cap {
+            return true
+        }
+
+        return maxScore >= target && diff >= 2
+    }
+
+    private func isMatchActive(_ snapshot: ScoreSnapshot) -> Bool {
+        if snapshot.isFinal { return false }
+
+        let status = snapshot.status.lowercased()
+        if status.contains("progress") || status.contains("live") || status.contains("playing") {
+            return true
+        }
+
+        if snapshot.setNumber > 1 {
+            return true
+        }
+
+        if let currentSet = snapshot.setHistory.last,
+           (currentSet.team1Score + currentSet.team2Score) > 0 {
+            return true
+        }
+
+        if (snapshot.team1Score + snapshot.team2Score) > 0 {
+            return true
+        }
+
+        return false
+    }
+
+    private func inferMatchFormat(from match: MatchItem?) -> (setsToWin: Int, pointsPerSet: Int, pointCap: Int?) {
+        guard let match else {
+            return (setsToWin: 2, pointsPerSet: 21, pointCap: nil)
+        }
+
+        let formatText = (match.formatText ?? "").lowercased()
+        let normalizedURL = match.apiURL.absoluteString.lowercased()
+        let isPoolAPIURL = normalizedURL.contains("bracket=false")
+        let isPoolMatch = (match.matchType ?? "").lowercased().contains("pool")
+
+        var setsToWin = match.setsToWin
+        var pointsPerSet = match.pointsPerSet
+        var pointCap = match.pointCap
+
+        // Legacy safety: older imported pool queues were persisted as best-of-3 with missing format text.
+        if isPoolAPIURL,
+           formatText.isEmpty,
+           (setsToWin == nil || setsToWin == 2) {
+            setsToWin = 1
+            if pointsPerSet == nil {
+                pointsPerSet = 21
+            }
+            if (pointsPerSet ?? 21) == 21, pointCap == nil {
+                pointCap = 23
+            }
+        }
+
+        if setsToWin == nil {
+            if formatText.contains("1 game") || formatText.contains("1 set") {
+                setsToWin = 1
+            } else if formatText.contains("best 2 out of 3") || formatText.contains("match play") {
+                setsToWin = 2
+            } else if isPoolMatch {
+                // Most VBL pool play uses one-set format.
+                setsToWin = 1
+            } else {
+                setsToWin = 2
+            }
+        }
+
+        if pointsPerSet == nil {
+            pointsPerSet =
+                extractFirstInt(in: formatText, pattern: #"(?:game|set)s?\s*(?:\d+\s*(?:&|and)\s*\d+\s*)?to\s*(\d+)"#) ??
+                extractFirstInt(in: formatText, pattern: #"\bto\s*(\d+)\b"#) ??
+                21
+        }
+
+        if pointCap == nil {
+            if formatText.contains("no cap") || formatText.contains("win by 2") {
+                pointCap = nil
+            } else {
+                pointCap =
+                    extractFirstInt(in: formatText, pattern: #"cap(?:ped)?\s*(?:at|of|is)?\s*(\d+)"#) ??
+                    extractFirstInt(in: formatText, pattern: #"(\d+)\s*(?:point|pt)s?\s*cap"#)
+            }
+
+            // Safety net for older pool imports that omitted format fields.
+            if pointCap == nil, (isPoolMatch || isPoolAPIURL), setsToWin == 1, pointsPerSet == 21 {
+                pointCap = 23
+            }
+        }
+
+        return (
+            setsToWin: max(1, setsToWin ?? 2),
+            pointsPerSet: max(1, pointsPerSet ?? 21),
+            pointCap: pointCap
+        )
+    }
+
+    private func extractFirstInt(in text: String, pattern: String) -> Int? {
+        guard !text.isEmpty,
+              let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+
+        return Int(text[range])
+    }
+
+    private func normalizeLegacyPoolFormat(_ match: MatchItem) -> MatchItem {
+        var normalized = match
+        let formatText = (normalized.formatText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let isPoolAPIURL = normalized.apiURL.absoluteString.lowercased().contains("bracket=false")
+
+        guard isPoolAPIURL, formatText.isEmpty else {
+            return normalized
+        }
+
+        if normalized.setsToWin == nil || normalized.setsToWin == 2 {
+            normalized.setsToWin = 1
+        }
+
+        if normalized.pointsPerSet == nil {
+            normalized.pointsPerSet = 21
+        }
+
+        if (normalized.pointsPerSet ?? 21) == 21, normalized.pointCap == nil {
+            normalized.pointCap = 23
+        }
+
+        return normalized
     }
     
     // Updated signature: accepts optional currentMatch to extract seeds
@@ -721,10 +1055,11 @@ final class AppViewModel: ObservableObject {
                     currentMatch?.team2Name ??
                     "TBD"
         
-        // Get format from match or use defaults
-        let pointsPerSet = currentMatch?.pointsPerSet ?? 21
-        let pointCap = currentMatch?.pointCap
-        let setsToWin = currentMatch?.setsToWin ?? 2
+        // Get per-match format with resilient inference fallback.
+        let inferredFormat = inferMatchFormat(from: currentMatch)
+        let pointsPerSet = inferredFormat.pointsPerSet
+        let pointCap = inferredFormat.pointCap
+        let setsToWin = inferredFormat.setsToWin
         
         // Parse set scores from "gameX" keys as ints or strings
         // Based on user screenshot: "game1": 15
@@ -828,7 +1163,8 @@ final class AppViewModel: ObservableObject {
         
         let statusStr = (dict["status"] as? String) ?? "Pre-Match"
         let setNum = (dict["setNumber"] as? Int) ?? 1
-        let setsToWin = currentMatch?.setsToWin ?? 2
+        let inferredFormat = inferMatchFormat(from: currentMatch)
+        let setsToWin = inferredFormat.setsToWin
         
         return ScoreSnapshot(
             courtId: courtId,
@@ -866,7 +1202,22 @@ final class AppViewModel: ObservableObject {
               let loaded = try? JSONDecoder().decode([Court].self, from: data) else {
             return
         }
-        courts = loaded
+        var normalizedCourts = loaded
+        var didNormalize = false
+
+        for idx in normalizedCourts.indices {
+            let normalizedQueue = normalizedCourts[idx].queue.map(normalizeLegacyPoolFormat)
+            if normalizedQueue != normalizedCourts[idx].queue {
+                normalizedCourts[idx].queue = normalizedQueue
+                didNormalize = true
+            }
+        }
+
+        courts = normalizedCourts
+        if didNormalize {
+            saveConfiguration()
+            print("🧹 Normalized legacy pool formats in saved queues")
+        }
         print("📂 Loaded configuration with \(courts.count) courts")
     }
     
