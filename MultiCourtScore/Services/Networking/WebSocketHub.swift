@@ -19,19 +19,20 @@ final class WebSocketHub {
     // Vapor app
     private var app: Application?
     public private(set) var isRunning = false
+    private var isStarting = false
 
     private init() {}
-    
+
     // MARK: - Lifecycle
-    
+
     func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) async {
-        guard !isRunning else { 
-            print("⚠️ Overlay server already running")
-            return 
+        guard !isRunning && !isStarting else {
+            if isRunning { print("⚠️ Overlay server already running") }
+            return
         }
-        
+
         // Block further start calls immediately
-        isRunning = true
+        isStarting = true
         appViewModel = viewModel
         
         // Ensure old app is cleaned up
@@ -64,14 +65,17 @@ final class WebSocketHub {
                 do {
                     print("⏳ Starting overlay server on port \(port)...")
                     try await newApp.startup()
-                    
+
                     await MainActor.run {
+                        WebSocketHub.shared.isRunning = true
+                        WebSocketHub.shared.isStarting = false
                         print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
                     }
                 } catch {
                     print("❌ Failed to start overlay server: \(error)")
                     await MainActor.run {
                         WebSocketHub.shared.isRunning = false
+                        WebSocketHub.shared.isStarting = false
                         WebSocketHub.shared.app = nil
                     }
                 }
@@ -79,14 +83,16 @@ final class WebSocketHub {
         } catch {
             print("❌ Failed to initialize Vapor Application: \(error)")
             self.isRunning = false
+            self.isStarting = false
         }
     }
     
     func stop() {
-        guard isRunning else { return }
+        guard isRunning || isStarting else { return }
         let appToStop = app
         app = nil
         isRunning = false
+        isStarting = false
         Task.detached {
             print("🛑 Stopping overlay server...")
             do {

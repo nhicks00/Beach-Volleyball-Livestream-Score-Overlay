@@ -13,6 +13,7 @@ struct ChangeLogView: View {
     
     @State private var searchText = ""
     @State private var filterCourt: Int? = nil
+    @State private var showClearConfirmation = false
     
     var filteredLogs: [ChangeLogItem] {
         changeLog.logs.filter { item in
@@ -61,7 +62,7 @@ struct ChangeLogView: View {
                 
                 // Clear Button
                 Button {
-                    changeLog.clearLogs()
+                    showClearConfirmation = true
                 } label: {
                     Label("Clear Log", systemImage: "trash")
                         .font(.system(size: 12, weight: .medium))
@@ -101,6 +102,12 @@ struct ChangeLogView: View {
             }
         }
         .background(AppColors.background)
+        .alert("Clear Change Log?", isPresented: $showClearConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) { changeLog.clearLogs() }
+        } message: {
+            Text("This will remove all \(changeLog.logs.count) change log entries. This cannot be undone.")
+        }
     }
 }
 
