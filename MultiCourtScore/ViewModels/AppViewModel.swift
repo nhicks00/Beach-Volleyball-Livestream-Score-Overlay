@@ -38,6 +38,8 @@ final class AppViewModel: ObservableObject {
     private var lastScoreChangeTime: [Int: Date] = [:]
     // Per-court flag indicating we observed non-final live scoring for current active match.
     private var observedActiveScoring: [Int: Bool] = [:]
+    // Server-side serve tracking: infer serving team from score changes
+    private var lastServeTeam: [Int: String] = [:]
     
     // MARK: - Initialization
     
@@ -335,7 +337,12 @@ final class AppViewModel: ObservableObject {
         do {
             let data = try await scoreCache.get(matchItem.apiURL)
             // Pass matchItem to normalizeData to access seeds
-            let snapshot = normalizeData(data, courtId: courtId, currentMatch: matchItem)
+            var snapshot = normalizeData(data, courtId: courtId, currentMatch: matchItem)
+
+            // Apply server-side serve tracking (vMix doesn't provide serve info)
+            if let serve = lastServeTeam[courtId], snapshot.serve == nil {
+                snapshot.serve = serve
+            }
             
             // Smart Queue Switch: If current match is 0-0 but another has scoring, switch to it.
             // If we switch, stop processing this stale snapshot.
@@ -351,16 +358,24 @@ final class AppViewModel: ObservableObject {
             let currentP2 = snapshot.setHistory.last?.team2Score ?? 0
             let prevData = lastScoreSnapshot[courtId]
             
-            if prevData == nil || 
+            if prevData == nil ||
                prevData?.pts1 != currentP1 || prevData?.pts2 != currentP2 ||
                prevData?.s1 != currentS1 || prevData?.s2 != currentS2 {
+                // Infer serving team from point changes
+                if let prev = prevData {
+                    if currentP1 > prev.pts1 {
+                        lastServeTeam[courtId] = "home"
+                    } else if currentP2 > prev.pts2 {
+                        lastServeTeam[courtId] = "away"
+                    }
+                }
                 // Point or set changed: update tracker
                 lastScoreSnapshot[courtId] = (pts1: currentP1, pts2: currentP2, s1: currentS1, s2: currentS2)
                 lastScoreChangeTime[courtId] = Date()
             }
             
             let timeSinceLastScore = Date().timeIntervalSince(lastScoreChangeTime[courtId] ?? Date())
-            let isStale = timeSinceLastScore >= AppConfig.staleMatchTimeout // 15 mins
+            let isStale = timeSinceLastScore >= appSettings.staleMatchTimeout
             
             let previousStatus = courts[idx].status
             let matchConcluded = isMatchConcluded(snapshot: snapshot, for: matchItem)
@@ -394,7 +409,7 @@ final class AppViewModel: ObservableObject {
                 // Check if we should advance to next match
                 let nextIndex = activeIdx + 1
                 if nextIndex < courts[idx].queue.count {
-                    let holdDuration = AppConfig.holdScoreDuration  // 3 minutes
+                    let holdDuration = appSettings.holdScoreDuration
                     let timeSinceFinish = Date().timeIntervalSince(courts[idx].finishedAt ?? Date())
                     
                     // Advance if stale, or if this is startup/backlog final data, or when hold conditions are met.

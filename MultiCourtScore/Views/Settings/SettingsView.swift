@@ -259,6 +259,41 @@ struct SettingsView: View {
                     }
                 }
 
+                // Timers
+                DetailSection(title: "Timers") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Stepper(
+                                "Post-match hold: \(Int(settings.holdScoreDuration))s (\(Int(settings.holdScoreDuration / 60))m)",
+                                value: $settings.holdScoreDuration,
+                                in: 30...600,
+                                step: 30
+                            )
+                            .onChange(of: settings.holdScoreDuration) { _, newValue in
+                                appViewModel.appSettings.holdScoreDuration = newValue
+                            }
+                            Text("How long to display final scores before advancing to next match.")
+                                .font(.system(size: 11))
+                                .foregroundColor(AppColors.textMuted)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Stepper(
+                                "Stale match timeout: \(Int(settings.staleMatchTimeout))s (\(Int(settings.staleMatchTimeout / 60))m)",
+                                value: $settings.staleMatchTimeout,
+                                in: 300...3600,
+                                step: 60
+                            )
+                            .onChange(of: settings.staleMatchTimeout) { _, newValue in
+                                appViewModel.appSettings.staleMatchTimeout = newValue
+                            }
+                            Text("Auto-advance if no score changes for this duration.")
+                                .font(.system(size: 11))
+                                .foregroundColor(AppColors.textMuted)
+                        }
+                    }
+                }
+
                 // Theme
                 DetailSection(title: "Theme") {
                     Picker("Theme", selection: $settings.overlayTheme) {

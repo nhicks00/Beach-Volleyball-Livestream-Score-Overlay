@@ -377,13 +377,16 @@ final class WebSocketHub {
                     "pointCap": currentMatch?.pointCap as Any,
 
                     "matchNumber": currentMatch?.matchNumber ?? "",
+                    "matchType": currentMatch?.matchType ?? "",
+                    "typeDetail": currentMatch?.typeDetail ?? "",
                     "nextMatch": Self.localizeNextMatch(
                         court.nextMatch?.displayName ?? "",
                         queue: court.queue,
                         activeIndex: court.activeIndex
                     ),
                     "layout": effectiveLayout,
-                    "showSocialBar": vm.appSettings.showSocialBar
+                    "showSocialBar": vm.appSettings.showSocialBar,
+                    "holdDuration": vm.appSettings.holdScoreDuration * 1000
                 ]
                 
                 return try Self.json(data)
@@ -1402,7 +1405,7 @@ body.layout-bottom-left .bubble-bar svg {
 const SRC = "/score.json";
 const NEXT_SRC = "/next.json";
 const POLL_MS = 1000;
-const POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends
+let POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends (updated from server)
 const SCORING_WIDTH = '100%';
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
@@ -2605,6 +2608,9 @@ async function tick() {
   try {
     const d = await fetchJSON(SRC);
     if (!d) return;
+
+    // Update dynamic hold duration from server settings
+    POST_MATCH_HOLD_MS = d.holdDuration || 180000;
 
     // Track data freshness
     updateStaleState(JSON.stringify(d));

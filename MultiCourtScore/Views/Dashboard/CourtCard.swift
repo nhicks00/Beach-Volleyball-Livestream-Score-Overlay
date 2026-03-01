@@ -18,6 +18,7 @@ struct CourtCard: View {
     let onCopyURL: () -> Void
     let onSetLayout: (String?) -> Void
     var isCopied: Bool = false
+    var holdScoreDuration: TimeInterval = 180
 
     @State private var isHovered = false
 
@@ -216,7 +217,7 @@ struct CourtCard: View {
             
             // Postmatch countdown timer
             if court.status == .finished, let finishedAt = court.finishedAt {
-                PostmatchTimer(finishedAt: finishedAt)
+                PostmatchTimer(finishedAt: finishedAt, holdDuration: holdScoreDuration)
             }
             
             Button {
@@ -717,11 +718,12 @@ struct ConnectionBadge: View {
 
 struct PostmatchTimer: View {
     let finishedAt: Date
+    var holdDuration: TimeInterval = 180
 
     var body: some View {
         TimelineView(.periodic(from: finishedAt, by: 1.0)) { timeline in
             let elapsed = timeline.date.timeIntervalSince(finishedAt)
-            let remaining = max(0, Int(AppConfig.holdScoreDuration) - Int(elapsed))
+            let remaining = max(0, Int(holdDuration) - Int(elapsed))
             let minutes = remaining / 60
             let seconds = remaining % 60
 
