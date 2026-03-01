@@ -609,7 +609,7 @@ struct QueueMatchRow: View {
                     Menu {
                         ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
                             if cameraId != currentCourtId {
-                                Button(CourtNaming.displayName(for: cameraId)) {
+                                Button(CourtNaming.defaultName(for: cameraId)) {
                                     onMoveToCourt(cameraId)
                                 }
                             }

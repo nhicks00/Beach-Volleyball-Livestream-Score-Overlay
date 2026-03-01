@@ -799,13 +799,13 @@ final class AppViewModel: ObservableObject {
         
         // Log the change
         let matchLabel = change.match.displayName
-        print("🔄 Court change: \(matchLabel) moved from \(CourtNaming.displayName(for: change.fromCourt)) to \(CourtNaming.displayName(for: change.toCourt))")
-        
+        print("🔄 Court change: \(matchLabel) moved from \(CourtNaming.defaultName(for: change.fromCourt)) to \(CourtNaming.defaultName(for: change.toCourt))")
+
         // Send notification
         let event = CourtChangeEvent(
             matchLabel: matchLabel,
-            oldCourt: CourtNaming.displayName(for: change.fromCourt),
-            newCourt: CourtNaming.displayName(for: change.toCourt),
+            oldCourt: CourtNaming.defaultName(for: change.fromCourt),
+            newCourt: CourtNaming.defaultName(for: change.toCourt),
             oldCamera: change.fromCourt,
             newCamera: change.toCourt,
             isLiveMatch: wasLiveMatch,

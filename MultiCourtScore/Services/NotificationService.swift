@@ -65,7 +65,7 @@ class NotificationService: ObservableObject {
         
         let notification = NotificationEvent(
             title: "✅ Match Completed",
-            message: "\(matchLabel) finished. Winner: \(winner). Camera: \(CourtNaming.displayName(for: cameraId))",
+            message: "\(matchLabel) finished. Winner: \(winner). Camera: \(CourtNaming.defaultName(for: cameraId))",
             urgency: .info,
             timestamp: Date()
         )

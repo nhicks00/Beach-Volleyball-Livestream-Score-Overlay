@@ -888,7 +888,7 @@ struct CourtMappingRow: View {
             Picker("Camera", selection: $selectedCamera) {
                 Text("Not Assigned").tag(0)
                 ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
-                    Text(CourtNaming.displayName(for: cameraId)).tag(cameraId)
+                    Text(CourtNaming.defaultName(for: cameraId)).tag(cameraId)
                 }
             }
             .pickerStyle(.menu)
@@ -1390,7 +1390,7 @@ struct SourceMatchCard: View {
             )) {
                 Text("Standby").tag(0)
                 ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
-                    Text(CourtNaming.displayName(for: cameraId)).tag(cameraId)
+                    Text(CourtNaming.defaultName(for: cameraId)).tag(cameraId)
                 }
             }
             .pickerStyle(.menu)
@@ -1411,7 +1411,7 @@ struct CameraQueueSection: View {
     let onRemove: (UUID) -> Void
 
     private var sectionTitle: String {
-        cameraId == 0 ? "Standby" : CourtNaming.displayName(for: cameraId)
+        cameraId == 0 ? "Standby" : CourtNaming.defaultName(for: cameraId)
     }
 
     private var sectionColor: Color {

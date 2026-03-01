@@ -273,7 +273,7 @@ struct Court: Identifiable, Codable, Equatable {
     // MARK: Computed Properties
     
     var displayName: String {
-        return CourtNaming.displayName(for: id)
+        return name
     }
     
     var currentMatch: MatchItem? {
@@ -315,7 +315,7 @@ struct Court: Identifiable, Codable, Equatable {
     static func create(id: Int, name: String? = nil) -> Court {
         return Court(
             id: id,
-            name: name ?? "Overlay \(id)",
+            name: name ?? CourtNaming.defaultName(for: id),
             queue: [],
             activeIndex: nil,
             status: .idle,
