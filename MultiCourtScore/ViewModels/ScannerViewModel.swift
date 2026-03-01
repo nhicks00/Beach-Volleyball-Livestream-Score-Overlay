@@ -113,6 +113,8 @@ class ScannerViewModel: ObservableObject {
         // Live scores
         let team1_score: Int?
         let team2_score: Int?
+        // Division ID for hydrate re-fetch (parsed from scan URL)
+        var divisionId: Int?
         
         var displayName: String {
             if let t1 = team1, let t2 = team2, !t1.isEmpty, !t2.isEmpty {
@@ -512,13 +514,18 @@ class ScannerViewModel: ObservableObject {
                     // Try to load results from output file
                     if let data = try? Data(contentsOf: outputFile),
                        let result = try? JSONDecoder().decode(ScanResultWrapper.self, from: data) {
-                        if let matches = result.matches {
-                            continuation.resume(returning: matches)
+                        var matches: [VBLMatch] = []
+                        if let m = result.matches {
+                            matches = m
                         } else if let results = result.results, let first = results.first {
-                            continuation.resume(returning: first.matches)
-                        } else {
-                            continuation.resume(returning: [])
+                            let divId = ScannerViewModel.parseDivisionId(from: first.url)
+                            matches = first.matches.map { m in
+                                var m = m
+                                m.divisionId = divId
+                                return m
+                            }
                         }
+                        continuation.resume(returning: matches)
                     } else {
                         Task { @MainActor in
                             self.addLog("Could not read results file at \(outputFile.lastPathComponent)", type: .error)
@@ -610,9 +617,11 @@ class ScannerViewModel: ObservableObject {
                                 if let matchesData = result["matches"] as? [[String: Any]] {
                                     let matchType = result["match_type"] as? String
                                     let typeDetail = result["type_detail"] as? String
+                                    let divisionId = Self.parseDivisionId(from: result["url"] as? String)
 
                                     for matchDict in matchesData {
-                                        if let match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
+                                        if var match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
+                                            match.divisionId = divisionId
                                             allMatches.append(match)
                                         }
                                     }
@@ -772,10 +781,21 @@ class ScannerViewModel: ObservableObject {
             }
         }
     }
-    
+
+    // MARK: - URL Parsing
+
+    /// Extract division ID from a VBL URL like .../division/127872/...
+    nonisolated static func parseDivisionId(from url: String?) -> Int? {
+        guard let url else { return nil }
+        guard let range = url.range(of: #"/division/(\d+)"#, options: .regularExpression) else { return nil }
+        let match = url[range]
+        let digits = match.drop(while: { !$0.isNumber })
+        return Int(digits)
+    }
+
     // MARK: - Conversion to MatchItem
     
-    func createMatchItems(from matches: [VBLMatch]) -> [MatchItem] {
+    func createMatchItems(from matches: [VBLMatch], divisionId: Int? = nil) -> [MatchItem] {
         // First, auto-number matches that need it
         let numberedMatches = autoNumberMatches(matches)
         
@@ -811,7 +831,8 @@ class ScannerViewModel: ObservableObject {
                 pointCap: match.pointCap,
                 formatText: match.formatText,
                 team1_score: match.team1_score,
-                team2_score: match.team2_score
+                team2_score: match.team2_score,
+                divisionId: match.divisionId ?? divisionId
             )
         }
     }

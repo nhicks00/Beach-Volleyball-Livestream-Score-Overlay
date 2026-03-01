@@ -40,6 +40,9 @@ final class AppViewModel: ObservableObject {
     private var observedActiveScoring: [Int: Bool] = [:]
     // Server-side serve tracking: infer serving team from score changes
     private var lastServeTeam: [Int: String] = [:]
+    // Periodic hydrate re-fetch for resolving TBD bracket teams
+    private var lastHydrateRefresh: [Int: Date] = [:]  // divisionId → last fetch time
+    private static let hydrateRefreshInterval: TimeInterval = 60  // seconds
     
     // MARK: - Initialization
     
@@ -486,6 +489,9 @@ final class AppViewModel: ObservableObject {
                 lastCourtChangeCheck = Date()
             }
 
+            // Periodic hydrate re-fetch to resolve TBD bracket names (every 60s per division)
+            await refreshHydrateIfNeeded(for: courtId)
+
             if let writeIdx = courtIndex(for: courtId) {
                 courts[writeIdx].lastPollTime = Date()
                 courts[writeIdx].errorMessage = nil
@@ -621,7 +627,135 @@ final class AppViewModel: ObservableObject {
 
         print("⏭️ Preflight advanced court \(courtId) to match \(targetIdx + 1)")
     }
-    
+
+    // MARK: - Hydrate Re-fetch
+
+    /// Periodically re-fetch the division hydrate endpoint to resolve TBD bracket team names.
+    /// The hydrate endpoint returns the full division tree including resolved bracket slots,
+    /// which updates faster than individual vMix endpoints.
+    private func refreshHydrateIfNeeded(for courtId: Int) async {
+        guard let idx = courtIndex(for: courtId) else { return }
+
+        // Collect unique division IDs from all queued matches
+        let divisionIds = Set(courts[idx].queue.compactMap { $0.divisionId })
+        guard !divisionIds.isEmpty else { return }
+
+        let hydrateBase = "https://volleyballlife-api-dot-net-8.azurewebsites.net/division"
+
+        for divId in divisionIds {
+            let lastRefresh = lastHydrateRefresh[divId] ?? .distantPast
+            guard Date().timeIntervalSince(lastRefresh) > Self.hydrateRefreshInterval else { continue }
+
+            guard let url = URL(string: "\(hydrateBase)/\(divId)/hydrate") else { continue }
+
+            do {
+                let data = try await scoreCache.get(url)
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+
+                // Build team lookup from hydrate response
+                let teamLookup = buildTeamLookup(from: json)
+                guard !teamLookup.isEmpty else { continue }
+
+                // Update queued matches with resolved team names
+                guard let writeIdx = courtIndex(for: courtId) else { return }
+                var updated = false
+                for i in 0..<courts[writeIdx].queue.count {
+                    let match = courts[writeIdx].queue[i]
+                    guard match.divisionId == divId else { continue }
+
+                    // Try to resolve team names from bracket entries
+                    if let matchIdStr = extractMatchId(from: match.apiURL),
+                       let resolved = teamLookup[matchIdStr] {
+                        if let t1 = resolved.team1, match.team1Name != t1 {
+                            courts[writeIdx].queue[i].team1Name = t1
+                            updated = true
+                        }
+                        if let t2 = resolved.team2, match.team2Name != t2 {
+                            courts[writeIdx].queue[i].team2Name = t2
+                            updated = true
+                        }
+                    }
+                }
+                if updated {
+                    scheduleSave()
+                }
+                lastHydrateRefresh[divId] = Date()
+            } catch {
+                // Silently ignore — this is a best-effort optimization
+            }
+        }
+    }
+
+    /// Build a lookup of matchId → (team1, team2) from hydrate JSON
+    private func buildTeamLookup(from json: [String: Any]) -> [String: (team1: String?, team2: String?)] {
+        var lookup: [String: (team1: String?, team2: String?)] = [:]
+
+        // Parse teams array
+        var teamNames: [Int: String] = [:]
+        if let teams = json["teams"] as? [[String: Any]] {
+            for team in teams {
+                if let id = team["id"] as? Int,
+                   let players = team["players"] as? [[String: Any]] {
+                    let names = players.compactMap { p -> String? in
+                        let first = p["firstName"] as? String ?? ""
+                        let last = p["lastName"] as? String ?? ""
+                        return last.isEmpty ? nil : "\(first) \(last)".trimmingCharacters(in: .whitespaces)
+                    }
+                    if !names.isEmpty {
+                        teamNames[id] = names.joined(separator: " / ")
+                    }
+                }
+            }
+        }
+
+        // Parse bracket matches
+        if let brackets = json["brackets"] as? [[String: Any]] {
+            for bracket in brackets {
+                if let matches = bracket["matches"] as? [[String: Any]] {
+                    for match in matches {
+                        guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
+                        let homeId = match["homeTeamId"] as? Int
+                        let awayId = match["awayTeamId"] as? Int
+                        let t1 = homeId.flatMap { teamNames[$0] }
+                        let t2 = awayId.flatMap { teamNames[$0] }
+                        if t1 != nil || t2 != nil {
+                            lookup[String(matchId)] = (team1: t1, team2: t2)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Parse pool matches
+        if let pools = json["pools"] as? [[String: Any]] {
+            for pool in pools {
+                if let matches = pool["matches"] as? [[String: Any]] {
+                    for match in matches {
+                        guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
+                        let homeId = match["homeTeamId"] as? Int
+                        let awayId = match["awayTeamId"] as? Int
+                        let t1 = homeId.flatMap { teamNames[$0] }
+                        let t2 = awayId.flatMap { teamNames[$0] }
+                        if t1 != nil || t2 != nil {
+                            lookup[String(matchId)] = (team1: t1, team2: t2)
+                        }
+                    }
+                }
+            }
+        }
+
+        return lookup
+    }
+
+    /// Extract match ID from a vMix API URL like .../matches/325750/vmix...
+    private func extractMatchId(from url: URL) -> String? {
+        let path = url.path
+        guard let range = path.range(of: #"/matches/(\d+)"#, options: .regularExpression) else { return nil }
+        let match = path[range]
+        let digits = match.drop(while: { !$0.isNumber })
+        return String(digits)
+    }
+
     // Refresh TBD names in the queue
     private func refreshQueueMetadata(for courtId: Int) async {
         guard let idx = courtIndex(for: courtId) else { return }

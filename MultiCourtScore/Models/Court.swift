@@ -58,6 +58,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var formatText: String?      // Raw format text from scraper
     var team1_score: Int?        // Live score
     var team2_score: Int?        // Live score
+    var divisionId: Int?         // VBL division ID for hydrate re-fetch
     
     init(
         apiURL: URL,
@@ -78,7 +79,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
         pointCap: Int? = nil,
         formatText: String? = nil,
         team1_score: Int? = nil,
-        team2_score: Int? = nil
+        team2_score: Int? = nil,
+        divisionId: Int? = nil
     ) {
         self.apiURL = apiURL
         self.label = label
@@ -99,6 +101,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.formatText = formatText
         self.team1_score = team1_score
         self.team2_score = team2_score
+        self.divisionId = divisionId
     }
     
     
