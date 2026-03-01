@@ -604,6 +604,55 @@ struct OverlayDataFlowTests {
     }
 }
 
+// MARK: - Set 3 Tiebreak Tests
+
+struct Set3TiebreakTests {
+
+    @Test func set3_defaultTarget15_isComplete() async throws {
+        // Standard best-of-3 with 21-point sets: set 3 target is min(21, 15) = 15
+        let snapshot = makeSnapshot(
+            status: "Final",
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 21, team2Score: 18, isComplete: true),
+                SetScore(setNumber: 2, team1Score: 19, team2Score: 21, isComplete: true),
+                SetScore(setNumber: 3, team1Score: 15, team2Score: 10, isComplete: true)
+            ]
+        )
+        #expect(snapshot.totalSetsWon.team1 == 2)
+        #expect(snapshot.totalSetsWon.team2 == 1)
+        #expect(snapshot.isFinal)
+    }
+
+    @Test func set3_lowerTarget11_isComplete() async throws {
+        // Training format: sets to 11, set 3 target is min(11, 15) = 11
+        let snapshot = makeSnapshot(
+            status: "Final",
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 11, team2Score: 8, isComplete: true),
+                SetScore(setNumber: 2, team1Score: 9, team2Score: 11, isComplete: true),
+                SetScore(setNumber: 3, team1Score: 11, team2Score: 7, isComplete: true)
+            ]
+        )
+        #expect(snapshot.totalSetsWon.team1 == 2)
+        #expect(snapshot.totalSetsWon.team2 == 1)
+        #expect(snapshot.isFinal)
+    }
+
+    @Test func set3_withPointCap_isComplete() async throws {
+        // Best-of-3 to 21 with cap at 23, set 3 to 15 with cap at 23
+        let snapshot = makeSnapshot(
+            status: "Final",
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 21, team2Score: 15, isComplete: true),
+                SetScore(setNumber: 2, team1Score: 18, team2Score: 21, isComplete: true),
+                SetScore(setNumber: 3, team1Score: 16, team2Score: 14, isComplete: true)
+            ]
+        )
+        #expect(snapshot.totalSetsWon.team1 == 2)
+        #expect(snapshot.totalSetsWon.team2 == 1)
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
