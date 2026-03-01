@@ -59,7 +59,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var team1_score: Int?        // Live score
     var team2_score: Int?        // Live score
     var divisionId: Int?         // VBL division ID for hydrate re-fetch
-    
+    var tournamentId: Int?       // VBL tournament ID for SignalR subscriptions
+    var gameIds: [Int]?          // VBL game IDs from hydrate (for SignalR mutation mapping)
+
     init(
         apiURL: URL,
         label: String? = nil,
@@ -80,7 +82,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
         formatText: String? = nil,
         team1_score: Int? = nil,
         team2_score: Int? = nil,
-        divisionId: Int? = nil
+        divisionId: Int? = nil,
+        tournamentId: Int? = nil,
+        gameIds: [Int]? = nil
     ) {
         self.apiURL = apiURL
         self.label = label
@@ -102,6 +106,8 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.team1_score = team1_score
         self.team2_score = team2_score
         self.divisionId = divisionId
+        self.tournamentId = tournamentId
+        self.gameIds = gameIds
     }
     
     
@@ -141,8 +147,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
         case matchType, typeDetail, scheduledTime, startDate, matchNumber, courtNumber, physicalCourt
         case setsToWin, pointsPerSet, pointCap, formatText
         case team1_score, team2_score
+        case divisionId, tournamentId, gameIds
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         apiURL = try container.decode(URL.self, forKey: .apiURL)
@@ -164,6 +171,9 @@ struct MatchItem: Codable, Hashable, Identifiable {
         formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
         team1_score = try container.decodeIfPresent(Int.self, forKey: .team1_score)
         team2_score = try container.decodeIfPresent(Int.self, forKey: .team2_score)
+        divisionId = try container.decodeIfPresent(Int.self, forKey: .divisionId)
+        tournamentId = try container.decodeIfPresent(Int.self, forKey: .tournamentId)
+        gameIds = try container.decodeIfPresent([Int].self, forKey: .gameIds)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
     }
 }

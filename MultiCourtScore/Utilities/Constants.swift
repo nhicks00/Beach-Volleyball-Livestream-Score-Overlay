@@ -135,6 +135,7 @@ enum NetworkConstants {
     static let signalRPingInterval: TimeInterval = 15
     static let signalRMaxReconnectDelay: TimeInterval = 60
     static let signalRBaseReconnectDelay: TimeInterval = 2
+    static let signalRConnectedPollingInterval: TimeInterval = 5.0
 }
 
 // MARK: - App Configuration

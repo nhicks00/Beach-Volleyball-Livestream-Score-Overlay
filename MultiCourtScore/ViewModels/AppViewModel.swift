@@ -35,6 +35,10 @@ final class AppViewModel: ObservableObject {
     private var watchdogTimer: Timer?
     private var lastSmartSwitchCheck: [Int: Date] = [:]
 
+    // SignalR game ID → court mapping
+    private var gameIdToCourtMap: [Int: Int] = [:]       // gameId → courtId
+    private var activeSubscriptions: [Int: Set<Int>] = [:] // tournamentId → set of divisionIds
+
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
     private var lastScoreChangeTime: [Int: Date] = [:]
@@ -180,7 +184,10 @@ final class AppViewModel: ObservableObject {
         
         // Staggered polling with small jitter to avoid thundering herd
         let jitter = Double((courtId * 317) % 400) / 1000.0
-        let interval = appSettings.pollingInterval + Double((courtId * 97) % 300) / 1000.0
+        let baseInterval = signalRStatus == .connected
+            ? NetworkConstants.signalRConnectedPollingInterval
+            : appSettings.pollingInterval
+        let interval = baseInterval + Double((courtId * 97) % 300) / 1000.0
         
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -196,7 +203,8 @@ final class AppViewModel: ObservableObject {
             await self.advanceToFirstPlayableMatchIfNeeded(courtId: courtId)
             await self.pollOnce(courtId)
         }
-        
+
+        rebuildGameIdMap()
         saveConfigurationNow()
         print("▶️ Started polling for court \(courtId)")
     }
@@ -235,7 +243,7 @@ final class AppViewModel: ObservableObject {
         for courtId in Array(pollingTimers.keys) {
             stopPolling(for: courtId)
         }
-        
+
         // Also reset status for any court with a queue (in case timer wasn't created yet)
         for idx in courts.indices where !courts[idx].queue.isEmpty {
             if courts[idx].status != .idle {
@@ -244,6 +252,38 @@ final class AppViewModel: ObservableObject {
             }
         }
         saveConfigurationNow()
+    }
+
+    /// Restart all active polling timers at the current appropriate interval.
+    /// Called when SignalR connection state changes to adjust polling frequency.
+    private func restartPollingTimers() {
+        let activeCourtIds = Array(pollingTimers.keys)
+        guard !activeCourtIds.isEmpty else { return }
+
+        for courtId in activeCourtIds {
+            pollingTimers[courtId]?.invalidate()
+            pollingTimers[courtId] = nil
+        }
+
+        let interval = signalRStatus == .connected
+            ? NetworkConstants.signalRConnectedPollingInterval
+            : appSettings.pollingInterval
+
+        for courtId in activeCourtIds {
+            let jitter = Double((courtId * 317) % 400) / 1000.0
+            let courtInterval = interval + Double((courtId * 97) % 300) / 1000.0
+
+            let timer = Timer.scheduledTimer(withTimeInterval: courtInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: UInt64(jitter * 1_000_000_000))
+                    await self?.pollOnce(courtId)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            pollingTimers[courtId] = timer
+        }
+
+        print("🔄 Polling interval adjusted to \(String(format: "%.1f", interval))s (\(signalRStatus == .connected ? "SignalR connected" : "SignalR disconnected"))")
     }
 
     // MARK: - Navigation
@@ -454,7 +494,9 @@ final class AppViewModel: ObservableObject {
                         } else {
                             print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1)")
                         }
-                        
+
+                        rebuildGameIdMap()
+
                         // Trigger immediate metadata refresh for the new sequence
                         await refreshQueueMetadata(for: courtId)
                         lastQueueRefreshTimes[courtId] = Date()
@@ -660,29 +702,39 @@ final class AppViewModel: ObservableObject {
 
                 // Build team lookup from hydrate response
                 let teamLookup = buildTeamLookup(from: json)
-                guard !teamLookup.isEmpty else { continue }
+                let gameIdLookup = buildGameIdLookup(from: json)
 
-                // Update queued matches with resolved team names
+                guard !teamLookup.isEmpty || !gameIdLookup.isEmpty else { continue }
+
+                // Update queued matches with resolved team names and game IDs
                 guard let writeIdx = courtIndex(for: courtId) else { return }
                 var updated = false
                 for i in 0..<courts[writeIdx].queue.count {
                     let match = courts[writeIdx].queue[i]
                     guard match.divisionId == divId else { continue }
 
-                    // Try to resolve team names from bracket entries
-                    if let matchIdStr = extractMatchId(from: match.apiURL),
-                       let resolved = teamLookup[matchIdStr] {
-                        if let t1 = resolved.team1, match.team1Name != t1 {
-                            courts[writeIdx].queue[i].team1Name = t1
-                            updated = true
+                    if let matchIdStr = extractMatchId(from: match.apiURL) {
+                        // Resolve team names from bracket entries
+                        if let resolved = teamLookup[matchIdStr] {
+                            if let t1 = resolved.team1, match.team1Name != t1 {
+                                courts[writeIdx].queue[i].team1Name = t1
+                                updated = true
+                            }
+                            if let t2 = resolved.team2, match.team2Name != t2 {
+                                courts[writeIdx].queue[i].team2Name = t2
+                                updated = true
+                            }
                         }
-                        if let t2 = resolved.team2, match.team2Name != t2 {
-                            courts[writeIdx].queue[i].team2Name = t2
+
+                        // Store game IDs for SignalR mutation mapping
+                        if let gids = gameIdLookup[matchIdStr], match.gameIds != gids {
+                            courts[writeIdx].queue[i].gameIds = gids
                             updated = true
                         }
                     }
                 }
                 if updated {
+                    rebuildGameIdMap()
                     scheduleSave()
                 }
                 lastHydrateRefresh[divId] = Date()
@@ -690,6 +742,60 @@ final class AppViewModel: ObservableObject {
                 // Silently ignore — this is a best-effort optimization
             }
         }
+    }
+
+    /// Build a lookup of matchIdString → [gameId] from hydrate JSON.
+    /// Hydrate structure: brackets[].matches[].games[].id and pools[].matches[].games[].id
+    private func buildGameIdLookup(from json: [String: Any]) -> [String: [Int]] {
+        var lookup: [String: [Int]] = [:]
+
+        func extractGames(from matches: [[String: Any]]) {
+            for match in matches {
+                guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
+                if let games = match["games"] as? [[String: Any]] {
+                    let gameIds = games.compactMap { $0["id"] as? Int }.filter { $0 > 0 }
+                    if !gameIds.isEmpty {
+                        lookup[String(matchId)] = gameIds
+                    }
+                }
+            }
+        }
+
+        // Bracket matches
+        if let brackets = json["brackets"] as? [[String: Any]] {
+            for bracket in brackets {
+                if let matches = bracket["matches"] as? [[String: Any]] {
+                    extractGames(from: matches)
+                }
+            }
+        }
+
+        // Pool matches
+        if let pools = json["pools"] as? [[String: Any]] {
+            for pool in pools {
+                if let matches = pool["matches"] as? [[String: Any]] {
+                    extractGames(from: matches)
+                }
+            }
+        }
+
+        return lookup
+    }
+
+    /// Rebuild the gameId → courtId lookup from all active courts' match items.
+    private func rebuildGameIdMap() {
+        var newMap: [Int: Int] = [:]
+        for court in courts where court.status.isPolling {
+            guard let activeIdx = court.activeIndex,
+                  activeIdx < court.queue.count else { continue }
+            let match = court.queue[activeIdx]
+            if let gameIds = match.gameIds {
+                for gid in gameIds {
+                    newMap[gid] = court.id
+                }
+            }
+        }
+        gameIdToCourtMap = newMap
     }
 
     /// Build a lookup of matchId → (team1, team2) from hydrate JSON
@@ -1529,10 +1635,22 @@ final class AppViewModel: ObservableObject {
 
 extension AppViewModel: SignalRDelegate {
     func signalRStatusDidChange(_ status: SignalRStatus) {
+        let wasConnected = signalRStatus == .connected
         signalRStatus = status
+        let isConnected = status == .connected
+
+        // Restart polling at appropriate interval when SignalR state changes
+        if wasConnected != isConnected {
+            restartPollingTimers()
+        }
+    }
+
+    func signalRDidConnect() {
+        subscribeToAllActiveTournaments()
     }
 
     func signalRDidReceiveMutation(name: String, payload: Any) {
+        // Log all mutations
         let payloadStr: String
         if let data = try? JSONSerialization.data(withJSONObject: payload),
            let str = String(data: data, encoding: .utf8) {
@@ -1541,6 +1659,176 @@ extension AppViewModel: SignalRDelegate {
             payloadStr = "\(payload)"
         }
         scannerViewModel.addSignalRLog("[SignalR] '\(name)': \(payloadStr)")
+
+        // Process score mutations
+        guard name == "UPDATE_GAME",
+              let dict = payload as? [String: Any],
+              let gameId = dict["id"] as? Int else { return }
+
+        guard let courtId = gameIdToCourtMap[gameId] else {
+            print("[SignalR] UPDATE_GAME for unknown gameId \(gameId)")
+            return
+        }
+
+        processGameMutation(courtId: courtId, gameId: gameId, payload: dict)
+    }
+
+    // MARK: - SignalR Subscription Management
+
+    private func subscribeToAllActiveTournaments() {
+        guard let client = signalRClient else { return }
+
+        // Collect unique (tournamentId, divisionId) pairs from all polling courts
+        var pairs: Set<String> = []
+        var subscriptions: [(Int, Int)] = []
+
+        for court in courts where court.status.isPolling {
+            for match in court.queue {
+                guard let tId = match.tournamentId, let dId = match.divisionId else { continue }
+                let key = "\(tId)-\(dId)"
+                if pairs.insert(key).inserted {
+                    subscriptions.append((tId, dId))
+                }
+            }
+        }
+
+        activeSubscriptions.removeAll()
+        for (tId, dId) in subscriptions {
+            activeSubscriptions[tId, default: []].insert(dId)
+            Task {
+                await client.subscribeToTournament(tournamentId: tId, divisionId: dId)
+            }
+        }
+    }
+
+    // MARK: - Mutation Processing
+
+    private func processGameMutation(courtId: Int, gameId: Int, payload: [String: Any]) {
+        guard let idx = courtIndex(for: courtId),
+              let activeIdx = courts[idx].activeIndex,
+              activeIdx < courts[idx].queue.count else { return }
+
+        let matchItem = courts[idx].queue[activeIdx]
+        let homeScore = payload["home"] as? Int ?? 0
+        let awayScore = payload["away"] as? Int ?? 0
+        let gameNumber = payload["number"] as? Int ?? 0  // 0-indexed
+        let isFinal = payload["isFinal"] as? Bool ?? false
+        let winner = payload["_winner"] as? String
+
+        // Build updated snapshot from current state
+        var snapshot = courts[idx].lastSnapshot ?? .empty(courtId: courtId)
+
+        // Update the correct set in setHistory
+        let setIndex = gameNumber  // 0-indexed
+        while snapshot.setHistory.count <= setIndex {
+            snapshot.setHistory.append(SetScore(
+                setNumber: snapshot.setHistory.count + 1,
+                team1Score: 0,
+                team2Score: 0,
+                isComplete: false
+            ))
+        }
+
+        let previousHome = snapshot.setHistory[setIndex].team1Score
+        let previousAway = snapshot.setHistory[setIndex].team2Score
+
+        snapshot.setHistory[setIndex].team1Score = homeScore
+        snapshot.setHistory[setIndex].team2Score = awayScore
+        snapshot.setHistory[setIndex].isComplete = isFinal
+
+        // Recalculate match-level set scores
+        let inferredFormat = inferMatchFormat(from: matchItem)
+        var setsWon1 = 0
+        var setsWon2 = 0
+        for set in snapshot.setHistory where set.isComplete {
+            if set.team1Score > set.team2Score { setsWon1 += 1 }
+            else if set.team2Score > set.team1Score { setsWon2 += 1 }
+        }
+
+        snapshot.team1Score = setsWon1
+        snapshot.team2Score = setsWon2
+        snapshot.setNumber = snapshot.setHistory.count + (snapshot.setHistory.last?.isComplete == true ? 1 : 0)
+        snapshot.setsToWin = inferredFormat.setsToWin
+        snapshot.timestamp = Date()
+
+        // Determine status
+        let matchWon = setsWon1 >= inferredFormat.setsToWin || setsWon2 >= inferredFormat.setsToWin
+        if matchWon || (winner != nil && isFinal && snapshot.setHistory.allSatisfy({ $0.isComplete || $0 == snapshot.setHistory.last })) {
+            // Check if match is actually concluded (all required sets won)
+            if matchWon {
+                snapshot.status = "Final"
+            } else {
+                snapshot.status = "In Progress"
+            }
+        } else if homeScore > 0 || awayScore > 0 || snapshot.setHistory.count > 1 {
+            snapshot.status = "In Progress"
+        }
+
+        // Infer serving team from point changes
+        if homeScore > previousHome {
+            lastServeTeam[courtId] = "home"
+            snapshot.serve = "home"
+        } else if awayScore > previousAway {
+            lastServeTeam[courtId] = "away"
+            snapshot.serve = "away"
+        } else if let serve = lastServeTeam[courtId] {
+            snapshot.serve = serve
+        }
+
+        // Apply the snapshot update using shared downstream logic
+        applySnapshotUpdate(courtId: courtId, snapshot: snapshot, matchItem: matchItem)
+
+        print("[SignalR] Court \(courtId) updated: Set \(gameNumber + 1) → \(homeScore)-\(awayScore)\(isFinal ? " (Final)" : "")")
+    }
+
+    /// Shared downstream logic for applying a score snapshot update.
+    /// Used by both pollOnce and SignalR mutation processing.
+    private func applySnapshotUpdate(courtId: Int, snapshot: ScoreSnapshot, matchItem: MatchItem) {
+        guard let idx = courtIndex(for: courtId) else { return }
+
+        // Inactivity tracking
+        let currentP1 = snapshot.setHistory.last?.team1Score ?? 0
+        let currentP2 = snapshot.setHistory.last?.team2Score ?? 0
+        let currentS1 = snapshot.team1Score
+        let currentS2 = snapshot.team2Score
+        let prevData = lastScoreSnapshot[courtId]
+
+        if prevData == nil ||
+           prevData?.pts1 != currentP1 || prevData?.pts2 != currentP2 ||
+           prevData?.s1 != currentS1 || prevData?.s2 != currentS2 {
+            lastScoreSnapshot[courtId] = (pts1: currentP1, pts2: currentP2, s1: currentS1, s2: currentS2)
+            lastScoreChangeTime[courtId] = Date()
+        }
+
+        let previousStatus = courts[idx].status
+        let matchConcluded = isMatchConcluded(snapshot: snapshot, for: matchItem)
+        let newStatus = determineStatus(from: snapshot, matchConcluded: matchConcluded)
+
+        if newStatus == .live && !matchConcluded {
+            observedActiveScoring[courtId] = true
+        }
+
+        // Update stopwatch
+        if previousStatus != .live && newStatus == .live {
+            courts[idx].liveSince = Date()
+        }
+        if newStatus != .live {
+            courts[idx].liveSince = nil
+        }
+
+        if matchConcluded {
+            courts[idx].status = .finished
+            courts[idx].lastSnapshot = snapshot
+            if courts[idx].finishedAt == nil {
+                courts[idx].finishedAt = Date()
+            }
+        } else {
+            courts[idx].status = newStatus
+            courts[idx].lastSnapshot = snapshot
+            courts[idx].finishedAt = nil
+        }
+
+        courts[idx].lastPollTime = Date()
     }
 }
 
