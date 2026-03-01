@@ -45,7 +45,7 @@ final class AppViewModel: ObservableObject {
         self.webSocketHub = WebSocketHub.shared
         self.configStore = ConfigStore()
         self.apiClient = APIClient()
-        self.scoreCache = ScoreCache()
+        self.scoreCache = ScoreCache(apiClient: apiClient)
         self.appSettings = configStore.loadSettings()
         
         loadConfiguration()
@@ -911,8 +911,8 @@ final class AppViewModel: ObservableObject {
             let cap: Int?
 
             if format.setsToWin > 1 && set.setNumber >= 3 {
-                target = 15
-                cap = nil
+                target = min(format.pointsPerSet, 15)
+                cap = format.pointCap
             } else {
                 target = format.pointsPerSet
                 cap = format.pointCap
@@ -1180,10 +1180,10 @@ final class AppViewModel: ObservableObject {
             }
         }
         
-        // Set 3 (only for best-of-3, and use 15 for 3rd set typically)
+        // Set 3 (tiebreak: use 15 or match format if lower, e.g., training to 11)
         if setsToWin >= 2 && (g3a_raw > 0 || g3b_raw > 0) {
-            let limit = 15 // Usually 15 for 3rd set
-            let complete = isSetComplete(g3a_raw, g3b_raw, target: limit, cap: nil)
+            let tiebreakTarget = min(pointsPerSet, 15)
+            let complete = isSetComplete(g3a_raw, g3b_raw, target: tiebreakTarget, cap: pointCap)
             setHistory.append(SetScore(setNumber: 3, team1Score: g3a_raw, team2Score: g3b_raw, isComplete: complete))
             if complete {
                 if g3a_raw > g3b_raw { score1 += 1 } else { score2 += 1 }
@@ -1239,7 +1239,12 @@ final class AppViewModel: ObservableObject {
         let setNum = (dict["setNumber"] as? Int) ?? 1
         let inferredFormat = inferMatchFormat(from: currentMatch)
         let setsToWin = inferredFormat.setsToWin
-        
+
+        let isComplete = statusStr.lowercased().contains("final")
+        let setHistory = (home > 0 || away > 0)
+            ? [SetScore(setNumber: setNum, team1Score: home, team2Score: away, isComplete: isComplete)]
+            : [SetScore]()
+
         return ScoreSnapshot(
             courtId: courtId,
             matchId: dict["matchId"] as? Int,
@@ -1255,7 +1260,7 @@ final class AppViewModel: ObservableObject {
             team1Score: home,
             team2Score: away,
             serve: dict["serve"] as? String,
-            setHistory: [],
+            setHistory: setHistory,
             timestamp: Date(),
             setsToWin: setsToWin
         )
@@ -1329,6 +1334,11 @@ final class AppViewModel: ObservableObject {
 
 actor ScoreCache {
     private var cache: [URL: (data: Data, timestamp: Date)] = [:]
+    private let apiClient: APIClient
+
+    init(apiClient: APIClient) {
+        self.apiClient = apiClient
+    }
 
     func get(_ url: URL) async throws -> Data {
         // Evict stale entries when cache grows large
@@ -1340,10 +1350,7 @@ actor ScoreCache {
             return cached.data
         }
 
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = NetworkConstants.requestTimeout
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let data = try await apiClient.fetchData(from: url)
         cache[url] = (data, Date())
         return data
     }
