@@ -1,14 +1,13 @@
 """
 Integration tests for the VBL scraper against live URLs.
-These tests require playwright to be installed and internet access.
+These tests require internet access to hit the VBL API.
 
 Run with: pytest tests/test_integration.py -v -s
-Mark: These tests hit live VBL servers and may take 30-60 seconds each.
+Mark: These tests hit live VBL servers.
 """
 import sys
 import os
 import json
-import asyncio
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -18,54 +17,21 @@ BRACKET_URL = "https://volleyballlife.com/event/34785/division/127872/round/2618
 POOL_URL = "https://volleyballlife.com/event/34785/division/127872/round/260841/pools/326016"
 
 
-def check_playwright():
-    """Check if playwright is available."""
-    try:
-        import playwright
-        return True
-    except ImportError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not check_playwright(),
-    reason="Playwright not installed - run: pip install playwright && python -m playwright install chromium"
-)
-
-
-def _load_credentials():
-    """Load credentials from app support directory."""
-    cred_path = os.path.expanduser(
-        "~/Library/Application Support/MultiCourtScore/credentials.json"
-    )
-    if os.path.exists(cred_path):
-        with open(cred_path) as f:
-            creds = json.load(f)
-        return creds.get('username'), creds.get('password')
-    return None, None
-
-
 # ============================================================
-# Bracket scan tests
+# API scraper integration tests (primary — no browser needed)
 # ============================================================
 
-class TestBracketScan:
-    """Test scanning a known bracket URL."""
+class TestAPIScanIntegration:
+    """Test API-based scanning against live VBL servers."""
 
-    @pytest.mark.asyncio
-    async def test_bracket_scan_returns_matches(self):
-        from vbl_scraper.bracket import BracketScraper
-        from vbl_scraper.core import ScraperConfig
+    @pytest.mark.slow
+    def test_api_bracket_scan(self):
+        from vbl_scraper.api_scraper import scan_via_api
 
-        username, password = _load_credentials()
-        config = ScraperConfig(headless=True)
-        async with BracketScraper(config) as scraper:
-            result = await scraper.scan(BRACKET_URL, username=username, password=password)
-
-        assert result.status == "success", f"Scan failed: {result.error}"
-        assert result.total_matches >= 3, (
-            f"Expected at least 3 matches, got {result.total_matches}"
-        )
+        result = scan_via_api(BRACKET_URL)
+        assert result is not None, "API scan returned None for bracket URL"
+        assert result.status == "success"
+        assert result.total_matches >= 3, f"Expected >= 3 matches, got {result.total_matches}"
 
         # At least some matches should have team names
         matches_with_teams = [m for m in result.matches if m.team1 and m.team2]
@@ -82,69 +48,45 @@ class TestBracketScan:
         parsed = json.loads(json_str)
         assert parsed['total_matches'] == result.total_matches
 
-    @pytest.mark.asyncio
-    async def test_bracket_match_api_url_structure(self):
-        """Verify that any extracted API URLs have the correct format."""
-        from vbl_scraper.bracket import BracketScraper
-        from vbl_scraper.core import ScraperConfig
+    @pytest.mark.slow
+    def test_api_pool_scan(self):
+        from vbl_scraper.api_scraper import scan_via_api
 
-        username, password = _load_credentials()
-        config = ScraperConfig(headless=True)
-        async with BracketScraper(config) as scraper:
-            result = await scraper.scan(BRACKET_URL, username=username, password=password)
-
-        if result.status != "success":
-            pytest.skip(f"Scan failed: {result.error}")
-
-        # Not all matches will have API URLs (completed matches may not expose vMix)
-        matches_with_api = [m for m in result.matches if m.api_url]
-        for match in matches_with_api:
-            assert 'api.volleyballlife.com' in match.api_url
-
-
-# ============================================================
-# Pool scan tests
-# ============================================================
-
-class TestPoolScan:
-    """Test scanning a known pool URL."""
-
-    @pytest.mark.asyncio
-    async def test_pool_scan_returns_matches(self):
-        from vbl_scraper.pool import PoolScraper
-        from vbl_scraper.core import ScraperConfig
-
-        username, password = _load_credentials()
-        config = ScraperConfig(headless=True)
-        async with PoolScraper(config) as scraper:
-            result = await scraper.scan(POOL_URL, username=username, password=password)
-
-        assert result.status == "success", f"Pool scan failed: {result.error}"
+        result = scan_via_api(POOL_URL)
+        assert result is not None, "API scan returned None for pool URL"
+        assert result.status == "success"
         assert result.total_matches > 0, "No pool matches found"
         assert result.match_type == "Pool Play"
 
+    @pytest.mark.slow
+    def test_api_match_url_structure(self):
+        from vbl_scraper.api_scraper import scan_via_api
+
+        result = scan_via_api(BRACKET_URL)
+        assert result is not None
+
+        for match in result.matches:
+            assert match.api_url is not None
+            assert 'api.volleyballlife.com' in match.api_url
+            assert '/vmix' in match.api_url
+
 
 # ============================================================
-# CLI integration
+# CLI integration tests
 # ============================================================
 
 class TestCLIIntegration:
     """Test the CLI entry point end-to-end."""
 
-    @pytest.mark.asyncio
-    async def test_cli_single_bracket_url(self, tmp_path):
+    @pytest.mark.slow
+    def test_cli_single_bracket_url(self, tmp_path):
         from vbl_scraper.cli import scan_urls
 
         output_file = tmp_path / "test_output.json"
-        username, password = _load_credentials()
 
-        await scan_urls(
+        scan_urls(
             urls=[BRACKET_URL],
-            output_file=str(output_file),
-            username=username,
-            password=password,
-            headless=True,
-            parallel=False,
+            output_file=output_file,
         )
 
         assert output_file.exists(), "Output file not created"
@@ -154,26 +96,21 @@ class TestCLIIntegration:
         assert data['status'] in ('success', 'partial'), f"CLI scan failed: {data.get('status')}"
         assert data['total_matches'] >= 3
 
-    @pytest.mark.asyncio
-    async def test_cli_parallel_both_urls(self, tmp_path):
-        """Test scanning bracket + pool together in parallel mode."""
+    @pytest.mark.slow
+    def test_cli_multiple_urls(self, tmp_path):
+        """Test scanning bracket + pool together."""
         from vbl_scraper.cli import scan_urls
 
-        output_file = tmp_path / "test_parallel_output.json"
-        username, password = _load_credentials()
+        output_file = tmp_path / "test_multi_output.json"
 
-        await scan_urls(
+        scan_urls(
             urls=[BRACKET_URL, POOL_URL],
-            output_file=str(output_file),
-            username=username,
-            password=password,
-            headless=True,
-            parallel=True,
+            output_file=output_file,
         )
 
-        assert output_file.exists(), "Parallel output file not created"
+        assert output_file.exists(), "Output file not created"
         with open(output_file) as f:
             data = json.load(f)
 
-        # Parallel mode should have results from both URLs
-        assert 'results' in data or 'total_matches' in data
+        assert 'results' in data
+        assert data['total_matches'] >= 4  # 3+ bracket + 1+ pool

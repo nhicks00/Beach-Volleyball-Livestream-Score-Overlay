@@ -380,23 +380,6 @@ class ScannerViewModel: ObservableObject {
         return ("/usr/bin/python3", false)
     }
 
-    /// Check if the Python interpreter has playwright installed
-    private func checkPlaywrightInstalled(pythonPath: String) -> Bool {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: pythonPath)
-        process.arguments = ["-c", "import playwright; print('ok')"]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-
     private func performScan() async {
         addLog("performScan() called", type: .info)
 
@@ -410,16 +393,6 @@ class ScannerViewModel: ObservableObject {
 
         // Find the best Python interpreter
         let (pythonPath, isVenv) = findPythonPath(venvPath: paths.venvPython)
-
-        // Verify playwright is installed
-        if !checkPlaywrightInstalled(pythonPath: pythonPath) {
-            addLog("Playwright is not installed for \(pythonPath)", type: .error)
-            addLog("Run: \(pythonPath) -m pip install playwright && \(pythonPath) -m playwright install chromium", type: .error)
-            errorMessage = "Playwright not installed. Run in Terminal:\n\(pythonPath) -m pip install playwright\n\(pythonPath) -m playwright install chromium"
-            isScanning = false
-            scanProgress = "Scan failed - playwright not installed"
-            return
-        }
 
         addLog("Using \(isVenv ? "venv" : "system") Python", type: .info)
         addLog("Project root: \(paths.projectRoot)", type: .info)

@@ -15,7 +15,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+try:
+    from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+except ImportError:
+    async_playwright = None  # type: ignore
+    Browser = None  # type: ignore
+    Page = None  # type: ignore
+    BrowserContext = None  # type: ignore
 
 # Configure logging
 logging.basicConfig(

@@ -1,25 +1,13 @@
 """
 Tests for the VBL format text parser.
 Run with: pytest tests/test_parse_format.py -v
-
-Note: This test imports parse_format directly (not through the vbl_scraper package)
-to avoid the playwright dependency.
 """
 import sys
 import os
-import importlib.util
 
-# Direct import to avoid vbl_scraper.__init__.py which requires playwright
-_scraper_dir = os.path.join(os.path.dirname(__file__), '..', 'vbl_scraper')
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-def _import_module(name, filepath):
-    spec = importlib.util.spec_from_file_location(name, filepath)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-parse_format = _import_module('parse_format', os.path.join(_scraper_dir, 'parse_format.py'))
-parse_format_text = parse_format.parse_format_text
+from vbl_scraper.parse_format import parse_format_text
 
 
 class TestParseFormatText:
