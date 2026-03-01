@@ -184,10 +184,7 @@ final class AppViewModel: ObservableObject {
         
         // Staggered polling with small jitter to avoid thundering herd
         let jitter = Double((courtId * 317) % 400) / 1000.0
-        let baseInterval = signalRStatus == .connected
-            ? NetworkConstants.signalRConnectedPollingInterval
-            : appSettings.pollingInterval
-        let interval = baseInterval + Double((courtId * 97) % 300) / 1000.0
+        let interval = appSettings.pollingInterval + Double((courtId * 97) % 300) / 1000.0
         
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -252,38 +249,6 @@ final class AppViewModel: ObservableObject {
             }
         }
         saveConfigurationNow()
-    }
-
-    /// Restart all active polling timers at the current appropriate interval.
-    /// Called when SignalR connection state changes to adjust polling frequency.
-    private func restartPollingTimers() {
-        let activeCourtIds = Array(pollingTimers.keys)
-        guard !activeCourtIds.isEmpty else { return }
-
-        for courtId in activeCourtIds {
-            pollingTimers[courtId]?.invalidate()
-            pollingTimers[courtId] = nil
-        }
-
-        let interval = signalRStatus == .connected
-            ? NetworkConstants.signalRConnectedPollingInterval
-            : appSettings.pollingInterval
-
-        for courtId in activeCourtIds {
-            let jitter = Double((courtId * 317) % 400) / 1000.0
-            let courtInterval = interval + Double((courtId * 97) % 300) / 1000.0
-
-            let timer = Timer.scheduledTimer(withTimeInterval: courtInterval, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: UInt64(jitter * 1_000_000_000))
-                    await self?.pollOnce(courtId)
-                }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            pollingTimers[courtId] = timer
-        }
-
-        print("🔄 Polling interval adjusted to \(String(format: "%.1f", interval))s (\(signalRStatus == .connected ? "SignalR connected" : "SignalR disconnected"))")
     }
 
     // MARK: - Navigation
@@ -1635,14 +1600,7 @@ final class AppViewModel: ObservableObject {
 
 extension AppViewModel: SignalRDelegate {
     func signalRStatusDidChange(_ status: SignalRStatus) {
-        let wasConnected = signalRStatus == .connected
         signalRStatus = status
-        let isConnected = status == .connected
-
-        // Restart polling at appropriate interval when SignalR state changes
-        if wasConnected != isConnected {
-            restartPollingTimers()
-        }
     }
 
     func signalRDidConnect() {
