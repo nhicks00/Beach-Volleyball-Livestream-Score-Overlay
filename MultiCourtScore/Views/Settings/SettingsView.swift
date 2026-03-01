@@ -398,7 +398,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Credentials are stored in your app's support directory and are never committed to code.")
+                Text("Credentials are stored securely in your macOS Keychain.")
                     .font(.system(size: 11))
                     .foregroundColor(AppColors.textMuted)
 
