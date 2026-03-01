@@ -48,6 +48,7 @@ enum SignalRStatus: Equatable {
 @MainActor protocol SignalRDelegate: AnyObject {
     func signalRDidReceiveMutation(name: String, payload: Any)
     func signalRStatusDidChange(_ status: SignalRStatus)
+    func signalRDidConnect()
 }
 
 // MARK: - Errors
@@ -148,6 +149,28 @@ actor VBLSignalRClient {
         updateStatus(.disabled)
     }
 
+    /// Subscribe to a tournament's SignalR channel to receive score mutations.
+    func subscribeToTournament(tournamentId: Int, divisionId: Int) async {
+        guard let task = webSocketTask else {
+            print("[SignalR] Cannot subscribe — not connected")
+            return
+        }
+        let message: [String: Any] = [
+            "type": 1,
+            "target": "SubscribeToTournament",
+            "arguments": [tournamentId, divisionId, NSNull()]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let str = String(data: data, encoding: .utf8) else { return }
+        let frame = str + Self.recordSeparator
+        do {
+            try await task.send(.string(frame))
+            print("[SignalR] Subscribed to tournament \(tournamentId), division \(divisionId)")
+        } catch {
+            print("[SignalR] Subscribe failed: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Internal Connection Flow
 
     private func internalConnect() async {
@@ -174,6 +197,11 @@ actor VBLSignalRClient {
             updateStatus(.connected)
             startReceiveLoop()
             startPingLoop()
+
+            // Notify delegate so it can (re-)subscribe to tournaments
+            Task { @MainActor [weak delegate] in
+                delegate?.signalRDidConnect()
+            }
 
         } catch SignalRError.authFailed {
             updateStatus(.failed(reason: "Auth failed"))

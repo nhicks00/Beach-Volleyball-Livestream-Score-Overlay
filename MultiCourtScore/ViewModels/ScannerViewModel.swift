@@ -115,6 +115,8 @@ class ScannerViewModel: ObservableObject {
         let team2_score: Int?
         // Division ID for hydrate re-fetch (parsed from scan URL)
         var divisionId: Int?
+        // Tournament ID for SignalR subscriptions (parsed from scan URL)
+        var tournamentId: Int?
         
         var displayName: String {
             if let t1 = team1, let t2 = team2, !t1.isEmpty, !t2.isEmpty {
@@ -519,9 +521,11 @@ class ScannerViewModel: ObservableObject {
                             matches = m
                         } else if let results = result.results, let first = results.first {
                             let divId = ScannerViewModel.parseDivisionId(from: first.url)
+                            let tournId = ScannerViewModel.parseTournamentId(from: first.url)
                             matches = first.matches.map { m in
                                 var m = m
                                 m.divisionId = divId
+                                m.tournamentId = tournId
                                 return m
                             }
                         }
@@ -617,11 +621,14 @@ class ScannerViewModel: ObservableObject {
                                 if let matchesData = result["matches"] as? [[String: Any]] {
                                     let matchType = result["match_type"] as? String
                                     let typeDetail = result["type_detail"] as? String
-                                    let divisionId = Self.parseDivisionId(from: result["url"] as? String)
+                                    let resultURL = result["url"] as? String
+                                    let divisionId = Self.parseDivisionId(from: resultURL)
+                                    let tournamentId = Self.parseTournamentId(from: resultURL)
 
                                     for matchDict in matchesData {
                                         if var match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
                                             match.divisionId = divisionId
+                                            match.tournamentId = tournamentId
                                             allMatches.append(match)
                                         }
                                     }
@@ -801,6 +808,15 @@ class ScannerViewModel: ObservableObject {
         return Int(digits)
     }
 
+    /// Extract tournament ID from a VBL URL like .../event/34785/...
+    nonisolated static func parseTournamentId(from url: String?) -> Int? {
+        guard let url else { return nil }
+        guard let range = url.range(of: #"/event/(\d+)"#, options: .regularExpression) else { return nil }
+        let match = url[range]
+        let digits = match.drop(while: { !$0.isNumber })
+        return Int(digits)
+    }
+
     // MARK: - Conversion to MatchItem
     
     func createMatchItems(from matches: [VBLMatch], divisionId: Int? = nil) -> [MatchItem] {
@@ -840,7 +856,8 @@ class ScannerViewModel: ObservableObject {
                 formatText: match.formatText,
                 team1_score: match.team1_score,
                 team2_score: match.team2_score,
-                divisionId: match.divisionId ?? divisionId
+                divisionId: match.divisionId ?? divisionId,
+                tournamentId: match.tournamentId
             )
         }
     }
