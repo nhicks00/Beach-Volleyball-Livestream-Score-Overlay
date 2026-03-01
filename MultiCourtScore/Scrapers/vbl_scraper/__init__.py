@@ -11,7 +11,7 @@ from .pool import PoolScraper
 from .parallel import ParallelScraper, ParallelScanResult, scan_parallel
 from .api_scraper import scan_via_api
 
-__version__ = "2.2.0"
+__version__ = "3.0.0"
 __all__ = [
     'VBLScraperBase',
     'VBLMatch',
