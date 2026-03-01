@@ -294,6 +294,34 @@ struct SettingsView: View {
                     }
                 }
 
+                // Live Push (SignalR)
+                DetailSection(title: "Live Push (SignalR)") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Enable SignalR push updates", isOn: Binding(
+                            get: { settings.signalREnabled },
+                            set: { newValue in
+                                settings.signalREnabled = newValue
+                                appViewModel.setSignalREnabled(newValue)
+                            }
+                        ))
+                        .toggleStyle(.switch)
+
+                        Text("Receives live score mutations via SignalR. Requires VBL credentials. Polling continues as fallback.")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppColors.textMuted)
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(appViewModel.signalRStatus.statusColor)
+                                .frame(width: 7, height: 7)
+                            Text(appViewModel.signalRStatus.displayLabel)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                        .opacity(settings.signalREnabled ? 1 : 0.4)
+                    }
+                }
+
                 // Theme
                 DetailSection(title: "Theme") {
                     Picker("Theme", selection: $settings.overlayTheme) {
@@ -559,6 +587,7 @@ struct SettingsView: View {
         let creds = ConfigStore.VBLCredentials(username: username, password: password)
         configStore.saveCredentials(creds)
         showingCredentialsSaved = true
+        appViewModel.reconnectSignalRIfNeeded()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             showingCredentialsSaved = false

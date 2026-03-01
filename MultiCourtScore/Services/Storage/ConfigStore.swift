@@ -72,6 +72,7 @@ class ConfigStore {
         var showSocialBar: Bool = true
         var holdScoreDuration: TimeInterval = 180    // post-match hold seconds
         var staleMatchTimeout: TimeInterval = 900    // auto-advance after N seconds of inactivity
+        var signalREnabled: Bool = false
     }
     
     func loadSettings() -> AppSettings {

@@ -782,6 +782,14 @@ class ScannerViewModel: ObservableObject {
         }
     }
 
+    func addSignalRLog(_ message: String) {
+        let entry = ScanLogEntry(timestamp: Date(), message: message, type: .info)
+        scanLogs.append(entry)
+        if scanLogs.count > 200 {
+            scanLogs.removeFirst()
+        }
+    }
+
     // MARK: - URL Parsing
 
     /// Extract division ID from a VBL URL like .../division/127872/...

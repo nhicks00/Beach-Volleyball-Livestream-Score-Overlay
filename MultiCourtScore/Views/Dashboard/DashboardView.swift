@@ -508,6 +508,18 @@ struct DashboardView: View {
                 .font(.system(size: 11))
                 .foregroundColor(AppColors.textMuted)
 
+            if appViewModel.appSettings.signalREnabled {
+                Divider().frame(height: 12)
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(appViewModel.signalRStatus.statusColor)
+                        .frame(width: 6, height: 6)
+                    Text(appViewModel.signalRStatus.displayLabel)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
+
             Spacer()
 
             HStack(spacing: 4) {

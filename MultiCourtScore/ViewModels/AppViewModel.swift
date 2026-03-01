@@ -15,6 +15,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var error: AppError?
     @Published private(set) var serverRunning = false
+    @Published private(set) var signalRStatus: SignalRStatus = .disabled
     @Published var scannerViewModel = ScannerViewModel()
     @Published var appSettings: ConfigStore.AppSettings = ConfigStore.AppSettings()
     
@@ -23,6 +24,7 @@ final class AppViewModel: ObservableObject {
     private let configStore: ConfigStore
     private let apiClient: APIClient
     private let scoreCache: ScoreCache
+    private var signalRClient: VBLSignalRClient?
     
     // MARK: - Private State
     private var pollingTimers: [Int: Timer] = [:]
@@ -66,11 +68,15 @@ final class AppViewModel: ObservableObject {
             print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }
         startWatchdog()
+        if appSettings.signalREnabled {
+            startSignalR()
+        }
     }
 
     func stopServices() {
         stopAllPolling()
         stopWatchdog()
+        stopSignalR()
         webSocketHub.stop()
         serverRunning = false
         saveConfigurationNow()
@@ -1477,9 +1483,66 @@ final class AppViewModel: ObservableObject {
         }
         courts.sort { $0.id < $1.id }
     }
+
+    // MARK: - SignalR Lifecycle
+
+    private func startSignalR() {
+        guard signalRClient == nil else { return }
+        guard let credentials = configStore.loadCredentials() else {
+            signalRStatus = .noCredentials
+            return
+        }
+        let client = VBLSignalRClient(delegate: self)
+        signalRClient = client
+        Task {
+            await client.connect(credentials: credentials)
+        }
+    }
+
+    private func stopSignalR() {
+        guard let client = signalRClient else { return }
+        Task {
+            await client.disconnect()
+        }
+        signalRClient = nil
+        signalRStatus = .disabled
+    }
+
+    func setSignalREnabled(_ enabled: Bool) {
+        appSettings.signalREnabled = enabled
+        configStore.saveSettings(appSettings)
+        if enabled {
+            startSignalR()
+        } else {
+            stopSignalR()
+        }
+    }
+
+    func reconnectSignalRIfNeeded() {
+        guard appSettings.signalREnabled else { return }
+        stopSignalR()
+        startSignalR()
+    }
 }
 
-// MARK: - Score Cache
+// MARK: - SignalRDelegate
+
+extension AppViewModel: SignalRDelegate {
+    func signalRStatusDidChange(_ status: SignalRStatus) {
+        signalRStatus = status
+    }
+
+    func signalRDidReceiveMutation(name: String, payload: Any) {
+        let payloadStr: String
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let str = String(data: data, encoding: .utf8) {
+            payloadStr = String(str.prefix(500))
+        } else {
+            payloadStr = "\(payload)"
+        }
+        scannerViewModel.addSignalRLog("[SignalR] '\(name)': \(payloadStr)")
+    }
+}
 
 actor ScoreCache {
     private var cache: [URL: (data: Data, timestamp: Date)] = [:]
