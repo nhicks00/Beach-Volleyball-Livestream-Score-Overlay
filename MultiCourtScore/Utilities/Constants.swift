@@ -144,11 +144,11 @@ enum AppConfig {
 
 // MARK: - Overlay Court Names
 enum CourtNaming {
-    static func displayName(for courtId: Int) -> String {
+    /// Default name for a new court (used when no custom name is provided)
+    static func defaultName(for courtId: Int) -> String {
         if courtId == 1 {
             return "Core 1"
         } else {
-            // Mevo cameras: courtId 2 = Mevo 2, courtId 3 = Mevo 3, etc.
             return "Mevo \(courtId)"
         }
     }

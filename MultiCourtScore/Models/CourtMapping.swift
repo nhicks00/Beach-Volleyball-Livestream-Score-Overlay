@@ -33,6 +33,15 @@ class CourtMappingStore: ObservableObject {
     @Published var unmappedCourts: [String] = []  // Courts found but not yet mapped
     
     private let storageKey = "courtMappings"
+
+    private var courtMappingsURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("MultiCourtScore")
+        if !FileManager.default.fileExists(atPath: appSupport.path) {
+            try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        }
+        return appSupport.appendingPathComponent("court_mappings.json")
+    }
     
     private func normalizedCourtName(_ name: String) -> String {
         name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -176,17 +185,28 @@ class CourtMappingStore: ObservableObject {
     }
     
     // MARK: - Persistence
-    
+
     private func saveMappings() {
-        if let data = try? JSONEncoder().encode(mappings) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(mappings) {
+            try? data.write(to: courtMappingsURL, options: .atomic)
         }
     }
-    
+
     private func loadMappings() {
+        // Try file-based storage first
+        if let data = try? Data(contentsOf: courtMappingsURL),
+           let decoded = try? JSONDecoder().decode([CourtMapping].self, from: data) {
+            mappings = decoded
+            return
+        }
+        // Migrate from UserDefaults if present
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([CourtMapping].self, from: data) {
             mappings = decoded
+            saveMappings()
+            UserDefaults.standard.removeObject(forKey: storageKey)
         }
     }
 }
@@ -209,7 +229,7 @@ struct CourtChangeEvent: Identifiable {
     }
     
     var description: String {
-        let cameraChange = "\(CourtNaming.displayName(for: oldCamera)) → \(CourtNaming.displayName(for: newCamera))"
+        let cameraChange = "\(CourtNaming.defaultName(for: oldCamera)) → \(CourtNaming.defaultName(for: newCamera))"
         return "\(matchLabel) moved from \(oldCourt) to \(newCourt) (\(cameraChange))"
     }
 }

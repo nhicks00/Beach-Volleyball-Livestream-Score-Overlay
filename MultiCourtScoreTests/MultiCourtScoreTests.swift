@@ -382,14 +382,14 @@ struct CourtStatusTests {
 // MARK: - CourtNaming Tests
 
 struct CourtNamingTests {
-    @Test func displayName_core1() async throws {
-        #expect(CourtNaming.displayName(for: 1) == "Core 1")
+    @Test func defaultName_core1() async throws {
+        #expect(CourtNaming.defaultName(for: 1) == "Core 1")
     }
 
-    @Test func displayName_mevos() async throws {
-        #expect(CourtNaming.displayName(for: 2) == "Mevo 2")
-        #expect(CourtNaming.displayName(for: 5) == "Mevo 5")
-        #expect(CourtNaming.displayName(for: 10) == "Mevo 10")
+    @Test func defaultName_mevos() async throws {
+        #expect(CourtNaming.defaultName(for: 2) == "Mevo 2")
+        #expect(CourtNaming.defaultName(for: 5) == "Mevo 5")
+        #expect(CourtNaming.defaultName(for: 10) == "Mevo 10")
     }
 
     @Test func shortName_core1() async throws {
@@ -399,6 +399,18 @@ struct CourtNamingTests {
     @Test func shortName_mevos() async throws {
         #expect(CourtNaming.shortName(for: 2) == "M2")
         #expect(CourtNaming.shortName(for: 10) == "M10")
+    }
+
+    @Test func courtCreate_usesDefaultName() async throws {
+        let court = Court.create(id: 1)
+        #expect(court.displayName == "Core 1")
+        let court2 = Court.create(id: 3)
+        #expect(court2.displayName == "Mevo 3")
+    }
+
+    @Test func courtCreate_usesCustomName() async throws {
+        let court = Court.create(id: 1, name: "My Camera")
+        #expect(court.displayName == "My Camera")
     }
 }
 
