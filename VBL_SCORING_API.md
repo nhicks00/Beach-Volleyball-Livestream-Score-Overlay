@@ -1,9 +1,9 @@
-# VolleyballLife (VBL) Scoring API Reference
+# VolleyballLife (VBL) API Reference
 
 > **Status:** Reverse-engineered from the VBL Vue.js frontend (`volleyballlife-web.azurewebsites.net`).
 > VBL has no public documentation for this API. This was discovered by analyzing the
-> minified JS bundle (`app.20202784.js`) and tracing the `liveScoring` service class
-> through Vue components, Vuex stores, and HTTP call sites.
+> minified JS bundle (`app.20202784.js`) and tracing service classes through Vue
+> components, Vuex stores, and HTTP call sites.
 >
 > **Last verified:** 2026-03-01
 
@@ -13,23 +13,27 @@
 
 1. [Overview](#overview)
 2. [Authentication](#authentication)
-3. [API Base URL](#api-base-url)
-4. [Scoring Lifecycle](#scoring-lifecycle)
-5. [Endpoints](#endpoints)
+3. [API Base URLs](#api-base-urls)
+4. [Reading Match Data](#reading-match-data)
+   - [URL Parsing: Website URL → API Call](#url-parsing-website-url--api-call)
+   - [Division Hydrate](#division-hydrate)
+   - [Hydrate Response Structure](#hydrate-response-structure)
+   - [vMix Endpoint (Live Score Polling)](#vmix-endpoint-live-score-polling)
+   - [Match Format Settings](#match-format-settings)
+   - [Match Settings Endpoint](#match-settings-endpoint)
+5. [Scoring Lifecycle](#scoring-lifecycle)
+6. [Scoring Endpoints](#scoring-endpoints)
    - [Start Scoring Session](#1-start-scoring-session)
    - [Update Score](#2-update-score)
    - [Save Match Data](#3-save-match-data)
    - [Check Key Validity](#4-check-key-validity)
    - [End Scoring Session](#5-end-scoring-session)
-6. [Data Models](#data-models)
+7. [Data Models](#data-models)
    - [liveStartDto (Match Start DTO)](#livestartdto)
    - [Game DTO](#game-dto)
    - [Full Match DTO](#full-match-dto)
    - [Team Entry DTO](#team-entry-dto)
-7. [Reading Match Data](#reading-match-data)
-   - [Division Hydrate](#division-hydrate)
-   - [vMix Endpoint](#vmix-endpoint)
-   - [Match Settings](#match-settings)
+   - [VBLMatch (Scraper Output)](#vblmatch-scraper-output)
 8. [SignalR Live Updates](#signalr-live-updates)
 9. [Important Concepts](#important-concepts)
 10. [Complete Working Example](#complete-working-example)
@@ -112,15 +116,279 @@ Cookie: <all_cookies_from_login>
 
 ---
 
-## API Base URL
+## API Base URLs
+
+There are two API base URLs:
 
 ```
+# Primary backend (ASP.NET Core 8 on Azure App Service)
 https://volleyballlife-api-dot-net-8.azurewebsites.net
+
+# vMix/overlay API (public-facing, different domain)
+https://api.volleyballlife.com/api/v1.0/matches
 ```
 
-The backend is an ASP.NET Core 8 application hosted on Azure App Service. SSL certificate verification may fail on some systems — use unverified SSL as a fallback if needed.
+- The **backend URL** is used for authentication, division hydrate, scoring, and all write operations.
+- The **vMix URL** is used for live score polling by OBS/vMix overlays. It proxies to the same backend but through a different domain.
+- SSL certificate verification may fail on some systems — use unverified SSL as a fallback if needed.
 
 > **DNS Note:** The domain `volleyballlife.com` may not resolve on all networks. The Azure backend URL above is the direct endpoint and is more reliably reachable.
+
+---
+
+## Reading Match Data
+
+### URL Parsing: Website URL → API Call
+
+VBL website URLs follow this pattern:
+
+```
+https://{subdomain}.volleyballlife.com/event/{tournId}/division/{divId}/round/{dayId}/brackets
+https://{subdomain}.volleyballlife.com/event/{tournId}/division/{divId}/round/{dayId}/pools/{poolId}
+https://{subdomain}.volleyballlife.com/event/{tournId}/division/{divId}/round/{dayId}/pools
+```
+
+The **only required segment** is `/division/{divId}` — this maps directly to the hydrate API call.
+
+**Parsing logic:**
+
+| URL Segment | Extracted Value | Required? |
+|-------------|----------------|-----------|
+| `/event/{id}` | Tournament ID | No |
+| `/division/{id}` | Division ID | **Yes** (without this, the URL is invalid) |
+| `/round/{id}` | Day/Round ID | No (used to filter results) |
+| `/pools/{id}` | Pool ID filter | No (when present, only that pool's matches are returned) |
+
+**Type detection:**
+
+| URL contains | Match type |
+|-------------|------------|
+| `bracket` or `playoff` (case-insensitive) | Bracket Play |
+| `pool` (case-insensitive) | Pool Play |
+| Neither | Both bracket and pool matches returned |
+
+**Example:**
+```
+URL: https://norcalbeach.volleyballlife.com/event/34785/division/127872/round/261836/brackets
+→ Division ID: 127872
+→ Day ID: 261836
+→ Type: Bracket Play
+→ API Call: GET /division/127872/hydrate
+```
+
+### Division Hydrate
+
+The primary endpoint for reading all match data for a division. This is the **only** read endpoint needed — one call returns everything.
+
+```
+GET /division/{divisionId}/hydrate
+```
+
+**No auth required** (public endpoint).
+
+Returns the complete division tree: days, brackets, pools, matches, teams, games, scores, and format settings. The response is then filtered client-side by day ID, match type (bracket/pool), and pool ID.
+
+### Hydrate Response Structure
+
+The hydrate response contains two different structures depending on whether a day has bracket play or pool play.
+
+```json
+{
+    "id": 127872,
+    "teams": [
+        {
+            "id": 851171,
+            "name": "Nathan Hicks / Reid Malone",
+            "seed": 3,
+            "players": [{"name": "Nathan Hicks"}, {"name": "Reid Malone"}]
+        }
+    ],
+    "days": [
+        {
+            "id": 261836,
+            "name": "Playoffs",
+            "bracketPlay": true,
+            "poolPlay": false,
+            "brackets": [
+                {
+                    "id": 56262,
+                    "name": "Playoffs",
+                    "type": "SINGLE_ELIM",
+                    "winnersMatchSettings": {
+                        "gameSettings": [
+                            {"to": 28, "cap": null, "number": 1}
+                        ]
+                    },
+                    "matches": [
+                        {
+                            "id": 325751,
+                            "displayNumber": 2,
+                            "number": 126,
+                            "court": 1,
+                            "startTime": "2026-01-09T09:30:00.000Z",
+                            "isBye": false,
+                            "isWinners": true,
+                            "round": 0,
+                            "homeTeam": {"teamId": 851171, "seed": 3, "id": 403004},
+                            "awayTeam": {"teamId": 851173, "seed": 2, "id": 403003},
+                            "games": [
+                                {
+                                    "id": 4868943,
+                                    "number": 1,
+                                    "to": 28,
+                                    "cap": 0,
+                                    "home": 22,
+                                    "away": 12,
+                                    "isFinal": false,
+                                    "_winner": null
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": 261835,
+            "name": "Pool Play",
+            "bracketPlay": false,
+            "poolPlay": true,
+            "flights": [
+                {
+                    "id": 1,
+                    "pools": [
+                        {
+                            "id": 326016,
+                            "name": "1",
+                            "teams": [
+                                {"id": 100, "teamId": 851172, "seed": 1}
+                            ],
+                            "matches": [
+                                {
+                                    "id": 1217131,
+                                    "number": 1,
+                                    "court": 1,
+                                    "startTime": "2026-01-09T09:00:00Z",
+                                    "homeTeam": {"teamId": 851172, "seed": 1},
+                                    "awayTeam": {"teamId": 851171, "seed": 3},
+                                    "games": [
+                                        {"to": 21, "cap": 23, "home": 1, "away": 0},
+                                        {"to": 21, "cap": 23, "home": 0, "away": 0}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+```
+
+**Key structural differences:**
+
+| | Bracket Days | Pool Days |
+|-|-------------|-----------|
+| Day flag | `"bracketPlay": true` | `"poolPlay": true` |
+| Container path | `day.brackets[]` | `day.flights[].pools[]` |
+| Format settings | `bracket.winnersMatchSettings.gameSettings[]` | Derived from each match's `games[]` array |
+| Match number | `match.displayNumber` (bracket display #) | `match.number` (pool match #) |
+| Team lookup | Via `division.teams[]` using `teamId` | Via `division.teams[]` using `teamId` |
+
+### vMix Endpoint (Live Score Polling)
+
+Returns match data formatted for vMix/OBS overlays. This is what the Swift app polls every 1 second for live score updates.
+
+```
+GET https://api.volleyballlife.com/api/v1.0/matches/{matchId}/vmix?bracket=true|false
+```
+
+**Auth required** (Bearer token + cookies).
+
+The `bracket` parameter is **critical** — it determines which match ID namespace is queried:
+
+| Parameter | ID Namespace | When to use |
+|-----------|-------------|-------------|
+| `bracket=true` | Bracket match IDs | Matches from `day.brackets[].matches[]` |
+| `bracket=false` | Pool/DB match IDs | Matches from `day.flights[].pools[].matches[]` |
+
+> **Warning:** The same numeric match ID can refer to completely different matches depending on this parameter. Bracket match 325751 and pool match 325751 are **different matches**.
+
+**Response (array of 2 team objects):**
+```json
+[
+    {
+        "teamName": "Nathan Hicks / Reid Malone",
+        "division": "Mens Unrated",
+        "isMatch": false,
+        "game1": 22,
+        "game2": 0,
+        "game3": 0,
+        "logo": "",
+        "players": [
+            {"firstname": "Nathan", "lastname": "Hicks", "jersey": ""},
+            {"firstname": "Reid", "lastname": "Malone", "jersey": ""}
+        ]
+    },
+    {
+        "teamName": "Marvin Pacheco / Derek Toliver",
+        "division": "Mens Unrated",
+        "isMatch": false,
+        "game1": 12,
+        "game2": 0,
+        "game3": 0,
+        "logo": "",
+        "players": [
+            {"firstname": "Marvin", "lastname": "Pacheco", "jersey": ""},
+            {"firstname": "Derek", "lastname": "Toliver", "jersey": ""}
+        ]
+    }
+]
+```
+
+The URL is constructed at scan time and stored in `VBLMatch.api_url`:
+```python
+# Bracket match:
+f"https://api.volleyballlife.com/api/v1.0/matches/{match_id}/vmix?bracket=true"
+
+# Pool match:
+f"https://api.volleyballlife.com/api/v1.0/matches/{match_id}/vmix?bracket=false"
+```
+
+### Match Format Settings
+
+Format settings are extracted differently for bracket vs pool matches:
+
+**Bracket matches** — from `bracket.winnersMatchSettings.gameSettings[]`:
+```python
+winner_settings = bracket.get('winnersMatchSettings', {})
+game_settings = winner_settings.get('gameSettings', [])
+sets_to_win = (len(game_settings) + 1) // 2   # e.g., 3 settings → 2 sets to win
+points_per_set = game_settings[0].get('to', 21)
+point_cap = game_settings[0].get('cap') or None  # 0 is treated as None
+```
+
+**Pool matches** — from each match's own `games[]` array:
+```python
+games = match.get('games', [])
+points_per_set = games[0].get('to', 21)
+point_cap = games[0].get('cap') or None  # 0 is treated as None
+```
+
+**`cap` field semantics:**
+- `0` or `null` = no cap (win by 2 with no limit)
+- Any positive integer = hard cap (e.g., `cap=23` means the game ends at 23-22 regardless of the 2-point lead rule)
+- Win condition: "first to `to`, win by 2, hard cap at `cap`"
+
+### Match Settings Endpoint
+
+```
+GET  /matches/settings?matchId={matchId}&pool={true|false}
+POST /matches/settings?matchId={matchId}&pool={true|false}
+```
+
+**Auth required** (returns 401 without auth).
 
 ---
 
@@ -151,7 +419,7 @@ The backend is an ASP.NET Core 8 application hosted on Azure App Service. SSL ce
 
 ---
 
-## Endpoints
+## Scoring Endpoints
 
 ### 1. Start Scoring Session
 
@@ -526,103 +794,52 @@ Teams in matches have two DTO formats depending on type:
 > The `id` is the team's **entry** ID within the bracket/pool (used in `liveStartDto.homeTeam`).
 > The `teamId` is the actual team's global ID.
 
----
+### VBLMatch (Scraper Output)
 
-## Reading Match Data
-
-### Division Hydrate
-
-The primary endpoint for reading all match data for a division.
-
-```
-GET /division/{divisionId}/hydrate
-```
-
-**No auth required** (public endpoint).
-
-**Response:** Complete division data including days, brackets, pools, matches, teams, games, and scores.
+The Python scraper (`api_scraper.py`) extracts matches from the hydrate response and outputs `VBLMatch` objects with these fields:
 
 ```json
 {
-    "id": 127872,
-    "days": [
-        {
-            "id": 261836,
-            "brackets": [
-                {
-                    "id": 56262,
-                    "matches": [
-                        {
-                            "id": 325751,
-                            "bracketId": 56262,
-                            "isMatch": false,
-                            "games": [{"id": 4868943, "home": 22, "away": 12, ...}],
-                            "homeTeam": {"id": 403004, "teamId": 851171, "seed": 3, ...},
-                            "awayTeam": {"id": 403003, "teamId": 851173, "seed": 2, ...},
-                            ...
-                        }
-                    ]
-                }
-            ]
-        }
-    ]
+    "index": 0,
+    "match_number": "2",
+    "team1": "Nathan Hicks / Reid Malone",
+    "team2": "Marvin Pacheco / Derek Toliver",
+    "team1_seed": "3",
+    "team2_seed": "2",
+    "court": "1",
+    "startTime": "9:30AM",
+    "startDate": "Thu",
+    "api_url": "https://api.volleyballlife.com/api/v1.0/matches/325751/vmix?bracket=true",
+    "match_type": "Bracket Play",
+    "type_detail": "Single Elim",
+    "setsToWin": 1,
+    "pointsPerSet": 28,
+    "pointCap": null,
+    "formatText": "1 set to 28",
+    "team1_score": 0,
+    "team2_score": 0
 }
 ```
 
-### vMix Endpoint
+| Field | Type | Description |
+|-------|------|-------------|
+| `index` | int | 0-based position in results |
+| `match_number` | str | `displayNumber` for bracket, `number` for pool matches |
+| `team1` / `team2` | str | "First Last / First Last" |
+| `team1_seed` / `team2_seed` | str | Seed number as string |
+| `court` | str | Court name/number |
+| `startTime` | str | Formatted time, e.g., "9:00AM" |
+| `startDate` | str | Day of week, e.g., "Thu" |
+| `api_url` | str | vMix URL with correct `bracket=true\|false` |
+| `match_type` | str | "Bracket Play" or "Pool Play" |
+| `type_detail` | str | "Single Elim", "Double Elim", "Pool 1", etc. |
+| `setsToWin` | int | 1 for single-set, 2 for best-of-3, etc. |
+| `pointsPerSet` | int | Points to win a set (21, 25, 28, etc.) |
+| `pointCap` | int/null | Hard cap or null for win-by-2 |
+| `formatText` | str | Human-readable, e.g., "1 set to 28" |
+| `team1_score` / `team2_score` | int | Always 0 (live scores come from vMix polling) |
 
-Returns match data formatted for vMix/OBS overlays.
-
-```
-GET /matches/{matchId}/vmix?bracket=true|false
-```
-
-**Auth required.** The `bracket` parameter is critical:
-- `bracket=true` — returns data using the **bracket** match ID namespace
-- `bracket=false` — returns data using the **pool/DB** match ID namespace
-
-> **Important:** The same numeric match ID can refer to completely different matches depending on whether `bracket=true` or `bracket=false`. Bracket match 325751 and pool match 325751 are different matches.
-
-**Response:**
-```json
-[
-    {
-        "teamName": "Nathan Hicks / Reid Malone",
-        "division": "Mens Unrated",
-        "isMatch": false,
-        "game1": 22,
-        "game2": 0,
-        "game3": 0,
-        "logo": "",
-        "players": [
-            {"firstname": "Nathan", "lastname": "Hicks", "jersey": ""},
-            {"firstname": "Reid", "lastname": "Malone", "jersey": ""}
-        ]
-    },
-    {
-        "teamName": "Marvin Pacheco / Derek Toliver",
-        "division": "Mens Unrated",
-        "isMatch": false,
-        "game1": 12,
-        "game2": 0,
-        "game3": 0,
-        "logo": "",
-        "players": [
-            {"firstname": "Marvin", "lastname": "Pacheco", "jersey": ""},
-            {"firstname": "Derek", "lastname": "Toliver", "jersey": ""}
-        ]
-    }
-]
-```
-
-### Match Settings
-
-```
-GET /matches/settings?matchId={matchId}&pool={true|false}
-POST /matches/settings?matchId={matchId}&pool={true|false}
-```
-
-**Auth required** (returns 401 without auth).
+> These are the exact JSON keys the Swift `ScannerViewModel` and `AppViewModel` consume.
 
 ---
 
