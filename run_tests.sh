@@ -47,7 +47,7 @@ run_python_unit_tests() {
         PYTHON="$VENV_PYTHON"
     fi
 
-    if $PYTHON -m pytest tests/test_parse_format.py tests/test_core.py -v 2>&1; then
+    if $PYTHON -m pytest tests/test_parse_format.py tests/test_core.py tests/test_api_scraper.py -v 2>&1; then
         echo -e "${GREEN}Python unit tests PASSED${NC}"
         return 0
     else

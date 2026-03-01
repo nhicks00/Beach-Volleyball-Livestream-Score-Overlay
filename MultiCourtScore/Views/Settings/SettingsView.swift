@@ -504,7 +504,7 @@ struct SettingsView: View {
 
             Spacer()
 
-            Text("2025 Nathan Hicks")
+            Text("© 2026 Nathan Hicks")
                 .font(.system(size: 11))
                 .foregroundColor(AppColors.textMuted)
 
