@@ -130,6 +130,11 @@ enum NetworkConstants {
     static let cacheExpiration: TimeInterval = 1.0
     static let maxRetries: Int = 3
     static let retryDelay: TimeInterval = 1.0
+
+    // SignalR
+    static let signalRPingInterval: TimeInterval = 15
+    static let signalRMaxReconnectDelay: TimeInterval = 60
+    static let signalRBaseReconnectDelay: TimeInterval = 2
 }
 
 // MARK: - App Configuration
