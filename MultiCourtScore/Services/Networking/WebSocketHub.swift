@@ -361,8 +361,6 @@ final class WebSocketHub {
                     "team2": team2,
                     "score1": gameScore1,
                     "score2": gameScore2,
-                    "setsWon1": isLiveOrFinished ? (snapshot?.team1Score ?? 0) : 0,
-                    "setsWon2": isLiveOrFinished ? (snapshot?.team2Score ?? 0) : 0,
                     "set": isLiveOrFinished ? (snapshot?.setNumber ?? 1) : 1,
                     "status": isLiveOrFinished ? (snapshot?.status ?? "Pre-Match") : "Pre-Match",
                     "courtStatus": court.status.rawValue,
@@ -1731,8 +1729,8 @@ function applyData(d) {
   if (setNumEl) setNumEl.textContent = d.set || 1;
 
   // Set pips
-  updatePips(document.getElementById('pips1'), d.setsWon1 || 0, setsToWin);
-  updatePips(document.getElementById('pips2'), d.setsWon2 || 0, setsToWin);
+  updatePips(document.getElementById('pips1'), d.setsA || 0, setsToWin);
+  updatePips(document.getElementById('pips2'), d.setsB || 0, setsToWin);
 
   // Serve indicator — skip entirely during celebration
   if (!celebrationActive) {
@@ -1789,8 +1787,8 @@ function applyData(d) {
 
   // Match celebration: confetti + trophy for the winner
   if (isMatchFinished(d)) {
-    const setsWon1 = d.setsA || d.setsWon1 || 0;
-    const setsWon2 = d.setsB || d.setsWon2 || 0;
+    const setsWon1 = d.setsA || 0;
+    const setsWon2 = d.setsB || 0;
     const winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
     showCelebration(winner);
     
@@ -2452,8 +2450,8 @@ function applyTradData(d) {
 
   // Celebration for traditional board
   if (isMatchFinished(d)) {
-    var setsWon1 = d.setsA || d.setsWon1 || 0;
-    var setsWon2 = d.setsB || d.setsWon2 || 0;
+    var setsWon1 = d.setsA || 0;
+    var setsWon2 = d.setsB || 0;
     var winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
     showTradCelebration(winner);
   } else if (tradCelebrationActive) {
@@ -2554,8 +2552,8 @@ function clearTradCelebration() {
 // Check if match is finished based on sets won
 function isMatchFinished(d) {
   const setsToWin = d.setsToWin || 2;
-  const setsWon1 = d.setsA || d.setsWon1 || 0;
-  const setsWon2 = d.setsB || d.setsWon2 || 0;
+  const setsWon1 = d.setsA || 0;
+  const setsWon2 = d.setsB || 0;
   return setsWon1 >= setsToWin || setsWon2 >= setsToWin;
 }
 
@@ -2567,8 +2565,8 @@ function determineState(d) {
   const courtStatus = (d.courtStatus || '').toLowerCase();
   
   // Check if match has already started (any sets won)
-  const setsWon1 = d.setsA || d.setsWon1 || 0;
-  const setsWon2 = d.setsB || d.setsWon2 || 0;
+  const setsWon1 = d.setsA || 0;
+  const setsWon2 = d.setsB || 0;
   const matchInProgress = setsWon1 > 0 || setsWon2 > 0;
 
   // If currently in intermission and scoring starts, switch to scoring

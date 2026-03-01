@@ -106,14 +106,6 @@ Examples:
         help='Enable verbose logging'
     )
 
-    # Accepted for backward compatibility (ignored — API needs no credentials or browser)
-    parser.add_argument('-u', '--username', help=argparse.SUPPRESS)
-    parser.add_argument('-p', '--password', help=argparse.SUPPRESS)
-    parser.add_argument('--parallel', action='store_true', help=argparse.SUPPRESS)
-    parser.add_argument('--max-concurrent', type=int, default=4, help=argparse.SUPPRESS)
-    parser.add_argument('--no-headless', action='store_true', help=argparse.SUPPRESS)
-    parser.add_argument('--login-check', action='store_true', help=argparse.SUPPRESS)
-
     args = parser.parse_args()
 
     # Set log level

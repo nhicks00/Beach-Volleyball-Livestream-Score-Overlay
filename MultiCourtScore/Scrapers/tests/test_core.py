@@ -8,7 +8,7 @@ import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from vbl_scraper.core import VBLMatch, ScanResult, VBLScraperBase
+from vbl_scraper.core import VBLMatch, ScanResult
 
 
 class TestVBLMatch:
@@ -132,24 +132,6 @@ class TestScanResult:
         json_str = json.dumps(r.to_dict())
         parsed = json.loads(json_str)
         assert parsed['total_matches'] == 1
-
-
-class TestDetermineURLType:
-    """Test URL type detection."""
-
-    def test_bracket_url(self):
-        scraper = VBLScraperBase.__new__(VBLScraperBase)
-        mt, td = scraper.determine_url_type(
-            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets"
-        )
-        assert mt == "Bracket Play"
-
-    def test_pool_url(self):
-        scraper = VBLScraperBase.__new__(VBLScraperBase)
-        mt, td = scraper.determine_url_type(
-            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools/326016"
-        )
-        assert mt == "Pool Play"
 
 
 class TestScanResultJSON:

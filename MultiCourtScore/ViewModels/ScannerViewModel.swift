@@ -465,9 +465,6 @@ class ScannerViewModel: ObservableObject {
 
                 process.executableURL = URL(fileURLWithPath: pythonPath)
                 var args = ["-m", "vbl_scraper.cli", url, "-o", outputFile.path]
-                if let creds = self.loadCredentials() {
-                    args.append(contentsOf: ["-u", creds.username, "-p", creds.password])
-                }
                 process.arguments = args
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
                 process.standardOutput = pipe
@@ -556,12 +553,8 @@ class ScannerViewModel: ObservableObject {
 
                 var args = ["-m", "vbl_scraper.cli"]
                 args.append(contentsOf: urls)
-                args.append("--parallel")
                 args.append("-o")
                 args.append(outputFile.path)
-                if let creds = self.loadCredentials() {
-                    args.append(contentsOf: ["-u", creds.username, "-p", creds.password])
-                }
 
                 process.arguments = args
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
@@ -748,19 +741,6 @@ class ScannerViewModel: ObservableObject {
         }
 
         return nil
-    }
-    
-    /// Load VBL credentials from the app's configuration file
-    nonisolated private func loadCredentials() -> (username: String, password: String)? {
-        let credPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/MultiCourtScore/credentials.json")
-        guard let data = try? Data(contentsOf: credPath),
-              let creds = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let user = creds["username"], let pass = creds["password"],
-              !user.isEmpty, !pass.isEmpty else {
-            return nil
-        }
-        return (user, pass)
     }
 
     /// Parse a Python log line to extract the log level
