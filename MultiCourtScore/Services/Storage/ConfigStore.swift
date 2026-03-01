@@ -67,6 +67,8 @@ class ConfigStore {
         var autoStartPolling: Bool = false
         var showDebugInfo: Bool = false
         var overlayTheme: String = "dark"
+        var defaultScoreboardLayout: String = "center"
+        var showSocialBar: Bool = true
     }
     
     func loadSettings() -> AppSettings {

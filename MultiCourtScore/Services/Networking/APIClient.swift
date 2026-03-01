@@ -53,9 +53,10 @@ actor APIClient {
                     throw error
                 }
                 
-                // Wait before retry (propagate cancellation)
+                // Wait before retry with exponential backoff (propagate cancellation)
                 if attempt < maxRetries - 1 {
-                    try await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+                    let delay = min(retryDelay * pow(2.0, Double(attempt)), 10.0)
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
             }
         }

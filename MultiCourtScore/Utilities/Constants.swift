@@ -124,8 +124,8 @@ enum AppTypography {
 // MARK: - Networking Constants
 enum NetworkConstants {
     static let webSocketPort: Int = 8787
-    static let pollingInterval: TimeInterval = 2.5
-    static let pollingJitterMax: TimeInterval = 0.5
+    static let pollingInterval: TimeInterval = 1.5
+    static let pollingJitterMax: TimeInterval = 0.3
     static let requestTimeout: TimeInterval = 10.0
     static let cacheExpiration: TimeInterval = 1.0
     static let maxRetries: Int = 3

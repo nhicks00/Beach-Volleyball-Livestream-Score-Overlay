@@ -11,12 +11,35 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from vbl_scraper.core import ScraperConfig, ScanResult, logger
 from vbl_scraper.bracket import BracketScraper
 from vbl_scraper.pool import PoolScraper
 from vbl_scraper.parallel import ParallelScraper, scan_parallel
+from vbl_scraper.api_scraper import scan_via_api
+
+
+def _try_api_scan(urls: List[str]) -> Tuple[List[ScanResult], List[str]]:
+    """
+    Try to scan URLs via the direct API (no browser needed).
+
+    Returns:
+        Tuple of (successful results, remaining URLs that need browser fallback)
+    """
+    results = []
+    remaining = []
+
+    for url in urls:
+        result = scan_via_api(url)
+        if result and result.total_matches > 0:
+            logger.info(f"[API] {result.total_matches} matches from {url[:60]}...")
+            results.append(result)
+        else:
+            logger.info(f"[API] No results, will use browser fallback for {url[:60]}...")
+            remaining.append(url)
+
+    return results, remaining
 
 
 async def scan_urls(
@@ -30,7 +53,10 @@ async def scan_urls(
 ) -> List[ScanResult]:
     """
     Scan multiple URLs and return combined results.
-    
+
+    Uses the fast API scraper first (~1s per URL), falling back to
+    browser-based Playwright scraping if the API approach fails.
+
     Args:
         urls: List of bracket/pool URLs to scan
         username: VBL login username
@@ -39,7 +65,7 @@ async def scan_urls(
         output_file: Optional file to write results
         parallel: Use parallel scanning (4x faster for multiple URLs)
         max_concurrent: Max concurrent browser instances
-        
+
     Returns:
         List of ScanResult objects
     """
@@ -48,41 +74,54 @@ async def scan_urls(
         session_file=Path.home() / '.multicourtscore' / 'session.json',
         results_file=output_file
     )
-    
+
     # Ensure config directory exists
     config.session_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    all_results = []
-    
+
+    # FAST PATH: Try API scraper first (no browser needed, ~1s per URL)
+    logger.info(f"Attempting fast API scan for {len(urls)} URL(s)...")
+    api_results, remaining_urls = _try_api_scan(urls)
+
+    all_results = list(api_results)
+
+    if not remaining_urls:
+        # All URLs handled by API - no browser needed!
+        logger.info(f"All {len(urls)} URL(s) scanned via API (no browser needed)")
+        if output_file:
+            _write_results(all_results, urls, output_file)
+        return all_results
+
+    logger.info(f"API handled {len(api_results)} URL(s), {len(remaining_urls)} need browser fallback")
+
+    # BROWSER FALLBACK for remaining URLs
+
     # PARALLEL MODE: Use concurrent browser instances
-    if parallel and len(urls) > 1:
-        logger.info(f"🚀 Using PARALLEL mode with max {max_concurrent} concurrent browsers")
-        
+    if parallel and len(remaining_urls) > 1:
+        logger.info(f"Using PARALLEL browser mode for {len(remaining_urls)} remaining URL(s)")
+
         parallel_result = await scan_parallel(
-            urls,
+            remaining_urls,
             username=username,
             password=password,
             max_concurrent=max_concurrent,
             headless=headless
         )
-        
-        all_results = parallel_result.results
-        
-        # Write results to file
+
+        all_results.extend(parallel_result.results)
+
+        # Write combined results to file
         if output_file:
-            with open(output_file, 'w') as f:
-                json.dump(parallel_result.to_dict(), f, indent=2)
-            logger.info(f"\nResults written to: {output_file}")
-        
+            _write_results(all_results, urls, output_file)
+
         return all_results
-    
+
     # SEQUENTIAL MODE: Single browser, process one at a time
-    
+
     # Use bracket scraper (which also handles login for pools)
     async with BracketScraper(config) as scraper:
-        for i, url in enumerate(urls):
-            logger.info(f"\n[{i+1}/{len(urls)}] Processing: {url}")
-            
+        for i, url in enumerate(remaining_urls):
+            logger.info(f"\n[{i+1}/{len(remaining_urls)}] Processing (browser): {url}")
+
             # Determine if pool or bracket
             if '/pools/' in url.lower():
                 # Re-initialize pool scraper with existing session
@@ -91,35 +130,40 @@ async def scan_urls(
                 pool_scraper.browser = scraper.browser
                 pool_scraper.context = scraper.context
                 pool_scraper.page = await scraper.context.new_page()
-                
+
                 result = await pool_scraper.scan(url, username, password)
                 await pool_scraper.page.close()
             else:
                 result = await scraper.scan(url, username, password)
-            
+
             all_results.append(result)
-            
+
             # Log summary
             if result.status == "success":
                 logger.info(f"  Found {result.total_matches} matches")
             else:
                 logger.error(f"  Error: {result.error}")
-    
+
     # Write results to file
     if output_file:
-        combined = {
-            'urls_scanned': len(urls),
-            'total_matches': sum(r.total_matches for r in all_results),
-            'results': [r.to_dict() for r in all_results],
-            'status': 'success' if all(r.status == 'success' for r in all_results) else 'partial'
-        }
-        
-        with open(output_file, 'w') as f:
-            json.dump(combined, f, indent=2)
-        
-        logger.info(f"\nResults written to: {output_file}")
-    
+        _write_results(all_results, urls, output_file)
+
     return all_results
+
+
+def _write_results(results: List[ScanResult], urls: List[str], output_file: Path):
+    """Write scan results to the output file."""
+    combined = {
+        'urls_scanned': len(urls),
+        'total_matches': sum(r.total_matches for r in results),
+        'results': [r.to_dict() for r in results],
+        'status': 'success' if all(r.status == 'success' for r in results) else 'partial'
+    }
+
+    with open(output_file, 'w') as f:
+        json.dump(combined, f, indent=2)
+
+    logger.info(f"\nResults written to: {output_file}")
 
 
 def load_credentials() -> tuple:

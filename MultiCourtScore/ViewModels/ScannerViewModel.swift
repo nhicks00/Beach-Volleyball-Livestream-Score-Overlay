@@ -171,6 +171,15 @@ class ScannerViewModel: ObservableObject {
         (bracketURLs + poolURLs)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+            .map { raw in
+                if raw.lowercased().hasPrefix("http://") || raw.lowercased().hasPrefix("https://") {
+                    return raw
+                }
+                if raw.contains(".") {
+                    return "https://\(raw)"
+                }
+                return raw
+            }
     }
     
     var canScan: Bool {
@@ -482,7 +491,11 @@ class ScannerViewModel: ObservableObject {
                 let errorPipe = Pipe()
 
                 process.executableURL = URL(fileURLWithPath: pythonPath)
-                process.arguments = ["-m", "vbl_scraper.cli", url, "-o", outputFile.path]
+                var args = ["-m", "vbl_scraper.cli", url, "-o", outputFile.path]
+                if let creds = self.loadCredentials() {
+                    args.append(contentsOf: ["-u", creds.username, "-p", creds.password])
+                }
+                process.arguments = args
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
                 process.standardOutput = pipe
                 process.standardError = errorPipe
@@ -500,22 +513,25 @@ class ScannerViewModel: ObservableObject {
                     try? FileManager.default.removeItem(at: outputFile)
                 }
 
+                // Stream stderr lines in real-time
+                errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+                    let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+                    for line in lines {
+                        let parsed = ScannerViewModel.parseLogLine(line)
+                        Task { @MainActor in
+                            self?.addLog(parsed.message, type: parsed.type)
+                        }
+                    }
+                }
+
                 do {
                     try process.run()
                     process.waitUntilExit()
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
 
                     let exitCode = process.terminationStatus
-
-                    // Read stderr for debugging
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
-                        Task { @MainActor in
-                            let lines = errorString.split(separator: "\n")
-                            for line in lines.prefix(5) {
-                                self.addLog("Python: \(line)", type: .warning)
-                            }
-                        }
-                    }
 
                     if exitCode != 0 {
                         Task { @MainActor in
@@ -570,6 +586,9 @@ class ScannerViewModel: ObservableObject {
                 args.append("--parallel")
                 args.append("-o")
                 args.append(outputFile.path)
+                if let creds = self.loadCredentials() {
+                    args.append(contentsOf: ["-u", creds.username, "-p", creds.password])
+                }
 
                 process.arguments = args
                 process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
@@ -588,18 +607,25 @@ class ScannerViewModel: ObservableObject {
                     try? FileManager.default.removeItem(at: outputFile)
                 }
 
+                // Stream stderr lines in real-time
+                errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+                    let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+                    for line in lines {
+                        let parsed = ScannerViewModel.parseLogLine(line)
+                        Task { @MainActor in
+                            self?.addLog(parsed.message, type: parsed.type)
+                        }
+                    }
+                }
+
                 do {
                     try process.run()
                     process.waitUntilExit()
+                    errorPipe.fileHandleForReading.readabilityHandler = nil
 
                     let exitCode = process.terminationStatus
-
-                    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                    if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
-                        Task { @MainActor in
-                            self.addLog("Scan output: \(errorString.prefix(200))", type: .info)
-                        }
-                    }
 
                     if exitCode != 0 {
                         Task { @MainActor in
@@ -751,6 +777,38 @@ class ScannerViewModel: ObservableObject {
         return nil
     }
     
+    /// Load VBL credentials from the app's configuration file
+    nonisolated private func loadCredentials() -> (username: String, password: String)? {
+        let credPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/MultiCourtScore/credentials.json")
+        guard let data = try? Data(contentsOf: credPath),
+              let creds = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let user = creds["username"], let pass = creds["password"],
+              !user.isEmpty, !pass.isEmpty else {
+            return nil
+        }
+        return (user, pass)
+    }
+
+    /// Parse a Python log line to extract the log level
+    nonisolated private static func parseLogLine(_ line: String) -> (message: String, type: ScanLogEntry.LogType) {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (line, .info) }
+
+        let lowered = trimmed.lowercased()
+
+        if lowered.contains("[error]") {
+            return (trimmed, .error)
+        } else if lowered.contains("[warning]") {
+            return (trimmed, .warning)
+        } else if lowered.contains("success") || lowered.contains("complete") ||
+                  lowered.range(of: #"found \d+ match"#, options: .regularExpression) != nil {
+            return (trimmed, .success)
+        }
+
+        return (trimmed, .info)
+    }
+
     private func addLog(_ message: String, type: ScanLogEntry.LogType) {
         let entry = ScanLogEntry(timestamp: Date(), message: message, type: type)
         Task { @MainActor in
@@ -771,6 +829,7 @@ class ScannerViewModel: ObservableObject {
         return numberedMatches.compactMap { match -> MatchItem? in
             guard let urlString = match.apiURL,
                   let url = URL(string: urlString) else {
+                print("[Import] Dropped match '\(match.displayName)' — apiURL is \(match.apiURL == nil ? "nil" : "invalid: \(match.apiURL!)")")
                 return nil
             }
             

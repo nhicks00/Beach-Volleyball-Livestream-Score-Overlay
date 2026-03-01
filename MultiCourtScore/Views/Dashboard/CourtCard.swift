@@ -16,6 +16,7 @@ struct CourtCard: View {
     let onEditQueue: () -> Void
     let onRename: () -> Void
     let onCopyURL: () -> Void
+    let onSetLayout: (String?) -> Void
     var isCopied: Bool = false
 
     @State private var isHovered = false
@@ -174,6 +175,25 @@ struct CourtCard: View {
 
             Button { onRename() } label: {
                 Label("Rename...", systemImage: "pencil")
+            }
+
+            Divider()
+
+            Menu {
+                Button { onSetLayout(nil) } label: {
+                    Label("Default", systemImage: court.scoreboardLayout == nil ? "checkmark" : "")
+                }
+                Button { onSetLayout("center") } label: {
+                    Label("Center", systemImage: court.scoreboardLayout == "center" ? "checkmark" : "")
+                }
+                Button { onSetLayout("top-left") } label: {
+                    Label("Top-Left", systemImage: court.scoreboardLayout == "top-left" ? "checkmark" : "")
+                }
+                Button { onSetLayout("bottom-left") } label: {
+                    Label("Bottom-Left", systemImage: court.scoreboardLayout == "bottom-left" ? "checkmark" : "")
+                }
+            } label: {
+                Label("Scoreboard Layout", systemImage: "rectangle.on.rectangle")
             }
         }
     }
@@ -538,7 +558,20 @@ struct CourtCard: View {
             .padding(.vertical, 3)
             .background(AppColors.surfaceElevated.opacity(0.3))
             .cornerRadius(6)
-            
+
+            // Layout override indicator
+            if let layout = court.scoreboardLayout {
+                Text(layoutLabel(layout))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(AppColors.info)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(AppColors.info.opacity(0.15))
+                    )
+            }
+
             Spacer()
         }
     }
@@ -590,6 +623,15 @@ struct CourtCard: View {
         case "fri": return AppColors.success
         case "thu": return Color.purple
         default: return AppColors.textMuted
+        }
+    }
+
+    private func layoutLabel(_ layout: String) -> String {
+        switch layout {
+        case "center": return "Center"
+        case "top-left": return "Top-Left"
+        case "bottom-left": return "Bottom-Left"
+        default: return layout.capitalized
         }
     }
 }
@@ -743,7 +785,8 @@ struct PostmatchTimer: View {
             onSkipPrevious: {},
             onEditQueue: {},
             onRename: {},
-            onCopyURL: {}
+            onCopyURL: {},
+            onSetLayout: { _ in }
         )
         .frame(width: 340)
 
@@ -755,7 +798,8 @@ struct PostmatchTimer: View {
             onSkipPrevious: {},
             onEditQueue: {},
             onRename: {},
-            onCopyURL: {}
+            onCopyURL: {},
+            onSetLayout: { _ in }
         )
         .frame(width: 340)
     }

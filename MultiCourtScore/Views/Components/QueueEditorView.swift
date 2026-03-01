@@ -46,7 +46,7 @@ struct QueueEditorView: View {
             HSplitView {
                 // Queue list (left panel)
                 queueList
-                    .frame(minWidth: 650)
+                    .frame(minWidth: 500)
 
                 // Detail panel (right panel)
                 detailPanel
@@ -56,7 +56,7 @@ struct QueueEditorView: View {
             // Bottom toolbar
             toolbar
         }
-        .frame(minWidth: 1100, minHeight: 700)
+        .frame(minWidth: 900, minHeight: 600)
         .background(AppColors.background)
         .onExitCommand { dismissSafely() }
         .onAppear {
@@ -276,12 +276,12 @@ struct QueueEditorView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled((court.activeIndex ?? 0) <= 0)
-                    
+
                     Text("\((court.activeIndex ?? 0) + 1) / \(court.queue.count)")
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(AppColors.textSecondary)
                         .padding(.horizontal, 8)
-                    
+
                     Button {
                         appViewModel.skipToNext(courtId)
                     } label: {
@@ -291,8 +291,34 @@ struct QueueEditorView: View {
                     .buttonStyle(.bordered)
                     .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
                 }
+
+                Divider()
+                    .frame(height: 20)
+
+                // Per-court layout picker
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppColors.textMuted)
+                    Text("Layout")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(AppColors.textMuted)
+                    Picker("", selection: Binding(
+                        get: { court.scoreboardLayout ?? "" },
+                        set: { newValue in
+                            appViewModel.setScoreboardLayout(courtId, layout: newValue.isEmpty ? nil : newValue)
+                        }
+                    )) {
+                        Text("Default").tag("")
+                        Text("Center").tag("center")
+                        Text("Top-Left").tag("top-left")
+                        Text("Bottom-Left").tag("bottom-left")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 280)
+                }
             }
-            
+
             Spacer()
 
             // Status
@@ -354,7 +380,7 @@ struct QueueEditorView: View {
 
     private func save() {
         let items = rows.compactMap { row -> MatchItem? in
-            guard let url = URL(string: row.urlString.trimmingCharacters(in: .whitespacesAndNewlines)),
+            guard let url = URL(string: row.normalizedURLString),
                   url.scheme?.hasPrefix("http") == true else {
                 return nil
             }
@@ -399,7 +425,7 @@ struct QueueEditorView: View {
     private func moveRowToCourt(at index: Int, targetCourtId: Int) {
         guard rows.indices.contains(index) else { return }
         let row = rows[index]
-        guard let url = URL(string: row.urlString.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard let url = URL(string: row.normalizedURLString),
               url.scheme?.hasPrefix("http") == true else { return }
 
         let item = MatchItem(
@@ -897,8 +923,22 @@ struct QueueRow: Identifiable {
         return ""
     }
 
+    var normalizedURLString: String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        // Already has a scheme
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            return trimmed
+        }
+        // Looks like a domain (contains a dot) — add https://
+        if trimmed.contains(".") {
+            return "https://\(trimmed)"
+        }
+        return trimmed
+    }
+
     var isValid: Bool {
-        guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let url = URL(string: normalizedURLString) else {
             return false
         }
         return url.scheme?.hasPrefix("http") == true

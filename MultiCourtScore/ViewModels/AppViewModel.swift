@@ -14,6 +14,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var courts: [Court] = []
     @Published private(set) var isLoading = false
     @Published private(set) var error: AppError?
+    @Published private(set) var serverRunning = false
     @Published var scannerViewModel = ScannerViewModel()
     @Published var appSettings: ConfigStore.AppSettings = ConfigStore.AppSettings()
     
@@ -56,6 +57,7 @@ final class AppViewModel: ObservableObject {
     func startServices() {
         Task {
             await webSocketHub.start(with: self, port: appSettings.serverPort)
+            serverRunning = webSocketHub.isRunning
             print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }
         startWatchdog()
@@ -65,6 +67,7 @@ final class AppViewModel: ObservableObject {
         stopAllPolling()
         stopWatchdog()
         webSocketHub.stop()
+        serverRunning = false
         saveConfigurationNow()
     }
     
@@ -91,6 +94,12 @@ final class AppViewModel: ObservableObject {
     func renameCourt(_ courtId: Int, to newName: String) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].name = newName
+        saveConfigurationNow()
+    }
+
+    func setScoreboardLayout(_ courtId: Int, layout: String?) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        courts[idx].scoreboardLayout = layout
         saveConfigurationNow()
     }
     
@@ -158,9 +167,9 @@ final class AppViewModel: ObservableObject {
         observedActiveScoring[courtId] = false
         courts[idx].errorMessage = nil
         
-        // Staggered polling with jitter to avoid thundering herd
-        let jitter = Double((courtId * 317) % 1200) / 1000.0
-        let interval = appSettings.pollingInterval + Double((courtId * 97) % 800) / 1000.0
+        // Staggered polling with small jitter to avoid thundering herd
+        let jitter = Double((courtId * 317) % 400) / 1000.0
+        let interval = appSettings.pollingInterval + Double((courtId * 97) % 300) / 1000.0
         
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in

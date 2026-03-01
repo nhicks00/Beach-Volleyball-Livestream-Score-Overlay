@@ -110,6 +110,7 @@ struct DashboardView: View {
                                                 newCourtName = court.name
                                             },
                                             onCopyURL: { copyOverlayURL(for: court.id) },
+                                            onSetLayout: { layout in appViewModel.setScoreboardLayout(court.id, layout: layout) },
                                             isCopied: urlCopiedCourtId == court.id
                                         )
                                         .frame(maxWidth: .infinity)
@@ -253,16 +254,12 @@ struct DashboardView: View {
     
     private var regularToolbar: some View {
         HStack(spacing: 16) {
-            // Left: App name + connection badge
-            HStack(spacing: 12) {
-                Text(AppConfig.appName)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(AppColors.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.9)
-
-                ConnectionBadge(isConnected: WebSocketHub.shared.isRunning)
-            }
+            // Left: App name
+            Text(AppConfig.appName)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(AppColors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
 
             Spacer()
 
@@ -345,15 +342,11 @@ struct DashboardView: View {
     private var compactToolbar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    Text(AppConfig.appName)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(AppColors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    
-                    ConnectionBadge(isConnected: WebSocketHub.shared.isRunning)
-                }
+                Text(AppConfig.appName)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 Spacer(minLength: 8)
                 
@@ -518,7 +511,7 @@ struct DashboardView: View {
 
             HStack(spacing: 4) {
                 Circle()
-                    .fill(WebSocketHub.shared.isRunning ? AppColors.success : AppColors.error)
+                    .fill(appViewModel.serverRunning ? AppColors.success : AppColors.error)
                     .frame(width: 6, height: 6)
                 Text("localhost:\(String(appViewModel.appSettings.serverPort))")
                     .font(.system(size: 11, design: .monospaced))

@@ -26,7 +26,7 @@ struct MultiCourtScoreApp: App {
                 .onChange(of: appViewModel.appSettings.overlayTheme) { _, newTheme in
                     applyTheme(newTheme)
                 }
-                .frame(minWidth: 920, minHeight: 640)
+                .frame(minWidth: 1100, minHeight: 760)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
