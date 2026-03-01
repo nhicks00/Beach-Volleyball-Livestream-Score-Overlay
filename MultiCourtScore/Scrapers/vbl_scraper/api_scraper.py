@@ -88,20 +88,12 @@ def _make_ssl_context() -> ssl.SSLContext:
             API_BASE + "/Theme?v=3",
             headers={'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0'}
         )
-        urllib.request.urlopen(req, timeout=5, context=ctx)
+        urllib.request.urlopen(req, timeout=3, context=ctx)
         return ctx
-    except (ssl.SSLError, urllib.error.URLError) as e:
-        # Check if it's an SSL-related error
-        is_ssl = isinstance(e, ssl.SSLError)
-        if isinstance(e, urllib.error.URLError):
-            is_ssl = isinstance(e.reason, ssl.SSLError) or 'SSL' in str(e.reason)
-        if not is_ssl:
-            # Non-SSL error (timeout, connection refused, etc.) — default ctx is fine
-            return ctx
     except Exception:
-        return ctx
+        pass
 
-    # Fall back to unverified context if cert chain fails
+    # Any failure — fall back to unverified context
     logger.info("[API] Using unverified SSL (cert chain unavailable)")
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
