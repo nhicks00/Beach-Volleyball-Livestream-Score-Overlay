@@ -234,7 +234,7 @@ struct SettingsView: View {
                                     .foregroundColor(AppColors.textMuted)
 
                                 HStack(spacing: 8) {
-                                    Slider(value: $settings.pollingInterval, in: 1...10, step: 0.5)
+                                    Slider(value: $settings.pollingInterval, in: 0.5...10, step: 0.5)
                                         .frame(width: 150)
                                     Text("\(settings.pollingInterval, specifier: "%.1f")s")
                                         .font(.system(size: 12, design: .monospaced))
@@ -248,11 +248,14 @@ struct SettingsView: View {
 
                 // Behavior
                 DetailSection(title: "Behavior") {
-                    VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Toggle("Auto-start polling on launch", isOn: $settings.autoStartPolling)
                             .toggleStyle(.switch)
-                        Toggle("Show debug information", isOn: $settings.showDebugInfo)
+                        Toggle("Show social media bar on overlay", isOn: $settings.showSocialBar)
                             .toggleStyle(.switch)
+                            .onChange(of: settings.showSocialBar) { _, newValue in
+                                appViewModel.appSettings.showSocialBar = newValue
+                            }
                     }
                 }
 
@@ -261,9 +264,30 @@ struct SettingsView: View {
                     Picker("Theme", selection: $settings.overlayTheme) {
                         Text("Dark").tag("dark")
                         Text("Light").tag("light")
-                        Text("Transparent").tag("transparent")
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: settings.overlayTheme) { _, newTheme in
+                        appViewModel.appSettings.overlayTheme = newTheme
+                    }
+                }
+
+                // Default Scoreboard Layout
+                DetailSection(title: "Default Scoreboard Layout") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Layout", selection: $settings.defaultScoreboardLayout) {
+                            Text("Center").tag("center")
+                            Text("Top-Left").tag("top-left")
+                            Text("Bottom-Left").tag("bottom-left")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: settings.defaultScoreboardLayout) { _, newLayout in
+                            appViewModel.appSettings.defaultScoreboardLayout = newLayout
+                        }
+
+                        Text("Applied to all overlays unless overridden per-court.")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppColors.textMuted)
+                    }
                 }
 
                 HStack {

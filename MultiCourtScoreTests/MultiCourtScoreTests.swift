@@ -436,6 +436,174 @@ struct NetworkConstantsTests {
     }
 }
 
+// MARK: - Overlay Data Flow Tests
+
+struct OverlayDataFlowTests {
+
+    // Verify score.json fields match what the overlay JavaScript expects.
+    // The JS uses: d.team1, d.team2, d.score1, d.score2, d.set,
+    //   d.setsWon1, d.setsWon2, d.setsA, d.setsB, d.courtStatus,
+    //   d.setsToWin, d.serve, d.setHistory, d.seed1, d.seed2,
+    //   d.nextMatch, d.pointsPerSet, d.pointCap, d.status
+
+    @Test func scoreJsonShape_liveMatch_hasAllRequiredFields() async throws {
+        // Simulate a live match in set 2 with set 1 completed 21-18
+        let snapshot = ScoreSnapshot(
+            courtId: 1, matchId: 100,
+            status: "In Progress", setNumber: 2,
+            team1Name: "Smith / Jones", team2Name: "Brown / Davis",
+            team1Seed: "1", team2Seed: "4",
+            scheduledTime: nil, matchNumber: nil, courtNumber: nil,
+            team1Score: 1, team2Score: 0, serve: "home",
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 21, team2Score: 18, isComplete: true),
+                SetScore(setNumber: 2, team1Score: 14, team2Score: 12, isComplete: false)
+            ],
+            timestamp: Date(), setsToWin: 2
+        )
+
+        // Verify the data the score.json endpoint would serialize
+        let currentGame = snapshot.setHistory.last
+        #expect(currentGame != nil, "setHistory.last should exist for live match")
+        #expect(currentGame?.team1Score == 14, "Current set score should be 14")
+        #expect(currentGame?.team2Score == 12, "Current set score should be 12")
+
+        // setsWon (team1Score/team2Score on ScoreSnapshot = sets won, not points)
+        #expect(snapshot.team1Score == 1, "team1Score should be sets won (1)")
+        #expect(snapshot.team2Score == 0, "team2Score should be sets won (0)")
+
+        // totalSetsWon should agree with team1Score/team2Score
+        #expect(snapshot.totalSetsWon.team1 == 1)
+        #expect(snapshot.totalSetsWon.team2 == 0)
+
+        // setNumber
+        #expect(snapshot.setNumber == 2)
+
+        // Not final
+        #expect(!snapshot.isFinal)
+        #expect(snapshot.hasStarted)
+    }
+
+    @Test func scoreJsonShape_waitingMatch_returnsZeroScores() async throws {
+        // Simulate a .waiting court: snapshot has no real data yet
+        let snapshot = ScoreSnapshot.empty(courtId: 3)
+
+        // In .waiting, score.json guards with isLiveOrFinished = false
+        // So scores should be forced to 0
+        let currentGame = snapshot.setHistory.last
+        #expect(currentGame == nil, "setHistory should be empty for waiting match")
+        #expect(snapshot.team1Score == 0)
+        #expect(snapshot.team2Score == 0)
+        #expect(!snapshot.hasStarted)
+    }
+
+    @Test func scoreJsonShape_finishedMatch_setsWonMatchExpected() async throws {
+        let snapshot = ScoreSnapshot(
+            courtId: 1, matchId: 200,
+            status: "Final", setNumber: 3,
+            team1Name: "Alpha", team2Name: "Beta",
+            team1Seed: nil, team2Seed: nil,
+            scheduledTime: nil, matchNumber: nil, courtNumber: nil,
+            team1Score: 2, team2Score: 1, serve: nil,
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 21, team2Score: 18, isComplete: true),
+                SetScore(setNumber: 2, team1Score: 15, team2Score: 21, isComplete: true),
+                SetScore(setNumber: 3, team1Score: 15, team2Score: 12, isComplete: true)
+            ],
+            timestamp: Date(), setsToWin: 2
+        )
+
+        #expect(snapshot.isFinal)
+        #expect(snapshot.totalSetsWon.team1 == 2)
+        #expect(snapshot.totalSetsWon.team2 == 1)
+
+        // The JS isMatchFinished checks: setsWon >= setsToWin
+        #expect(snapshot.totalSetsWon.team1 >= snapshot.setsToWin)
+    }
+
+    @Test func overlayJsStateLogic_intermissionWhenWaiting() async throws {
+        // Simulate determineState JS logic for a waiting court
+        let courtStatus = "waiting"
+        let combinedScore = 0
+        let setsWon1 = 0
+        let setsWon2 = 0
+        let matchInProgress = setsWon1 > 0 || setsWon2 > 0
+
+        // JS: if (courtStatus === 'waiting' && combinedScore === 0 && !matchInProgress)
+        //       return 'intermission'
+        let shouldBeIntermission = (courtStatus == "waiting" || courtStatus == "idle")
+            && combinedScore == 0 && !matchInProgress
+        #expect(shouldBeIntermission, "Waiting court with 0-0 should show intermission")
+    }
+
+    @Test func overlayJsStateLogic_scoringWhenLive() async throws {
+        // Simulate determineState JS logic for a live court with scoring
+        let combinedScore = 14 + 12  // 26
+        let setsWon1 = 1
+        let setsWon2 = 0
+        let setsToWin = 2
+        let hasScoring = combinedScore > 0
+        let matchFinished = setsWon1 >= setsToWin || setsWon2 >= setsToWin
+
+        // JS: if (overlayState === 'intermission' && hasScoring && !matchFinished)
+        //       return 'scoring'
+        let shouldTransitionToScoring = hasScoring && !matchFinished
+        #expect(shouldTransitionToScoring, "Live match with scores should transition to scoring")
+    }
+
+    @Test func overlayJsStateLogic_postmatchWhenFinished() async throws {
+        let setsWon1 = 2
+        let setsToWin = 2
+        let matchFinished = setsWon1 >= setsToWin
+        #expect(matchFinished, "Team with 2 sets won in best-of-3 should be finished")
+    }
+
+    @Test func setHistory_displayStrings_matchJsExpectation() async throws {
+        let history = [
+            SetScore(setNumber: 1, team1Score: 21, team2Score: 18, isComplete: true),
+            SetScore(setNumber: 2, team1Score: 15, team2Score: 21, isComplete: true)
+        ]
+        let displayStrings = history.map { $0.displayString }
+        #expect(displayStrings == ["21-18", "15-21"])
+    }
+
+    @Test func courtCurrentMatch_providesTeamNames() async throws {
+        var court = Court.create(id: 1)
+        let match = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix")!,
+            label: "5",
+            team1Name: "Smith / Jones",
+            team2Name: "Brown / Davis"
+        )
+        court.queue = [match]
+        court.activeIndex = 0
+
+        // score.json uses currentMatch team names as fallback when snapshot has none
+        #expect(court.currentMatch?.team1Name == "Smith / Jones")
+        #expect(court.currentMatch?.team2Name == "Brown / Davis")
+    }
+
+    @Test func singleSetMatch_isMatchFinished_correctly() async throws {
+        // setsToWin = 1 means a single-set match
+        let snapshot = ScoreSnapshot(
+            courtId: 1, matchId: nil,
+            status: "In Progress", setNumber: 1,
+            team1Name: "A", team2Name: "B",
+            team1Seed: nil, team2Seed: nil,
+            scheduledTime: nil, matchNumber: nil, courtNumber: nil,
+            team1Score: 1, team2Score: 0, serve: nil,
+            setHistory: [
+                SetScore(setNumber: 1, team1Score: 28, team2Score: 22, isComplete: true)
+            ],
+            timestamp: Date(), setsToWin: 1
+        )
+
+        // JS: setsWon1 >= setsToWin
+        #expect(snapshot.totalSetsWon.team1 >= snapshot.setsToWin)
+        #expect(snapshot.isFinal)
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(

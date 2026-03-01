@@ -353,6 +353,9 @@ final class WebSocketHub {
                 let gameScore1 = isLiveOrFinished ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
                 let gameScore2 = isLiveOrFinished ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
 
+                // Determine effective layout
+                let effectiveLayout = court.scoreboardLayout ?? vm.appSettings.defaultScoreboardLayout
+
                 let data: [String: Any] = [
                     "team1": team1,
                     "team2": team2,
@@ -380,7 +383,9 @@ final class WebSocketHub {
                         court.nextMatch?.displayName ?? "",
                         queue: court.queue,
                         activeIndex: court.activeIndex
-                    )
+                    ),
+                    "layout": effectiveLayout,
+                    "showSocialBar": vm.appSettings.showSocialBar
                 ]
                 
                 return try Self.json(data)
@@ -817,14 +822,17 @@ body {
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
   position: absolute;
   top: 0;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 .bubble-bar.hidden-up {
-  transform: translateY(-120%);
+  transform: translateY(-120%) translateZ(0);
   opacity: 0;
   pointer-events: none;
 }
 .bubble-bar.visible {
-  transform: translateY(0);
+  transform: translateY(0) translateZ(0);
   opacity: 1;
 }
 
@@ -939,13 +947,298 @@ body {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 0.7; }
 }
+
+/* ===== LAYOUT SYSTEM ===== */
+
+/* Center layout (default) - upper third bar */
+body.layout-center #scorebug { display: flex; }
+body.layout-center #trad-board { display: none !important; }
+
+/* Traditional layouts - hide center bar, show table */
+body.layout-top-left #scorebug { display: none !important; }
+body.layout-bottom-left #scorebug { display: none !important; }
+body.layout-top-left #trad-board { display: flex !important; }
+body.layout-bottom-left #trad-board { display: flex !important; }
+/* Also hide center intermission content in trad layouts */
+body.layout-top-left #intermission-content { display: none !important; }
+body.layout-bottom-left #intermission-content { display: none !important; }
+
+/* Reposition wrapper for traditional layouts */
+body.layout-top-left {
+  align-items: flex-start !important;
+  padding-top: 0 !important;
+}
+body.layout-top-left > div:not(#stale-indicator) {
+  align-items: flex-start !important;
+  padding: 0 !important;
+  max-width: none !important;
+}
+body.layout-bottom-left {
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+body.layout-bottom-left > div:not(#stale-indicator) {
+  align-items: flex-start !important;
+  padding: 0 !important;
+  max-width: none !important;
+}
+
+/* Top-left: board fixed to corner, bubbles drop DOWN below board */
+body.layout-top-left #trad-board {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+}
+body.layout-top-left .bubble-container {
+  position: fixed;
+  left: 1rem;
+  top: calc(1rem + var(--trad-board-height, 5.5rem));
+  justify-content: center;
+  margin: 0;
+  z-index: 19;
+  height: 28px;
+  width: var(--trad-board-width, auto);
+}
+body.layout-top-left .bubble-bar {
+  top: 0;
+  max-width: calc(100% - 2px);
+  box-sizing: border-box;
+}
+body.layout-top-left .bubble-bar.hidden-up {
+  transform: translateY(-120%) translateZ(0);
+}
+body.layout-top-left .bubble-bar.visible {
+  transform: translateY(0) translateZ(0);
+}
+
+/* Bottom-left: board fixed to corner, bubbles pop UP above board */
+body.layout-bottom-left #trad-board {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+}
+body.layout-bottom-left .bubble-container {
+  position: fixed;
+  left: 1rem;
+  bottom: calc(1rem + var(--trad-board-height, 5.5rem));
+  justify-content: center;
+  margin: 0;
+  z-index: 19;
+  height: 28px;
+  width: var(--trad-board-width, auto);
+}
+/* Invert bubble direction for bottom-left: pop UP */
+body.layout-bottom-left .bubble-bar {
+  top: auto;
+  bottom: 0;
+  max-width: calc(100% - 2px);
+  box-sizing: border-box;
+}
+body.layout-bottom-left .bubble-bar.hidden-up {
+  transform: translateY(120%) translateZ(0);
+}
+body.layout-bottom-left .bubble-bar.visible {
+  transform: translateY(0) translateZ(0);
+}
+/* Invert border-radius for upward bubbles */
+body.layout-bottom-left .bubble-bar {
+  border-radius: 0.5rem 0.5rem 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
+}
+body.layout-bottom-left .status-bubble {
+  border-radius: 0.5rem 0.5rem 0 0;
+  border-bottom: none;
+  border-top: 1px solid rgba(212, 175, 55, 0.5);
+}
+
+/* Trad-layout bubble bars: compact, centered, fit to board width */
+body.layout-top-left .bubble-bar,
+body.layout-bottom-left .bubble-bar {
+  padding: 0.2rem 0.4rem !important;
+  gap: 0.25rem !important;
+  white-space: nowrap;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+  left: 0;
+  right: 0;
+}
+body.layout-top-left .bubble-bar span,
+body.layout-bottom-left .bubble-bar span {
+  letter-spacing: 0 !important;
+  font-size: inherit !important;
+}
+body.layout-top-left .bubble-bar svg,
+body.layout-bottom-left .bubble-bar svg {
+  width: 10px !important;
+  height: 10px !important;
+  flex-shrink: 0;
+}
+
+/* Layout fade transition */
+.layout-fading {
+  opacity: 0 !important;
+  transition: opacity 0.35s ease !important;
+  will-change: opacity;
+}
+
+/* GPU acceleration for overlay wrapper */
+#overlay-wrapper {
+  will-change: opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* ===== TRADITIONAL SCOREBOARD ===== */
+.trad-board {
+  display: none;
+  flex-direction: column;
+  width: auto;
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+  overflow: hidden;
+  z-index: 20;
+  position: relative;
+}
+.trad-row {
+  display: flex;
+  align-items: center;
+  height: 2.6rem;
+  padding: 0 0.5rem;
+  gap: 0;
+  position: relative;
+}
+.trad-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+}
+.trad-serve {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  margin-right: 0.25rem;
+}
+.trad-serve.active { opacity: 1; }
+.trad-seed {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(212,175,55,0.8);
+  min-width: 0;
+  text-align: center;
+  flex-shrink: 0;
+}
+.trad-seed:not(:empty) {
+  margin-right: 0.25rem;
+}
+.trad-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.025em;
+  color: rgba(255,255,255,0.95);
+  font-style: italic;
+  white-space: nowrap;
+  padding-right: 0.6rem;
+  flex-shrink: 0;
+  /* Width set by JS to equalize both rows */
+}
+.trad-sets {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
+.trad-set-cell {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 1.8rem;
+  text-align: center;
+  padding: 0 0.2rem;
+  color: rgba(255,255,255,0.4);
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+.trad-set-cell.set-winner {
+  font-weight: 800;
+  color: rgba(255,255,255,0.7);
+}
+.trad-set-cell.set-loser {
+  color: rgba(255,255,255,0.25);
+}
+.trad-current-score {
+  font-size: 1.3rem;
+  font-weight: 900;
+  background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-variant-numeric: tabular-nums;
+  font-style: italic;
+  min-width: 0;
+  text-align: center;
+  border-left: 1px solid rgba(255,255,255,0.15);
+  padding: 0 0.35rem;
+  flex-shrink: 0;
+  line-height: 2.6rem;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+.trad-trophy {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  width: 0;
+  overflow: hidden;
+  transition: width 0.5s ease, margin 0.5s ease;
+  margin-left: 0;
+}
+.trad-trophy.visible {
+  width: 22px;
+  margin-left: 0.25rem;
+}
+
+/* Confetti for traditional board */
+.trad-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 1.2s ease-in;
+  perspective: 200px;
+}
+.trad-confetti.active { opacity: 1; }
+
+/* Trophy reuse existing .trophy-icon styles */
+.trad-winner-glow {
+  background: linear-gradient(180deg, rgba(212,175,55,0.15) 0%, rgba(212,175,55,0.05) 100%) !important;
+}
+.trad-loser-dim {
+  opacity: 0.45 !important;
+}
+
+/* Traditional board intermission: hide scores, show names */
+.trad-board.trad-intermission .trad-current-score,
+.trad-board.trad-intermission .trad-sets,
+.trad-board.trad-intermission .trad-serve,
+.trad-board.trad-intermission .trad-trophy,
+.trad-board.trad-intermission .trad-confetti {
+  visibility: hidden;
+}
 </style>
 </head>
 <body style="display: flex; flex-direction: column; align-items: center; padding-top: 2rem;">
 
 <div id="stale-indicator"></div>
 
-<div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem;">
+<div id="overlay-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 900px; padding: 0 1rem;">
   <!-- Main Scoreboard -->
   <div id="scorebug" class="carbon-bar" style="width: 100%; height: 4rem; border-radius: 0.375rem; display: flex; align-items: center; box-shadow: 0 8px 30px rgb(0,0,0,0.8); position: relative; overflow: hidden; z-index: 20;">
 
@@ -1045,7 +1338,44 @@ body {
     <!-- Bottom Accent Line -->
     <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); z-index: 30;"></div>
   </div>
-  
+
+  <!-- Traditional Scoreboard (hidden by default, shown in top-left/bottom-left layouts) -->
+  <div id="trad-board" class="trad-board carbon-bar" style="display:none;">
+    <div id="trad-row1" class="trad-row">
+      <div id="trad-confetti1" class="trad-confetti confetti-container">
+        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+      </div>
+      <span id="trad-serve1" class="trad-serve"><svg width="18" height="18" viewBox="0 0 24 24" fill="#D4AF37"><circle cx="12" cy="12" r="10" fill="none" stroke="#D4AF37" stroke-width="2"/><path d="M6.5 3.5c3.5 2 5 5.5 5 8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M17.5 20.5c-3.5-2-5-5.5-5-8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M2.5 10c3 1.5 7 1.5 10 0s7-1.5 10 0" fill="none" stroke="#D4AF37" stroke-width="1.5"/></svg></span>
+      <span id="trad-seed1" class="trad-seed"></span>
+      <span id="trad-t1" class="trad-name">Team 1</span>
+      <div id="trad-sets1" class="trad-sets"></div>
+      <span id="trad-sc1" class="trad-current-score score-text">0</span>
+      <span id="trad-trophy1" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
+    </div>
+    <div class="trad-divider"></div>
+    <div id="trad-row2" class="trad-row">
+      <div id="trad-confetti2" class="trad-confetti confetti-container">
+        <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
+        <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
+        <div class="confetti-piece cf-5"></div><div class="confetti-piece cf-6"></div>
+        <div class="confetti-piece cf-7"></div><div class="confetti-piece cf-8"></div>
+        <div class="confetti-piece cf-9"></div><div class="confetti-piece cf-10"></div>
+      </div>
+      <span id="trad-serve2" class="trad-serve"><svg width="18" height="18" viewBox="0 0 24 24" fill="#D4AF37"><circle cx="12" cy="12" r="10" fill="none" stroke="#D4AF37" stroke-width="2"/><path d="M6.5 3.5c3.5 2 5 5.5 5 8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M17.5 20.5c-3.5-2-5-5.5-5-8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M2.5 10c3 1.5 7 1.5 10 0s7-1.5 10 0" fill="none" stroke="#D4AF37" stroke-width="1.5"/></svg></span>
+      <span id="trad-seed2" class="trad-seed"></span>
+      <span id="trad-t2" class="trad-name">Team 2</span>
+      <div id="trad-sets2" class="trad-sets"></div>
+      <span id="trad-sc2" class="trad-current-score score-text">0</span>
+      <span id="trad-trophy2" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
+    </div>
+    <!-- Bottom accent line -->
+    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); z-index: 30;"></div>
+  </div>
+
   <!-- Bubble Container (holds social bar OR next match bar) -->
   <div class="bubble-container">
     <!-- Social Media Bar (default visible) -->
@@ -1142,6 +1472,32 @@ const sc2El = document.getElementById('sc2');
 const setNumEl = document.getElementById('set-num');
 const staleIndicator = document.getElementById('stale-indicator');
 const connectingIndicator = document.getElementById('connecting-indicator');
+
+// Traditional scoreboard DOM refs
+const tradBoard = document.getElementById('trad-board');
+const tradT1 = document.getElementById('trad-t1');
+const tradT2 = document.getElementById('trad-t2');
+const tradSc1 = document.getElementById('trad-sc1');
+const tradSc2 = document.getElementById('trad-sc2');
+const tradSeed1 = document.getElementById('trad-seed1');
+const tradSeed2 = document.getElementById('trad-seed2');
+const tradServe1 = document.getElementById('trad-serve1');
+const tradServe2 = document.getElementById('trad-serve2');
+const tradSets1 = document.getElementById('trad-sets1');
+const tradSets2 = document.getElementById('trad-sets2');
+const tradTrophy1 = document.getElementById('trad-trophy1');
+const tradTrophy2 = document.getElementById('trad-trophy2');
+const tradRow1 = document.getElementById('trad-row1');
+const tradRow2 = document.getElementById('trad-row2');
+const tradConfetti1 = document.getElementById('trad-confetti1');
+const tradConfetti2 = document.getElementById('trad-confetti2');
+
+// Layout state
+var currentLayout = 'center';
+var layoutTransitionInProgress = false;
+var lastSetHistoryKey = '';
+var tradCelebrationActive = false;
+var socialBarEnabled = true;
 
 /* Stale data detection */
 function updateStaleState(dataJSON) {
@@ -1250,6 +1606,7 @@ function updatePips(pipsEl, setsWon, setsToWin) {
 function showNextMatchBar(nextMatchText) {
   if (animationInProgress) return;
   clearTimeout(nextMatchTimer);
+  clearTimeout(window.animSafetyTimer);
   animationInProgress = true;
 
   if (nextTeamsEl && nextMatchText) {
@@ -1264,15 +1621,25 @@ function showNextMatchBar(nextMatchText) {
 
   socialBar.classList.remove('visible');
   socialBar.classList.add('hidden-up');
+  socialBar.style.fontSize = '';
 
   setTimeout(function() {
     nextBar.classList.remove('hidden-up');
     nextBar.classList.add('visible');
+    fitBubbleToBoard(nextBar);
   }, 400);
 
   nextMatchTimer = setTimeout(function() {
     hideNextMatchBar();
   }, 17000);
+
+  // Safety: reset animationInProgress after 20s as failsafe
+  window.animSafetyTimer = setTimeout(function() {
+    if (animationInProgress) {
+      console.log('[Overlay] Animation safety timer — resetting stuck animation flag');
+      animationInProgress = false;
+    }
+  }, 20000);
 }
 
 // Persistent next match bar for postmatch - stays until transition
@@ -1301,6 +1668,7 @@ function showNextMatchBarPersistent(nextMatchText) {
   setTimeout(function() {
     nextBar.classList.remove('hidden-up');
     nextBar.classList.add('visible');
+    fitBubbleToBoard(nextBar);
   }, 400);
   
   // Mark as persistent mode
@@ -1311,11 +1679,17 @@ function showNextMatchBarPersistent(nextMatchText) {
 function hideNextMatchBar() {
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
+  nextBar.style.fontSize = '';
   window.nextBarPersistent = false;
 
   setTimeout(function() {
-    socialBar.classList.remove('hidden-up');
-    socialBar.classList.add('visible');
+    if (socialBarEnabled) {
+      socialBar.style.fontSize = '';
+      socialBar.classList.remove('hidden-up');
+      socialBar.classList.add('visible');
+      fitBubbleToBoard(socialBar);
+    }
+    clearTimeout(window.animSafetyTimer);
     animationInProgress = false;
   }, 400);
 }
@@ -1428,6 +1802,9 @@ function applyData(d) {
   } else if (celebrationActive) {
     clearCelebration();
   }
+
+  // Always update traditional board (hidden elements cost nothing)
+  applyTradData(d);
 }
 
 /* ===== MATCH CELEBRATION ===== */
@@ -1497,6 +1874,9 @@ function clearCelebration() {
   if (sc2El) sc2El.classList.remove('loser-dim');
   if (setLabel) setLabel.textContent = 'SET';
   if (setNum) setNum.style.display = '';  // Restore set number visibility
+
+  // Also clear traditional board celebration
+  clearTradCelebration();
 }
 
 /* ===== MATCH CHANGE DETECTION ===== */
@@ -1537,6 +1917,8 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   clearCelebration();
   animationInProgress = false; // Reset next-match animation state
   clearTimeout(nextMatchTimer);
+  lastSetHistoryKey = ''; // Reset set history for new match
+  lastEqualizedKey = ''; // Reset name equalization for new match
   console.log('[Overlay] Animating match change to:', abbreviateName(newTeam1), 'vs', abbreviateName(newTeam2));
   
   // Determine if new match should end in intermission or scoring
@@ -1604,7 +1986,8 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
     setTimeout(function() {
       intStatusBar.classList.remove('hidden-up');
       intStatusBar.classList.add('visible');
-      
+      fitBubbleToBoard(intStatusBar);
+
       overlayState = 'intermission';
       endTransition();
       matchFinishedAt = null;
@@ -1661,9 +2044,12 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
     
     // Phase 6 (2300ms): Complete - show social bar
     setTimeout(function() {
-      socialBar.classList.remove('hidden-up');
-      socialBar.classList.add('visible');
-      
+      if (socialBarEnabled) {
+        socialBar.classList.remove('hidden-up');
+        socialBar.classList.add('visible');
+        fitBubbleToBoard(socialBar);
+      }
+
       overlayState = 'scoring';
       endTransition();
       matchFinishedAt = null;
@@ -1720,6 +2106,7 @@ function showIntermissionImmediate(team1, team2) {
   setTimeout(function() {
     intStatusBar.classList.remove('hidden-up');
     intStatusBar.classList.add('visible');
+    fitBubbleToBoard(intStatusBar);
   }, 300);
 
   overlayState = 'intermission';
@@ -1840,6 +2227,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
   setTimeout(function() {
     intStatusBar.classList.remove('hidden-up');
     intStatusBar.classList.add('visible');
+    fitBubbleToBoard(intStatusBar);
 
     overlayState = 'intermission';
     endTransition();
@@ -1903,8 +2291,11 @@ function transitionToScoring(data) {
 
   // Phase 5 (1900-2300ms): Social bubble drops down
   setTimeout(function() {
-    socialBar.classList.remove('hidden-up');
-    socialBar.classList.add('visible');
+    if (socialBarEnabled) {
+      socialBar.classList.remove('hidden-up');
+      socialBar.classList.add('visible');
+      fitBubbleToBoard(socialBar);
+    }
 
     overlayState = 'scoring';
     endTransition();
@@ -1912,6 +2303,252 @@ function transitionToScoring(data) {
     postMatchTimer = null;
     console.log('[Overlay] Transitioned to scoring');
   }, 1900);
+}
+
+/* ===== LAYOUT MANAGEMENT ===== */
+
+function applyLayout(layout) {
+  document.body.classList.remove('layout-center', 'layout-top-left', 'layout-bottom-left');
+  document.body.classList.add('layout-' + layout);
+  currentLayout = layout;
+  // Update trad board height CSS variable for bubble positioning
+  updateTradBoardHeight();
+  console.log('[Overlay] Layout applied:', layout);
+}
+
+function updateTradBoardHeight() {
+  if (tradBoard) {
+    void tradBoard.offsetWidth; // force reflow
+    var h = tradBoard.offsetHeight;
+    var w = tradBoard.offsetWidth;
+    if (h > 0) {
+      document.documentElement.style.setProperty('--trad-board-height', h + 'px');
+    }
+    if (w > 0) {
+      document.documentElement.style.setProperty('--trad-board-width', w + 'px');
+    }
+  }
+}
+
+function applyLayoutTransition(newLayout) {
+  if (layoutTransitionInProgress || newLayout === currentLayout) return;
+  layoutTransitionInProgress = true;
+
+  var wrapper = document.getElementById('overlay-wrapper');
+
+  // Phase 1: Fade out (350ms CSS transition)
+  if (wrapper) wrapper.classList.add('layout-fading');
+
+  // Phase 2: Swap layout classes while fully faded
+  setTimeout(function() {
+    applyLayout(newLayout);
+
+    // Reset bubble bar animation state so transitions work in new layout
+    clearTimeout(window.animSafetyTimer);
+    animationInProgress = false;
+
+    // Reset font-size on all bubble bars
+    socialBar.style.fontSize = '';
+    nextBar.style.fontSize = '';
+    if (intStatusBar) intStatusBar.style.fontSize = '';
+
+    // Re-equalize trad board name widths if switching to trad layout
+    if (newLayout !== 'center') {
+      equalizeTradNameWidths(true);
+    }
+
+    // Phase 3: Allow 1 frame for layout to render, then fade back in
+    requestAnimationFrame(function() {
+      // Update trad board dimensions for bubble positioning
+      if (tradBoard && newLayout !== 'center') {
+        var w = tradBoard.offsetWidth;
+        var h = tradBoard.offsetHeight;
+        if (w > 0) document.documentElement.style.setProperty('--trad-board-width', w + 'px');
+        if (h > 0) document.documentElement.style.setProperty('--trad-board-height', h + 'px');
+      }
+
+      // Re-fit visible bubble bars for new layout
+      if (newLayout !== 'center') {
+        if (socialBar.classList.contains('visible')) fitBubbleToBoard(socialBar);
+        if (nextBar.classList.contains('visible')) fitBubbleToBoard(nextBar);
+        if (intStatusBar && intStatusBar.classList.contains('visible')) fitBubbleToBoard(intStatusBar);
+      }
+
+      // Fade back in
+      requestAnimationFrame(function() {
+        if (wrapper) wrapper.classList.remove('layout-fading');
+        layoutTransitionInProgress = false;
+        console.log('[Overlay] Layout transition complete:', newLayout);
+      });
+    });
+  }, 380);
+}
+
+/* ===== TRADITIONAL SCOREBOARD ===== */
+
+/* Shrink a bubble bar's font until its content fits the board width */
+function fitBubbleToBoard(bar) {
+  if (!bar || !tradBoard || currentLayout === 'center') return;
+  var boardW = tradBoard.offsetWidth;
+  if (boardW <= 0) return;
+  var size = 11;
+  bar.style.fontSize = size + 'px';
+  // Force reflow so scrollWidth reflects the new font-size
+  void bar.offsetWidth;
+  while (bar.scrollWidth > boardW && size > 5) {
+    size -= 0.5;
+    bar.style.fontSize = size + 'px';
+    void bar.offsetWidth; // force reflow each iteration
+  }
+}
+
+function applyTradData(d) {
+  if (!d) return;
+
+  var score1 = d.score1 || 0;
+  var score2 = d.score2 || 0;
+
+  // Team names
+  var name1 = abbreviateName(cleanName(d.team1)) || 'Team 1';
+  var name2 = abbreviateName(cleanName(d.team2)) || 'Team 2';
+  if (tradT1) tradT1.textContent = name1;
+  if (tradT2) tradT2.textContent = name2;
+
+  // Seeds
+  if (tradSeed1) tradSeed1.textContent = d.seed1 ? '(' + d.seed1 + ')' : '';
+  if (tradSeed2) tradSeed2.textContent = d.seed2 ? '(' + d.seed2 + ')' : '';
+
+  // Equalize team name widths so score divider aligns between rows
+  equalizeTradNameWidths();
+
+  // Current score with flip animation
+  if (tradSc1 && tradSc1.textContent !== String(score1)) {
+    tradSc1.textContent = score1;
+    tradSc1.classList.remove('score-flip');
+    requestAnimationFrame(function() { requestAnimationFrame(function() { tradSc1.classList.add('score-flip'); }); });
+  }
+  if (tradSc2 && tradSc2.textContent !== String(score2)) {
+    tradSc2.textContent = score2;
+    tradSc2.classList.remove('score-flip');
+    requestAnimationFrame(function() { requestAnimationFrame(function() { tradSc2.classList.add('score-flip'); }); });
+  }
+
+  // Serve indicators (reuse the same tracking as center layout)
+  if (!tradCelebrationActive) {
+    var isLeftServing = window.lastServe === 'left';
+    var isRightServing = window.lastServe === 'right';
+    if (tradServe1) tradServe1.classList.toggle('active', isLeftServing);
+    if (tradServe2) tradServe2.classList.toggle('active', isRightServing);
+  }
+
+  // Set history columns
+  rebuildSetColumns(d);
+
+  // Handle intermission state for traditional board
+  if (tradBoard) {
+    var isIntermission = overlayState === 'intermission';
+    tradBoard.classList.toggle('trad-intermission', isIntermission);
+  }
+
+  // Celebration for traditional board
+  if (isMatchFinished(d)) {
+    var setsWon1 = d.setsA || d.setsWon1 || 0;
+    var setsWon2 = d.setsB || d.setsWon2 || 0;
+    var winner = setsWon1 > setsWon2 ? 'team1' : 'team2';
+    showTradCelebration(winner);
+  } else if (tradCelebrationActive) {
+    clearTradCelebration();
+  }
+
+  // Update board dimensions for bubble positioning
+  updateTradBoardHeight();
+}
+
+var lastEqualizedKey = '';
+function equalizeTradNameWidths(force) {
+  if (!tradT1 || !tradT2) return;
+  // Build a key from current text to avoid redundant work
+  var key = tradT1.textContent + '|' + tradT2.textContent;
+  if (key === lastEqualizedKey && !force) return;
+  lastEqualizedKey = key;
+
+  // Reset widths to auto so we can measure natural sizes
+  tradT1.style.minWidth = '';
+  tradT2.style.minWidth = '';
+
+  // Force reflow and set matching widths immediately
+  void tradT1.offsetWidth;
+  var w1 = tradT1.offsetWidth;
+  var w2 = tradT2.offsetWidth;
+  var maxW = Math.max(w1, w2);
+  tradT1.style.minWidth = maxW + 'px';
+  tradT2.style.minWidth = maxW + 'px';
+}
+
+function rebuildSetColumns(d) {
+  var setHistory = d.setHistory || [];
+  // Build a key to avoid unnecessary DOM rebuilds
+  var key = setHistory.join(',');
+  if (key === lastSetHistoryKey) return;
+  lastSetHistoryKey = key;
+
+  var html1 = '';
+  var html2 = '';
+
+  for (var i = 0; i < setHistory.length; i++) {
+    var parts = setHistory[i].split('-');
+    if (parts.length < 2) continue;
+    var s1 = parseInt(parts[0], 10);
+    var s2 = parseInt(parts[1], 10);
+    // Only show completed sets (not the current in-progress set)
+    // The last entry in setHistory is the current set; previous ones are completed
+    if (i < setHistory.length - 1) {
+      var w1 = s1 > s2 ? 'set-winner' : 'set-loser';
+      var w2 = s2 > s1 ? 'set-winner' : 'set-loser';
+      html1 += '<span class="trad-set-cell ' + w1 + '">' + s1 + '</span>';
+      html2 += '<span class="trad-set-cell ' + w2 + '">' + s2 + '</span>';
+    }
+  }
+
+  if (tradSets1) tradSets1.innerHTML = html1;
+  if (tradSets2) tradSets2.innerHTML = html2;
+
+  // Board size changed — update CSS variable for bubble positioning
+  updateTradBoardHeight();
+}
+
+function showTradCelebration(winner) {
+  if (tradCelebrationActive) return;
+  tradCelebrationActive = true;
+
+  // Hide serve indicators
+  if (tradServe1) tradServe1.classList.remove('active');
+  if (tradServe2) tradServe2.classList.remove('active');
+
+  if (winner === 'team1') {
+    if (tradConfetti1) tradConfetti1.classList.add('active');
+    if (tradTrophy1) tradTrophy1.classList.add('visible');
+    if (tradRow1) tradRow1.classList.add('trad-winner-glow');
+    if (tradRow2) tradRow2.classList.add('trad-loser-dim');
+  } else {
+    if (tradConfetti2) tradConfetti2.classList.add('active');
+    if (tradTrophy2) tradTrophy2.classList.add('visible');
+    if (tradRow2) tradRow2.classList.add('trad-winner-glow');
+    if (tradRow1) tradRow1.classList.add('trad-loser-dim');
+  }
+  console.log('[Overlay] Trad celebration for', winner);
+}
+
+function clearTradCelebration() {
+  if (!tradCelebrationActive) return;
+  tradCelebrationActive = false;
+
+  if (tradConfetti1) tradConfetti1.classList.remove('active');
+  if (tradConfetti2) tradConfetti2.classList.remove('active');
+  if (tradTrophy1) tradTrophy1.classList.remove('visible');
+  if (tradTrophy2) tradTrophy2.classList.remove('visible');
+  if (tradRow1) { tradRow1.classList.remove('trad-winner-glow'); tradRow1.classList.remove('trad-loser-dim'); }
+  if (tradRow2) { tradRow2.classList.remove('trad-winner-glow'); tradRow2.classList.remove('trad-loser-dim'); }
 }
 
 // Check if match is finished based on sets won
@@ -1974,6 +2611,22 @@ async function tick() {
     // Track data freshness
     updateStaleState(JSON.stringify(d));
 
+    // Layout change detection
+    var newLayout = d.layout || 'center';
+    if (newLayout !== currentLayout && !layoutTransitionInProgress) {
+      applyLayoutTransition(newLayout);
+    }
+
+    // Social bar toggle
+    var newSocialEnabled = d.showSocialBar !== false;
+    if (newSocialEnabled !== socialBarEnabled) {
+      socialBarEnabled = newSocialEnabled;
+      if (!socialBarEnabled) {
+        socialBar.classList.remove('visible');
+        socialBar.classList.add('hidden-up');
+      }
+    }
+
     const newState = determineState(d);
 
     // First load — set up initial state based on ACTUAL DATA, not overlayState
@@ -1981,6 +2634,12 @@ async function tick() {
       firstLoad = false;
       // Initialize current match tracking
       updateCurrentMatch(d.team1 || '', d.team2 || '');
+
+      // Apply initial layout
+      applyLayout(d.layout || 'center');
+
+      // Apply social bar toggle
+      socialBarEnabled = d.showSocialBar !== false;
       
       const combinedScore = (d.score1 || 0) + (d.score2 || 0);
       const courtStatus = (d.courtStatus || '').toLowerCase();
@@ -2000,8 +2659,11 @@ async function tick() {
           scoringContent.style.pointerEvents = 'auto';
         }
         scorebug.style.width = SCORING_WIDTH;
-        socialBar.classList.remove('hidden-up');
-        socialBar.classList.add('visible');
+        if (socialBarEnabled) {
+          socialBar.classList.remove('hidden-up');
+          socialBar.classList.add('visible');
+          fitBubbleToBoard(socialBar);
+        }
         applyData(d);
         if (matchFinished) {
           matchFinishedAt = Date.now();
@@ -2014,6 +2676,7 @@ async function tick() {
       const team1 = d.team1 || '';
       const team2 = d.team2 || '';
       showIntermissionImmediate(team1, team2);
+      applyTradData(d);
       return;
     }
 
@@ -2098,6 +2761,11 @@ async function tick() {
     // Apply data to scoring overlay if in scoring or postmatch state
     if ((overlayState === 'scoring' || overlayState === 'postmatch') && !transitionInProgress) {
       applyData(d);
+    }
+
+    // Always update traditional board (even during intermission - hidden elements cost nothing)
+    if (overlayState === 'intermission' && !transitionInProgress) {
+      applyTradData(d);
     }
 
   } catch (e) {

@@ -68,10 +68,10 @@ struct ScanWorkflowView: View {
             }
         }
         .frame(
-            minWidth: 980,
+            minWidth: 960,
             idealWidth: 1380,
             maxWidth: .infinity,
-            minHeight: 700,
+            minHeight: 680,
             idealHeight: 980,
             maxHeight: .infinity
         )
@@ -359,6 +359,9 @@ struct ScanWorkflowView: View {
     private func importAndClose() {
         var matchesByOverlay: [Int: [ScannerViewModel.VBLMatch]] = [:]
 
+        let assignedCount = scanResults.filter { matchAssignments[$0.id] ?? 0 > 0 }.count
+        print("[Import] Total scan results: \(scanResults.count), assigned to overlays: \(assignedCount)")
+
         for match in scanResults {
             guard let overlayId = matchAssignments[match.id], overlayId > 0 else { continue }
             if matchesByOverlay[overlayId] == nil {
@@ -376,7 +379,9 @@ struct ScanWorkflowView: View {
                 return a.index < b.index
             }
 
+            let droppedCount = sortedMatches.filter { $0.apiURL == nil || $0.apiURL?.isEmpty == true }.count
             let matchItems = viewModel.createMatchItems(from: sortedMatches)
+            print("[Import] Overlay \(overlayId): \(sortedMatches.count) matches → \(matchItems.count) items queued, \(droppedCount) dropped (no apiURL)")
             appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
         }
 
@@ -482,46 +487,78 @@ struct ScanActionCard: View {
     let onScanComplete: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            if viewModel.isScanning {
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .scaleEffect(1.2)
+        VStack(spacing: 12) {
+            if viewModel.isScanning || !viewModel.scanLogs.isEmpty {
+                // Header: progress indicator + status + cancel
+                HStack(spacing: 8) {
+                    if viewModel.isScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
 
                     Text(viewModel.scanProgress)
                         .font(AppTypography.callout)
                         .foregroundColor(AppColors.textSecondary)
-                }
-                .padding(.vertical, 20)
-            } else {
-                Button {
-                    viewModel.startScan()
-                    Task {
-                        while viewModel.isScanning {
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    if viewModel.isScanning {
+                        Button {
+                            viewModel.cancelScan()
+                        } label: {
+                            Text("Cancel")
+                                .font(AppTypography.caption)
+                                .foregroundColor(AppColors.error)
                         }
-                        if !viewModel.scanResults.isEmpty {
-                            await MainActor.run {
-                                onScanComplete()
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Log window
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(viewModel.scanLogs) { entry in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text(entry.timeDisplay)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(AppColors.textMuted)
+
+                                    Text(entry.type.icon)
+                                        .font(.system(size: 11))
+
+                                    Text(entry.message)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(entry.type.color)
+                                        .textSelection(.enabled)
+                                }
+                                .id(entry.id)
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(minHeight: 120, maxHeight: 300)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppLayout.smallCornerRadius)
+                            .fill(AppColors.background)
+                    )
+                    .onChange(of: viewModel.scanLogs.count) { _ in
+                        if let last = viewModel.scanLogs.last {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass.circle.fill")
-                        Text("Start Scan (\(viewModel.allURLs.count) URL\(viewModel.allURLs.count == 1 ? "" : "s"))")
-                    }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppLayout.buttonCornerRadius)
-                            .fill(viewModel.canScan ? AppColors.primary : AppColors.textMuted)
-                    )
                 }
-                .buttonStyle(.plain)
-                .disabled(!viewModel.canScan)
+
+                // Re-scan button when scan is complete
+                if !viewModel.isScanning {
+                    scanButton
+                }
+            } else {
+                // No logs and not scanning - just show the button
+                scanButton
             }
 
             if let error = viewModel.errorMessage {
@@ -540,6 +577,37 @@ struct ScanActionCard: View {
             RoundedRectangle(cornerRadius: AppLayout.cornerRadius)
                 .stroke(AppColors.border, lineWidth: 1)
         )
+    }
+
+    private var scanButton: some View {
+        Button {
+            viewModel.startScan()
+            Task {
+                while viewModel.isScanning {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+                if !viewModel.scanResults.isEmpty {
+                    await MainActor.run {
+                        onScanComplete()
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass.circle.fill")
+                Text("Start Scan (\(viewModel.allURLs.count) URL\(viewModel.allURLs.count == 1 ? "" : "s"))")
+            }
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: AppLayout.buttonCornerRadius)
+                    .fill(viewModel.canScan ? AppColors.primary : AppColors.textMuted)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!viewModel.canScan)
     }
 }
 
@@ -766,16 +834,26 @@ struct CourtMappingStep: View {
 
     private func autoAssignCourts() {
         let priorityPatterns = ["stadium", "center", "main", "feature", "show"]
-        var cameraIndex = 2
+        var priorityCourts: [String] = []
+        var numberedCourts: [String] = []
 
         for courtName in sortedCourts {
             let lowerName = courtName.lowercased()
             if priorityPatterns.contains(where: { lowerName.contains($0) }) {
-                courtAssignments[courtName] = 1
+                priorityCourts.append(courtName)
             } else {
-                courtAssignments[courtName] = min(cameraIndex, AppConfig.maxCourts)
-                cameraIndex += 1
+                numberedCourts.append(courtName)
             }
+        }
+
+        for courtName in priorityCourts {
+            courtAssignments[courtName] = 1
+        }
+
+        // If no priority courts, first numbered court gets camera 1 (Core 1)
+        let startCamera = priorityCourts.isEmpty && !numberedCourts.isEmpty ? 1 : 2
+        for (index, courtName) in numberedCourts.enumerated() {
+            courtAssignments[courtName] = min(startCamera + index, AppConfig.maxCourts)
         }
     }
 
@@ -1041,7 +1119,7 @@ struct KanbanQueueStep: View {
         var priorityCourts: [String] = []
         var numberedCourts: [(name: String, number: Int)] = []
         var otherCourts: [String] = []
-        
+
         // Any matches from courts without cameras must stay in Standby.
         for match in scanResults where !liveCourts.contains(match.courtDisplay) {
             assignments[match.id] = 0
@@ -1066,14 +1144,16 @@ struct KanbanQueueStep: View {
             }
         }
 
+        // If no priority courts, first numbered court gets camera 1 (Core 1)
+        let numberedStart = priorityCourts.isEmpty && !numberedCourts.isEmpty ? 1 : 2
         for (index, court) in numberedCourts.enumerated() {
-            let overlayId = min(index + 2, AppConfig.maxCourts)
+            let overlayId = min(numberedStart + index, AppConfig.maxCourts)
             if let matches = grouped[court.name] {
                 for match in matches { assignments[match.id] = overlayId }
             }
         }
 
-        let nextStart = numberedCourts.count + 2
+        let nextStart = numberedCourts.count + numberedStart
         for (index, courtName) in otherCourts.enumerated() {
             let overlayId = min(nextStart + index, AppConfig.maxCourts)
             if let matches = grouped[courtName] {

@@ -268,6 +268,7 @@ struct Court: Identifiable, Codable, Equatable {
     var finishedAt: Date?           // When the current match finished (for hold timer)
     var lastPollTime: Date?
     var errorMessage: String?
+    var scoreboardLayout: String?   // nil = use app default; "center", "top-left", "bottom-left"
     
     // MARK: Computed Properties
     
@@ -322,7 +323,8 @@ struct Court: Identifiable, Codable, Equatable {
             liveSince: nil,
             finishedAt: nil,
             lastPollTime: nil,
-            errorMessage: nil
+            errorMessage: nil,
+            scoreboardLayout: nil
         )
     }
 }
