@@ -69,6 +69,8 @@ class ConfigStore {
         var overlayTheme: String = "dark"
         var defaultScoreboardLayout: String = "center"
         var showSocialBar: Bool = true
+        var holdScoreDuration: TimeInterval = 180    // post-match hold seconds
+        var staleMatchTimeout: TimeInterval = 900    // auto-advance after N seconds of inactivity
     }
     
     func loadSettings() -> AppSettings {

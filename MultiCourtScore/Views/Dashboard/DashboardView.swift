@@ -111,7 +111,8 @@ struct DashboardView: View {
                                             },
                                             onCopyURL: { copyOverlayURL(for: court.id) },
                                             onSetLayout: { layout in appViewModel.setScoreboardLayout(court.id, layout: layout) },
-                                            isCopied: urlCopiedCourtId == court.id
+                                            isCopied: urlCopiedCourtId == court.id,
+                                            holdScoreDuration: appViewModel.appSettings.holdScoreDuration
                                         )
                                         .frame(maxWidth: .infinity)
                                         .frame(height: cardHeight)
