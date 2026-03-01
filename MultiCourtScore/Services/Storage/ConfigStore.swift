@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Security
 
 class ConfigStore {
     private let fileManager = FileManager.default
@@ -85,26 +86,90 @@ class ConfigStore {
         try? save(settings, to: settingsURL)
     }
     
-    // MARK: - Credentials (Secure)
-    
+    // MARK: - Credentials (Keychain)
+
+    private static let keychainService = "com.multicourtscore.vbl-credentials"
+    private static let keychainAccount = "vbl-login"
+
     struct VBLCredentials: Codable {
         var username: String
         var password: String
     }
-    
+
     func loadCredentials() -> VBLCredentials? {
-        guard exists(at: credentialsURL),
-              let creds = try? load(VBLCredentials.self, from: credentialsURL) else {
-            return nil
+        // Try Keychain first
+        if let creds = loadCredentialsFromKeychain() {
+            return creds
         }
-        return creds
+        // Fall back to legacy file and migrate
+        if exists(at: credentialsURL),
+           let creds = try? load(VBLCredentials.self, from: credentialsURL) {
+            saveCredentialsToKeychain(creds)
+            try? fileManager.removeItem(at: credentialsURL)
+            return creds
+        }
+        return nil
     }
-    
+
     func saveCredentials(_ credentials: VBLCredentials) {
-        try? save(credentials, to: credentialsURL)
+        saveCredentialsToKeychain(credentials)
+        // Remove legacy file if it exists
+        if exists(at: credentialsURL) {
+            try? fileManager.removeItem(at: credentialsURL)
+        }
     }
-    
+
     func clearCredentials() {
-        try? fileManager.removeItem(at: credentialsURL)
+        clearCredentialsFromKeychain()
+        if exists(at: credentialsURL) {
+            try? fileManager.removeItem(at: credentialsURL)
+        }
+    }
+
+    // MARK: - Keychain Helpers
+
+    private func saveCredentialsToKeychain(_ creds: VBLCredentials) {
+        guard let data = try? JSONEncoder().encode(creds) else { return }
+
+        // Delete existing item first
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        // Add new item
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+            kSecValueData as String: data
+        ]
+        SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    private func loadCredentialsFromKeychain() -> VBLCredentials? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return try? JSONDecoder().decode(VBLCredentials.self, from: data)
+    }
+
+    private func clearCredentialsFromKeychain() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainAccount
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
