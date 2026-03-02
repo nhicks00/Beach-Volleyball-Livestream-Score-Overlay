@@ -53,6 +53,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var physicalCourt: String?  // VBL court name for tracking reassignments (e.g., "Court 1", "Stadium Court")
     // Match format fields
     var setsToWin: Int?          // 1, 2, or 3 (nil defaults to 2)
+    var setsToPlay: Int?         // Non-nil = "play exactly N sets" (pool play); overrides early conclusion
     var pointsPerSet: Int?       // Points to win a set (usually 21)
     var pointCap: Int?           // Point cap (e.g., 23), nil means win by 2
     var formatText: String?      // Raw format text from scraper
@@ -77,6 +78,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         courtNumber: String? = nil,
         physicalCourt: String? = nil,
         setsToWin: Int? = nil,
+        setsToPlay: Int? = nil,
         pointsPerSet: Int? = nil,
         pointCap: Int? = nil,
         formatText: String? = nil,
@@ -100,6 +102,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         self.courtNumber = courtNumber
         self.physicalCourt = physicalCourt
         self.setsToWin = setsToWin
+        self.setsToPlay = setsToPlay
         self.pointsPerSet = pointsPerSet
         self.pointCap = pointCap
         self.formatText = formatText
@@ -145,7 +148,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, apiURL, label, team1Name, team2Name, team1Seed, team2Seed
         case matchType, typeDetail, scheduledTime, startDate, matchNumber, courtNumber, physicalCourt
-        case setsToWin, pointsPerSet, pointCap, formatText
+        case setsToWin, setsToPlay, pointsPerSet, pointCap, formatText
         case team1_score, team2_score
         case divisionId, tournamentId, gameIds
     }
@@ -166,6 +169,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         courtNumber = try container.decodeIfPresent(String.self, forKey: .courtNumber)
         physicalCourt = try container.decodeIfPresent(String.self, forKey: .physicalCourt)
         setsToWin = try container.decodeIfPresent(Int.self, forKey: .setsToWin)
+        setsToPlay = try container.decodeIfPresent(Int.self, forKey: .setsToPlay)
         pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
         pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
         formatText = try container.decodeIfPresent(String.self, forKey: .formatText)

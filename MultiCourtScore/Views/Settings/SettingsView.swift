@@ -612,8 +612,6 @@ struct SettingsView: View {
 
 struct NotificationsPaneContent: View {
     @StateObject private var notificationService = NotificationService.shared
-    @State private var showTestAlert = false
-    @State private var testAlertMessage = ""
 
     var body: some View {
         ScrollView {
@@ -622,36 +620,6 @@ struct NotificationsPaneContent: View {
                 DetailSection(title: "General") {
                     Toggle("Enable Notifications", isOn: $notificationService.isEnabled)
                         .toggleStyle(.switch)
-                }
-
-                // Webhook
-                DetailSection(title: "Webhook Configuration") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Webhook URL")
-                            .font(.system(size: 11))
-                            .foregroundColor(AppColors.textMuted)
-
-                        TextField("https://hooks.zapier.com/...", text: $notificationService.webhookURL)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-
-                        Text("Use IFTTT, Zapier, or Make to receive notifications via email, SMS, or other channels.")
-                            .font(.system(size: 11))
-                            .foregroundColor(AppColors.textMuted)
-
-                        Button {
-                            Task {
-                                await notificationService.sendTestNotification()
-                                testAlertMessage = "Test notification sent!"
-                                showTestAlert = true
-                            }
-                        } label: {
-                            Label("Send Test", systemImage: "paperplane.fill")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(notificationService.webhookURL.isEmpty || !notificationService.isEnabled)
-                    }
                 }
 
                 // Event checkboxes
@@ -665,11 +633,6 @@ struct NotificationsPaneContent: View {
                 }
             }
             .padding(24)
-        }
-        .alert("Test Notification", isPresented: $showTestAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(testAlertMessage)
         }
     }
 }

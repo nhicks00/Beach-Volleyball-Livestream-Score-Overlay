@@ -331,9 +331,12 @@ def _extract_pool_matches(
 
                 # Pool match format from games
                 games = match.get('games', [])
-                sets_to_win = len(games) if games else 1
+                num_games = len(games) if games else 1
+                sets_to_win = num_games if num_games > 1 else 1
                 if sets_to_win > 1:
                     sets_to_win = (sets_to_win + 1) // 2
+                # Pool play: "play all N sets regardless of who wins"
+                sets_to_play = num_games if num_games > 1 else None
 
                 first_game = games[0] if games else {}
                 points_per_set = first_game.get('to', 21)
@@ -363,6 +366,7 @@ def _extract_pool_matches(
                     match_type=match_type,
                     type_detail=type_detail,
                     sets_to_win=sets_to_win,
+                    sets_to_play=sets_to_play,
                     points_per_set=points_per_set,
                     point_cap=point_cap,
                     format_text=format_text,
