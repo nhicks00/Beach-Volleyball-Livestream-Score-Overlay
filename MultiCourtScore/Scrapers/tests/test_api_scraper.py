@@ -265,7 +265,7 @@ class TestExtractPoolMatches:
 
     def test_extracts_pool_matches(self):
         matches, mt, td = _extract_pool_matches(self.day, self.team_lookup)
-        assert len(matches) == 1  # Only id=1217131, not id=0
+        assert len(matches) == 2  # Both started and unstarted matches
         assert mt == "Pool Play"
 
     def test_pool_match_fields(self):
@@ -278,13 +278,20 @@ class TestExtractPoolMatches:
         assert m.points_per_set == 21
         assert m.point_cap == 23
 
+    def test_unstarted_pool_match_gets_placeholder_url(self):
+        matches, _, _ = _extract_pool_matches(self.day, self.team_lookup)
+        unstarted = matches[1]
+        assert "pool-326016-2" in unstarted.api_url  # pool ID + match number
+        assert unstarted.team1 == "Team A"
+        assert unstarted.team2 == "Team B"
+
     def test_pool_id_filter(self):
         matches, _, _ = _extract_pool_matches(self.day, self.team_lookup, pool_id_filter=999)
         assert len(matches) == 0
 
     def test_pool_id_filter_match(self):
         matches, _, _ = _extract_pool_matches(self.day, self.team_lookup, pool_id_filter=326016)
-        assert len(matches) == 1
+        assert len(matches) == 2
 
 
 class TestScanViaAPI:
