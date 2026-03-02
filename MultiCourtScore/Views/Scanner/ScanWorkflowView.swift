@@ -382,7 +382,17 @@ struct ScanWorkflowView: View {
             let droppedCount = sortedMatches.filter { $0.apiURL == nil || $0.apiURL?.isEmpty == true }.count
             let matchItems = viewModel.createMatchItems(from: sortedMatches)
             print("[Import] Overlay \(overlayId): \(sortedMatches.count) matches → \(matchItems.count) items queued, \(droppedCount) dropped (no apiURL)")
-            appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
+
+            // Use merge when the court already has an active queue to avoid
+            // disrupting live polling/scoring.  Fresh (empty/idle) courts get
+            // a full replacement so activeIndex starts at 0.
+            let court = appViewModel.courts.first { $0.id == overlayId }
+            let hasActiveQueue = court.map { !$0.queue.isEmpty && $0.status != .idle } ?? false
+            if hasActiveQueue {
+                appViewModel.mergeQueue(overlayId, with: matchItems)
+            } else {
+                appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
+            }
         }
 
         closeWorkflow()
