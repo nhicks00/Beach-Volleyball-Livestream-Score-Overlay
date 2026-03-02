@@ -21,6 +21,7 @@ final class WebSocketHub {
     public private(set) var isRunning = false
     private var isStarting = false
     private var startedAt: Date?
+    public private(set) var startupError: String?
 
     private init() {}
 
@@ -71,14 +72,17 @@ final class WebSocketHub {
                         WebSocketHub.shared.isRunning = true
                         WebSocketHub.shared.isStarting = false
                         WebSocketHub.shared.startedAt = Date()
+                        WebSocketHub.shared.startupError = nil
                         print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
                     }
                 } catch {
                     print("❌ Failed to start overlay server: \(error)")
+                    let errorMessage = error.localizedDescription
                     await MainActor.run {
                         WebSocketHub.shared.isRunning = false
                         WebSocketHub.shared.isStarting = false
                         WebSocketHub.shared.app = nil
+                        WebSocketHub.shared.startupError = "Port \(port) unavailable: \(errorMessage)"
                     }
                 }
             }

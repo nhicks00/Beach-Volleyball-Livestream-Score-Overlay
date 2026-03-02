@@ -537,9 +537,16 @@ struct DashboardView: View {
                 Circle()
                     .fill(appViewModel.serverRunning ? AppColors.success : AppColors.error)
                     .frame(width: 6, height: 6)
-                Text("localhost:\(String(appViewModel.appSettings.serverPort))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(AppColors.textMuted)
+                if !appViewModel.serverRunning, let serverError = appViewModel.error {
+                    Text(serverError.localizedDescription)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.error)
+                        .lineLimit(1)
+                } else {
+                    Text("localhost:\(String(appViewModel.appSettings.serverPort))")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                }
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)

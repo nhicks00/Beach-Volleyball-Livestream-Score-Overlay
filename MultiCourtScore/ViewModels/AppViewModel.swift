@@ -69,6 +69,9 @@ final class AppViewModel: ObservableObject {
         Task {
             await webSocketHub.start(with: self, port: appSettings.serverPort)
             serverRunning = webSocketHub.isRunning
+            if let startupError = webSocketHub.startupError {
+                error = .configError(startupError)
+            }
             print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }
         startWatchdog()
@@ -137,6 +140,69 @@ final class AppViewModel: ObservableObject {
             courts[idx].activeIndex = 0
         }
         saveConfigurationNow()
+    }
+
+    /// Merge new scan results into an existing queue without disrupting active state.
+    ///
+    /// Matches are correlated by team names (since API URLs change when matches go live).
+    /// - Existing items get their URL and metadata updated in-place.
+    /// - New items (not in current queue) are appended.
+    /// - Active index, status, snapshot, polling — all preserved.
+    func mergeQueue(_ courtId: Int, with newItems: [MatchItem]) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        var queue = courts[idx].queue
+
+        let normalizedNew = newItems.map { normalizeLegacyPoolFormat($0) }
+
+        // Track which new items matched an existing queue entry (by index)
+        var consumedNewIndices = Set<Int>()
+
+        // Pass 1: Update existing items in-place
+        for qi in queue.indices {
+            let existingKey = matchKey(for: queue[qi])
+            // Find first unconsumed new item with the same key
+            if let ni = normalizedNew.indices.first(where: {
+                !consumedNewIndices.contains($0) && matchKey(for: normalizedNew[$0]) == existingKey
+            }) {
+                let updated = normalizedNew[ni]
+                queue[qi].apiURL = updated.apiURL
+                queue[qi].matchType = updated.matchType ?? queue[qi].matchType
+                queue[qi].typeDetail = updated.typeDetail ?? queue[qi].typeDetail
+                queue[qi].scheduledTime = updated.scheduledTime ?? queue[qi].scheduledTime
+                queue[qi].startDate = updated.startDate ?? queue[qi].startDate
+                queue[qi].courtNumber = updated.courtNumber ?? queue[qi].courtNumber
+                queue[qi].physicalCourt = updated.physicalCourt ?? queue[qi].physicalCourt
+                queue[qi].setsToWin = updated.setsToWin ?? queue[qi].setsToWin
+                queue[qi].setsToPlay = updated.setsToPlay ?? queue[qi].setsToPlay
+                queue[qi].pointsPerSet = updated.pointsPerSet ?? queue[qi].pointsPerSet
+                queue[qi].pointCap = updated.pointCap ?? queue[qi].pointCap
+                queue[qi].formatText = updated.formatText ?? queue[qi].formatText
+                queue[qi].divisionId = updated.divisionId ?? queue[qi].divisionId
+                queue[qi].tournamentId = updated.tournamentId ?? queue[qi].tournamentId
+                queue[qi].gameIds = updated.gameIds ?? queue[qi].gameIds
+                consumedNewIndices.insert(ni)
+            }
+        }
+
+        // Pass 2: Append any new items that didn't match existing queue entries
+        for ni in normalizedNew.indices where !consumedNewIndices.contains(ni) {
+            queue.append(normalizedNew[ni])
+        }
+
+        courts[idx].queue = queue
+        // activeIndex, status, lastSnapshot, liveSince, finishedAt — all untouched
+        saveConfigurationNow()
+        print("[Merge] Court \(courtId): updated \(consumedNewIndices.count) existing, appended \(normalizedNew.count - consumedNewIndices.count) new")
+    }
+
+    /// Generate a stable key for matching queue items across scans.
+    /// Uses team names since API URLs change when unstarted matches begin scoring.
+    private func matchKey(for item: MatchItem) -> String {
+        let t1 = (item.team1Name ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+        let t2 = (item.team2Name ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+        // Include match number to disambiguate rematches (same teams, different round)
+        let num = item.matchNumber ?? ""
+        return "\(t1)|\(t2)|\(num)"
     }
 
     func clearQueue(_ courtId: Int) {
@@ -428,11 +494,12 @@ final class AppViewModel: ObservableObject {
                     
                     // Advance if stale, or if this is startup/backlog final data, or when hold conditions are met.
                     let holdExpired = timeSinceFinish >= holdDuration
-                    // Keep post-match hold when we have evidence of live scoring.
+                    // Keep post-match hold when we have evidence of live scoring or an explicit final status.
                     let hasScoreData = snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
+                    let isFinalStatus = snapshot.status.lowercased().contains("final")
                     let shouldHoldPostMatch = matchConcluded
-                        && (observedActiveScoring[courtId] ?? false || hasScoreData)
-                        && (previousStatus == .live || previousStatus == .finished || hasScoreData)
+                        && (observedActiveScoring[courtId] ?? false || hasScoreData || isFinalStatus)
+                        && (previousStatus == .live || previousStatus == .finished || hasScoreData || isFinalStatus)
                     let nextStarted = shouldHoldPostMatch ? await nextMatchHasStarted(courts[idx].queue[nextIndex]) : true
                     let shouldAdvance = isStale || (!shouldHoldPostMatch) || holdExpired || nextStarted
                     
