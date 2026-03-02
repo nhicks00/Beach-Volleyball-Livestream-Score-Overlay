@@ -428,10 +428,11 @@ final class AppViewModel: ObservableObject {
                     
                     // Advance if stale, or if this is startup/backlog final data, or when hold conditions are met.
                     let holdExpired = timeSinceFinish >= holdDuration
-                    // Keep post-match hold only when this match was observed as actively scoring.
+                    // Keep post-match hold when we have evidence of live scoring.
+                    let hasScoreData = snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
                     let shouldHoldPostMatch = matchConcluded
-                        && (observedActiveScoring[courtId] ?? false)
-                        && (previousStatus == .live || (previousStatus == .finished && !holdExpired))
+                        && (observedActiveScoring[courtId] ?? false || hasScoreData)
+                        && (previousStatus == .live || previousStatus == .finished || hasScoreData)
                     let nextStarted = shouldHoldPostMatch ? await nextMatchHasStarted(courts[idx].queue[nextIndex]) : true
                     let shouldAdvance = isStale || (!shouldHoldPostMatch) || holdExpired || nextStarted
                     
@@ -1093,6 +1094,12 @@ final class AppViewModel: ObservableObject {
             return true
         }
 
+        // Pool play "play all N sets" mode: only concluded when all mandatory sets are complete
+        if let setsToPlay = match?.setsToPlay {
+            let completedSets = snapshot.setHistory.filter { $0.isComplete }.count
+            return completedSets >= setsToPlay
+        }
+
         let inferred = inferMatchFormat(from: match)
         let normalizedURL = match?.apiURL.absoluteString.lowercased() ?? ""
         let isPoolURL = normalizedURL.contains("bracket=false")
@@ -1710,7 +1717,14 @@ extension AppViewModel: SignalRDelegate {
         snapshot.timestamp = Date()
 
         // Determine status
-        let matchWon = setsWon1 >= inferredFormat.setsToWin || setsWon2 >= inferredFormat.setsToWin
+        let matchWon: Bool
+        if let setsToPlay = matchItem.setsToPlay {
+            // Pool play: must complete all mandatory sets
+            let completedSets = snapshot.setHistory.filter { $0.isComplete }.count
+            matchWon = completedSets >= setsToPlay
+        } else {
+            matchWon = setsWon1 >= inferredFormat.setsToWin || setsWon2 >= inferredFormat.setsToWin
+        }
         if matchWon || (winner != nil && isFinal && snapshot.setHistory.allSatisfy({ $0.isComplete || $0 == snapshot.setHistory.last })) {
             // Check if match is actually concluded (all required sets won)
             if matchWon {

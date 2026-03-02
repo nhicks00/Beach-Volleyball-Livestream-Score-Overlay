@@ -107,6 +107,7 @@ class ScannerViewModel: ObservableObject {
         let typeDetail: String?
         // Match format fields
         let setsToWin: Int?
+        let setsToPlay: Int?
         let pointsPerSet: Int?
         let pointCap: Int?
         let formatText: String?
@@ -142,7 +143,7 @@ class ScannerViewModel: ObservableObject {
             case apiURL = "api_url"
             case matchType = "match_type"
             case typeDetail = "type_detail"
-            case setsToWin, pointsPerSet, pointCap, formatText
+            case setsToWin, setsToPlay, pointsPerSet, pointCap, formatText
             case team1_score, team2_score
         }
         
@@ -161,6 +162,7 @@ class ScannerViewModel: ObservableObject {
             matchType = try container.decodeIfPresent(String.self, forKey: .matchType)
             typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
             setsToWin = try container.decodeIfPresent(Int.self, forKey: .setsToWin)
+            setsToPlay = try container.decodeIfPresent(Int.self, forKey: .setsToPlay)
             pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
             pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
             formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
@@ -851,6 +853,7 @@ class ScannerViewModel: ObservableObject {
                 courtNumber: match.court,
                 physicalCourt: match.court,  // Track physical court for reassignment
                 setsToWin: match.setsToWin,
+                setsToPlay: match.setsToPlay,
                 pointsPerSet: match.pointsPerSet,
                 pointCap: match.pointCap,
                 formatText: match.formatText,

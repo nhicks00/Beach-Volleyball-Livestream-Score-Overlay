@@ -275,7 +275,7 @@ struct CourtTests {
     @Test func create_setsDefaults() async throws {
         let court = Court.create(id: 3)
         #expect(court.id == 3)
-        #expect(court.name == "Overlay 3")
+        #expect(court.name == "Mevo 3")
         #expect(court.queue.isEmpty)
         #expect(court.activeIndex == nil)
         #expect(court.status == .idle)

@@ -57,7 +57,7 @@ class TestVBLMatch:
         expected_keys = {
             'index', 'match_number', 'team1', 'team2', 'team1_seed', 'team2_seed',
             'court', 'startTime', 'startDate', 'api_url', 'match_type', 'type_detail',
-            'setsToWin', 'pointsPerSet', 'pointCap', 'formatText',
+            'setsToWin', 'setsToPlay', 'pointsPerSet', 'pointCap', 'formatText',
             'team1_score', 'team2_score'
         }
         assert set(d.keys()) == expected_keys

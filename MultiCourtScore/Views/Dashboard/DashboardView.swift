@@ -283,20 +283,22 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 Button { appViewModel.startAllPolling() } label: {
                     Label("Start All", systemImage: "play.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.success)
 
                 Button { appViewModel.stopAllPolling() } label: {
                     Label("Stop All", systemImage: "stop.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.error)
 
                 Divider()
-                    .frame(height: 20)
+                    .frame(height: 24)
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -305,18 +307,20 @@ struct DashboardView: View {
                     }
                 } label: {
                     Label("Scan VBL", systemImage: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.primary)
 
                 Button(role: .destructive) {
                     showClearAllConfirmation = true
                 } label: {
                     Label("Clear All", systemImage: "trash")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -325,14 +329,15 @@ struct DashboardView: View {
                     }
                 } label: {
                     Image(systemName: "gear")
-                        .font(.system(size: 14))
+                        .font(.system(size: 16))
                 }
                 .buttonStyle(.borderless)
                 .foregroundColor(AppColors.textSecondary)
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+        .frame(minHeight: AppLayout.toolbarHeight)
         .background(AppColors.toolbarBackground)
         .overlay(
             Divider().overlay(AppColors.border),
@@ -350,24 +355,26 @@ struct DashboardView: View {
                     .minimumScaleFactor(0.85)
 
                 Spacer(minLength: 8)
-                
+
                 HStack(spacing: 6) {
                     Button { appViewModel.startAllPolling() } label: {
                         Image(systemName: "play.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.success)
                     .help("Start All")
-                    
+
                     Button { appViewModel.stopAllPolling() } label: {
                         Image(systemName: "stop.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.error)
                     .help("Stop All")
-                    
+
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             showSettingsModal = false
@@ -375,21 +382,23 @@ struct DashboardView: View {
                         }
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.primary)
                     .help("Scan VBL")
-                    
+
                     Button(role: .destructive) {
                         showClearAllConfirmation = true
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .help("Clear All")
-                    
+
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             showScannerModal = false
@@ -397,14 +406,15 @@ struct DashboardView: View {
                         }
                     } label: {
                         Image(systemName: "gear")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .help("Settings")
                 }
             }
             .padding(.horizontal, AppLayout.contentPadding)
-            
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     Picker("View", selection: $selectedTab) {
@@ -414,7 +424,7 @@ struct DashboardView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 220)
-                    
+
                     if selectedTab == .courts {
                         filterPicker
                     }
@@ -422,7 +432,8 @@ struct DashboardView: View {
                 .padding(.horizontal, AppLayout.contentPadding)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+        .frame(minHeight: AppLayout.toolbarHeight)
         .background(AppColors.toolbarBackground)
         .overlay(
             Divider().overlay(AppColors.border),

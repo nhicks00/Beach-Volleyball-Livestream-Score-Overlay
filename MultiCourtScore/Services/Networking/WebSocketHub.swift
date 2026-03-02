@@ -642,13 +642,11 @@ final class WebSocketHub {
   animation: status-pulse 2.5s ease-in-out infinite;
 }
 @keyframes status-pulse {
-  0%, 100% { 
+  0%, 100% {
     box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 8px rgba(212,175,55,0.2);
-    transform: scale(1);
   }
-  50% { 
-    box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 15px rgba(212,175,55,0.4);
-    transform: scale(1.02);
+  50% {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 20px rgba(212,175,55,0.5);
   }
 }
 .bubble-bar {
@@ -823,17 +821,18 @@ body {
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
   position: absolute;
   top: 0;
+  left: 50%;
   will-change: transform, opacity;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 .bubble-bar.hidden-up {
-  transform: translateY(-120%) translateZ(0);
+  transform: translateX(-50%) translateY(-120%) translateZ(0);
   opacity: 0;
   pointer-events: none;
 }
 .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
   opacity: 1;
 }
 
@@ -933,6 +932,7 @@ body {
   pointer-events: none;
   transition: opacity 0.5s ease;
   z-index: 50;
+  background: var(--bg-dark, rgba(18,18,18,0.95));
 }
 #connecting-indicator.visible {
   opacity: 1;
@@ -1004,14 +1004,15 @@ body.layout-top-left .bubble-container {
 }
 body.layout-top-left .bubble-bar {
   top: 0;
+  left: 50%;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
 }
 body.layout-top-left .bubble-bar.hidden-up {
-  transform: translateY(-120%) translateZ(0);
+  transform: translateX(-50%) translateY(-120%) translateZ(0);
 }
 body.layout-top-left .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
 }
 
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
@@ -1034,14 +1035,15 @@ body.layout-bottom-left .bubble-container {
 body.layout-bottom-left .bubble-bar {
   top: auto;
   bottom: 0;
+  left: 50%;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
 }
 body.layout-bottom-left .bubble-bar.hidden-up {
-  transform: translateY(120%) translateZ(0);
+  transform: translateX(-50%) translateY(120%) translateZ(0);
 }
 body.layout-bottom-left .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
 }
 /* Invert border-radius for upward bubbles */
 body.layout-bottom-left .bubble-bar {
@@ -1426,6 +1428,7 @@ var celebrationActive = false;
 // Stale data tracking
 var lastDataChangeTime = Date.now();
 var lastDataJSON = '';
+var lastData = null;
 var consecutiveFetchErrors = 0;
 var staleIndicatorState = 'fresh'; // 'fresh' | 'stale' | 'lost'
 
@@ -1524,6 +1527,7 @@ function onFetchError() {
   consecutiveFetchErrors++;
   if (consecutiveFetchErrors >= 5) {
     connectingIndicator.classList.add('visible');
+    scoringContent.style.opacity = '0';
   }
   var elapsed = (Date.now() - lastDataChangeTime) / 1000;
   if (elapsed >= 60 && staleIndicatorState !== 'lost') {
@@ -1541,6 +1545,10 @@ function applyStaleIndicator() {
     staleIndicator.textContent = '';
     scorebug.classList.remove('stale-border');
     connectingIndicator.classList.remove('visible');
+    // Restore scoring content visibility after connection recovery
+    if (scoringContent && overlayState !== 'intermission' && overlayState !== 'postmatch') {
+      scoringContent.style.opacity = '1';
+    }
   } else if (staleIndicatorState === 'stale') {
     staleIndicator.className = 'stale';
     staleIndicator.textContent = '';
@@ -1698,6 +1706,7 @@ function hideNextMatchBar() {
 /* Main score update */
 function applyData(d) {
   if (!d) return;
+  lastData = d;
 
   // Track current match number for "this match" substitution
   if (d.matchNumber) currentMatchNumber = String(d.matchNumber);
@@ -2352,6 +2361,14 @@ function applyLayoutTransition(newLayout) {
     socialBar.style.fontSize = '';
     nextBar.style.fontSize = '';
     if (intStatusBar) intStatusBar.style.fontSize = '';
+
+    // Ensure scoring content doesn't bleed through during intermission/postmatch
+    if (overlayState === 'intermission' || overlayState === 'postmatch') {
+      if (scoringContent) scoringContent.style.opacity = '0';
+    }
+
+    // Force refresh team names in all containers so no stale names remain
+    if (lastData) applyData(lastData);
 
     // Re-equalize trad board name widths if switching to trad layout
     if (newLayout !== 'center') {
