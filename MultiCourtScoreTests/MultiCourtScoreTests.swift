@@ -898,6 +898,59 @@ struct QueueMergeTests {
         #expect(savedCourt.queue[0].apiURL == queuedMatch.apiURL)
         #expect(savedCourt.queue[0].matchNumber == "5")
     }
+
+    @Test func replaceQueue_normalizesLegacyPoolMatchesWithoutExplicitFormatText() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let legacyPoolMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=false")!,
+            team1Name: "Alice Smith / Beth Jones",
+            team2Name: "Cara Diaz / Dana Reed",
+            matchNumber: "14"
+        )
+
+        viewModel.replaceQueue(1, with: [legacyPoolMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        let normalized = try #require(court.queue.first)
+        #expect(normalized.setsToWin == 1)
+        #expect(normalized.pointsPerSet == 21)
+        #expect(normalized.pointCap == 23)
+    }
+
+    @Test func replaceQueue_preservesExplicitFormatsForBracketAndPoolMatches() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let bracketMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=true")!,
+            team1Name: "Alice Smith / Beth Jones",
+            team2Name: "Cara Diaz / Dana Reed",
+            matchNumber: "21"
+        )
+        let explicitPoolMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=false")!,
+            team1Name: "Eva Long / Finn West",
+            team2Name: "Gina Shaw / Hale Young",
+            matchNumber: "22",
+            setsToWin: 1,
+            pointsPerSet: 25,
+            pointCap: 27,
+            formatText: "1 game to 25, cap 27"
+        )
+
+        viewModel.replaceQueue(1, with: [bracketMatch, explicitPoolMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue[0].setsToWin == nil)
+        #expect(court.queue[0].pointsPerSet == nil)
+        #expect(court.queue[0].pointCap == nil)
+        #expect(court.queue[1].formatText == "1 game to 25, cap 27")
+        #expect(court.queue[1].setsToWin == 1)
+        #expect(court.queue[1].pointsPerSet == 25)
+        #expect(court.queue[1].pointCap == 27)
+    }
 }
 
 @MainActor
