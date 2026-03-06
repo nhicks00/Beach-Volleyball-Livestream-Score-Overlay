@@ -7,9 +7,15 @@
 
 import Foundation
 
+@MainActor
+protocol NotificationSending: AnyObject {
+    func sendCourtChangeAlert(_ event: CourtChangeEvent) async
+    func sendMatchCompleteAlert(matchLabel: String, winner: String, cameraId: Int) async
+}
+
 /// Service for sending notifications about critical events
 @MainActor
-class NotificationService: ObservableObject {
+class NotificationService: ObservableObject, NotificationSending {
     static let shared = NotificationService()
     
     // MARK: - Settings

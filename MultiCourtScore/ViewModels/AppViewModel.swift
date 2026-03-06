@@ -29,6 +29,7 @@ final class AppViewModel: ObservableObject {
     private let configStore: ConfigStore
     private let apiClient: APIClient
     private let scoreCache: ScoreCache
+    private let notificationService: NotificationSending
     private let runtimeMode: RuntimeMode
     private var signalRClient: VBLSignalRClient?
     
@@ -68,6 +69,7 @@ final class AppViewModel: ObservableObject {
         self.configStore = ConfigStore()
         self.apiClient = APIClient()
         self.scoreCache = ScoreCache(apiClient: apiClient)
+        self.notificationService = NotificationService.shared
         self.appSettings = configStore.loadSettings()
 
         loadConfiguration()
@@ -81,13 +83,15 @@ final class AppViewModel: ObservableObject {
         runtimeMode: RuntimeMode,
         webSocketHub: WebSocketHub,
         configStore: ConfigStore,
-        apiClient: APIClient
+        apiClient: APIClient,
+        notificationService: NotificationSending = NotificationService.shared
     ) {
         self.runtimeMode = runtimeMode
         self.webSocketHub = webSocketHub
         self.configStore = configStore
         self.apiClient = apiClient
         self.scoreCache = ScoreCache(apiClient: apiClient)
+        self.notificationService = notificationService
         self.appSettings = configStore.loadSettings()
         
         loadConfiguration()
@@ -390,6 +394,21 @@ final class AppViewModel: ObservableObject {
 
         await advanceToFirstPlayableMatchIfNeeded(courtId: courtId)
         await pollOnce(courtId)
+    }
+
+    /// Deterministic court-reassignment hook used by tests.
+    func runCourtChangeForTesting(matchId: UUID, fromCourt: Int, toCourt: Int) async {
+        guard let fromIdx = courtIndex(for: fromCourt),
+              let match = courts[fromIdx].queue.first(where: { $0.id == matchId }) else {
+            return
+        }
+
+        await processCourtChange((
+            matchId: matchId,
+            fromCourt: fromCourt,
+            toCourt: toCourt,
+            match: match
+        ))
     }
 
     // MARK: - Navigation
@@ -1092,7 +1111,7 @@ final class AppViewModel: ObservableObject {
             timestamp: Date()
         )
         
-        await NotificationService.shared.sendCourtChangeAlert(event)
+        await notificationService.sendCourtChangeAlert(event)
     }
     
     /// Compare two matches for ordering: returns true if match1 should come before match2
