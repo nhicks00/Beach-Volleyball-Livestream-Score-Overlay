@@ -1249,6 +1249,99 @@ struct CourtReassignmentTests {
 
 @MainActor
 @Suite(.serialized)
+struct PollingFailureModeTests {
+
+    @Test func runImmediatePollCycle_treatsMalformedJSONAsWaitingInsteadOfCrashing() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/malformed-json",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+
+        StubURLProtocol.registerData(Data("not-json".utf8), for: match.apiURL)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Waiting")
+        #expect(snapshot.team1Score == 0)
+        #expect(snapshot.team2Score == 0)
+    }
+
+    @Test func runImmediatePollCycle_marksScoreOnlyPayloadAsLiveEvenWithoutStatusString() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/score-only",
+            team1: "Fallback Team One",
+            team2: "Fallback Team Two",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            [
+                "team1_text": "Live Team One",
+                "team2_text": "Live Team Two",
+                "score": [
+                    "home": 5,
+                    "away": 3
+                ]
+            ],
+            for: match.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.team1Name == "Live Team One")
+        #expect(snapshot.team2Name == "Live Team Two")
+        #expect(snapshot.setHistory.last?.team1Score == 5)
+        #expect(snapshot.setHistory.last?.team2Score == 3)
+    }
+
+    @Test func runImmediatePollCycle_surfacesTransportFailureWithoutChangingQueuePosition() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/network-miss",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3"
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let errorMessage = try #require(court.errorMessage)
+        #expect(!errorMessage.isEmpty)
+        #expect(court.lastSnapshot == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
@@ -1497,6 +1590,12 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
 
     static func registerJSON(_ json: [String: Any], for url: URL, statusCode: Int = 200) {
         let data = (try? JSONSerialization.data(withJSONObject: json, options: [])) ?? Data()
+        lock.lock()
+        responses[url] = (statusCode, data)
+        lock.unlock()
+    }
+
+    static func registerData(_ data: Data, for url: URL, statusCode: Int = 200) {
         lock.lock()
         responses[url] = (statusCode, data)
         lock.unlock()
