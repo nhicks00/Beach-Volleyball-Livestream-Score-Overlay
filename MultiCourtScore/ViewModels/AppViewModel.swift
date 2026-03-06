@@ -411,6 +411,31 @@ final class AppViewModel: ObservableObject {
         ))
     }
 
+    /// Test-only cache reset so multi-step polling scenarios can swap fixtures deterministically.
+    func clearScoreCacheForTesting() async {
+        await scoreCache.clearAll()
+    }
+
+    /// Test-only hook to drive the shared snapshot transition path directly.
+    func applySnapshotForTesting(
+        courtId: Int,
+        snapshot: ScoreSnapshot,
+        allowStaleAdvance: Bool = false
+    ) async -> Bool {
+        guard let idx = courtIndex(for: courtId),
+              let activeIdx = courts[idx].activeIndex,
+              activeIdx < courts[idx].queue.count else {
+            return false
+        }
+
+        return await applySnapshotUpdate(
+            courtId: courtId,
+            snapshot: snapshot,
+            matchItem: courts[idx].queue[activeIdx],
+            allowStaleAdvance: allowStaleAdvance
+        )
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
