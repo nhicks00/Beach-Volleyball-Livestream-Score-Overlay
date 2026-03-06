@@ -900,6 +900,63 @@ struct QueueMergeTests {
     }
 }
 
+@MainActor
+@Suite(.serialized)
+struct OverlayServerLifecycleTests {
+
+    @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+        defer { close(lockedSocket) }
+
+        viewModel.appSettings.serverPort = occupiedPort
+        viewModel.startServices()
+
+        let didSurfaceError = await waitUntil {
+            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+        }
+
+        #expect(didSurfaceError)
+        #expect(!viewModel.serverRunning)
+        let configError = try #require(configErrorMessage(from: viewModel.error))
+        #expect(configError.contains("Port \(occupiedPort) unavailable"))
+
+        viewModel.stopServices()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    @Test func start_servesHealthEndpointOnFreePort() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let freePort = try reserveFreePort()
+        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+
+        #expect(WebSocketHub.shared.isRunning)
+        #expect(WebSocketHub.shared.startupError == nil)
+
+        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/health"))
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        #expect(httpResponse.statusCode == 200)
+
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["status"] as? String == "ok")
+
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        #expect(!WebSocketHub.shared.isRunning)
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
@@ -1040,6 +1097,81 @@ private func makeMatchItem(
         pointCap: pointCap,
         gameIds: gameIds
     )
+}
+
+private func configErrorMessage(from error: AppError?) -> String? {
+    guard case let .configError(message)? = error else { return nil }
+    return message
+}
+
+private func reserveFreePort() throws -> Int {
+    let (socket, port) = try reserveListeningSocket()
+    close(socket)
+    return port
+}
+
+private func reserveListeningSocket() throws -> (Int32, Int) {
+    let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
+    guard socketDescriptor >= 0 else {
+        throw POSIXError(.EIO)
+    }
+
+    var reuseAddr: Int32 = 1
+    setsockopt(socketDescriptor, SOL_SOCKET, SO_REUSEADDR, &reuseAddr, socklen_t(MemoryLayout<Int32>.size))
+
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.stride)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = in_port_t(0).bigEndian
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+
+    let bindResult = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            bind(socketDescriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.stride))
+        }
+    }
+    guard bindResult == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    guard listen(socketDescriptor, SOMAXCONN) == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    var boundAddress = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.stride)
+    let nameResult = withUnsafeMutablePointer(to: &boundAddress) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(socketDescriptor, $0, &length)
+        }
+    }
+    guard nameResult == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    return (socketDescriptor, Int(UInt16(bigEndian: boundAddress.sin_port)))
+}
+
+@MainActor
+private func waitUntil(
+    timeout: TimeInterval = 3.0,
+    pollIntervalNanoseconds: UInt64 = 50_000_000,
+    condition: @escaping @MainActor () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    }
+    return condition()
 }
 
 private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: Any] {
