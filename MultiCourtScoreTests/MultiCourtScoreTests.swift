@@ -1345,6 +1345,125 @@ struct QueueConclusionTimingTests {
 
 @MainActor
 @Suite(.serialized)
+struct SignalRSubscriptionTests {
+
+    @Test func signalRDidConnect_subscribesUniquePairsAcrossPollingCourtsOnly() async throws {
+        let recordingClient = RecordingSignalRClient()
+        let credentials = ConfigStore.VBLCredentials(username: "tester@example.com", password: "secret")
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            signalRCredentialsProvider: { credentials },
+            signalRClientFactory: { _ in recordingClient }
+        )
+        defer { cleanup() }
+
+        let sharedActiveMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-shared-active",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let sharedQueuedMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-shared-queued",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let secondCourtSharedMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-second-shared",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "3",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let distinctPollingMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-distinct",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "4",
+            tournamentId: 200,
+            divisionId: 20
+        )
+        let idleCourtMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-idle",
+            team1: "Quinn Ash / Rory Blue",
+            team2: "Sage Cove / Tali Dawn",
+            matchNumber: "5",
+            tournamentId: 300,
+            divisionId: 30
+        )
+
+        viewModel.replaceQueue(1, with: [sharedActiveMatch, sharedQueuedMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [secondCourtSharedMatch, distinctPollingMatch], startIndex: 0)
+        viewModel.replaceQueue(3, with: [idleCourtMatch], startIndex: 0)
+
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        _ = await viewModel.applySnapshotForTesting(courtId: 2, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+
+        viewModel.setSignalREnabled(true)
+        #expect(await waitUntilAsync { (await recordingClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await recordingClient.subscriptions()).count == 2 })
+
+        let subscriptions = await recordingClient.subscriptions()
+        #expect(subscriptions.count == 2)
+        #expect(Set(subscriptions.map { "\($0.tournamentId)-\($0.divisionId)" }) == Set(["100-10", "200-20"]))
+    }
+
+    @Test func reconnectSignalRIfNeeded_disconnectsOldClientAndResubscribesWithReplacement() async throws {
+        let firstClient = RecordingSignalRClient()
+        let secondClient = RecordingSignalRClient()
+        let credentials = ConfigStore.VBLCredentials(username: "tester@example.com", password: "secret")
+        var factoryBuildCount = 0
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            signalRCredentialsProvider: { credentials },
+            signalRClientFactory: { _ in
+                defer { factoryBuildCount += 1 }
+                return factoryBuildCount == 0 ? firstClient : secondClient
+            }
+        )
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/signalr-reconnect",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "8",
+            tournamentId: 400,
+            divisionId: 40
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+
+        viewModel.setSignalREnabled(true)
+        #expect(await waitUntilAsync { (await firstClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await firstClient.subscriptions()).count == 1 })
+
+        viewModel.reconnectSignalRIfNeeded()
+
+        #expect(await waitUntilAsync { (await firstClient.disconnectCount()) == 1 })
+        #expect(await waitUntilAsync { (await secondClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await secondClient.subscriptions()).count == 1 })
+
+        let firstSubscriptions = await firstClient.subscriptions()
+        let secondSubscriptions = await secondClient.subscriptions()
+        #expect(firstSubscriptions.map { "\($0.tournamentId)-\($0.divisionId)" } == ["400-40"])
+        #expect(secondSubscriptions.map { "\($0.tournamentId)-\($0.divisionId)" } == ["400-40"])
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct CourtReassignmentTests {
 
     @Test func runCourtChangeForTesting_movesLiveMatchBehindTargetLiveMatchAndResetsSourceCourt() async throws {
@@ -1743,7 +1862,9 @@ private func makeLegacyHydrateJSON() -> [String: Any] {
 @MainActor
 private func makeIsolatedAppViewModel(
     apiClient: APIClient = APIClient(),
-    notificationService: NotificationSending? = nil
+    notificationService: NotificationSending? = nil,
+    signalRCredentialsProvider: (() -> ConfigStore.VBLCredentials?)? = nil,
+    signalRClientFactory: ((any SignalRDelegate) -> any SignalRClienting)? = nil
 ) -> (AppViewModel, ConfigStore, () -> Void) {
     let tempRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("MultiCourtScoreTests-\(UUID().uuidString)", isDirectory: true)
@@ -1759,7 +1880,9 @@ private func makeIsolatedAppViewModel(
         webSocketHub: .shared,
         configStore: configStore,
         apiClient: apiClient,
-        notificationService: resolvedNotificationService
+        notificationService: resolvedNotificationService,
+        signalRCredentialsProvider: signalRCredentialsProvider,
+        signalRClientFactory: signalRClientFactory
     )
     return (viewModel, configStore, cleanup)
 }
@@ -1774,7 +1897,9 @@ private func makeMatchItem(
     scheduledTime: String? = nil,
     setsToWin: Int? = nil,
     pointCap: Int? = nil,
-    gameIds: [Int]? = nil
+    gameIds: [Int]? = nil,
+    tournamentId: Int? = nil,
+    divisionId: Int? = nil
 ) -> MatchItem {
     MatchItem(
         apiURL: URL(string: url)!,
@@ -1786,6 +1911,8 @@ private func makeMatchItem(
         physicalCourt: physicalCourt,
         setsToWin: setsToWin,
         pointCap: pointCap,
+        divisionId: divisionId,
+        tournamentId: tournamentId,
         gameIds: gameIds
     )
 }
@@ -1897,6 +2024,36 @@ private final class RecordingNotificationService: NotificationSending {
     }
 }
 
+actor RecordingSignalRClient: SignalRClienting {
+    private var recordedConnectCalls: [ConfigStore.VBLCredentials] = []
+    private var recordedSubscriptions: [(tournamentId: Int, divisionId: Int)] = []
+    private var recordedDisconnectCount = 0
+
+    func connect(credentials: ConfigStore.VBLCredentials) {
+        recordedConnectCalls.append(credentials)
+    }
+
+    func disconnect() {
+        recordedDisconnectCount += 1
+    }
+
+    func subscribeToTournament(tournamentId: Int, divisionId: Int) async {
+        recordedSubscriptions.append((tournamentId, divisionId))
+    }
+
+    func connectCalls() -> [ConfigStore.VBLCredentials] {
+        recordedConnectCalls
+    }
+
+    func subscriptions() -> [(tournamentId: Int, divisionId: Int)] {
+        recordedSubscriptions
+    }
+
+    func disconnectCount() -> Int {
+        recordedDisconnectCount
+    }
+}
+
 private func reserveListeningSocket() throws -> (Int32, Int) {
     let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
     guard socketDescriptor >= 0 else {
@@ -1959,6 +2116,21 @@ private func waitUntil(
         try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
     }
     return condition()
+}
+
+private func waitUntilAsync(
+    timeout: TimeInterval = 3.0,
+    pollIntervalNanoseconds: UInt64 = 50_000_000,
+    condition: @escaping () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    }
+    return await condition()
 }
 
 private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: Any] {

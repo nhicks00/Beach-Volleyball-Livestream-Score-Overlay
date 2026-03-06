@@ -30,8 +30,10 @@ final class AppViewModel: ObservableObject {
     private let apiClient: APIClient
     private let scoreCache: ScoreCache
     private let notificationService: NotificationSending
+    private let signalRCredentialsProvider: () -> ConfigStore.VBLCredentials?
+    private let signalRClientFactory: (any SignalRDelegate) -> any SignalRClienting
     private let runtimeMode: RuntimeMode
-    private var signalRClient: VBLSignalRClient?
+    private var signalRClient: (any SignalRClienting)?
     
     // MARK: - Private State
     private var pollingTimers: [Int: Timer] = [:]
@@ -64,12 +66,15 @@ final class AppViewModel: ObservableObject {
     // MARK: - Initialization
     
     init() {
+        let configStore = ConfigStore()
         self.runtimeMode = Self.detectRuntimeMode()
         self.webSocketHub = .shared
-        self.configStore = ConfigStore()
+        self.configStore = configStore
         self.apiClient = APIClient()
         self.scoreCache = ScoreCache(apiClient: apiClient)
         self.notificationService = NotificationService.shared
+        self.signalRCredentialsProvider = { configStore.loadCredentials() }
+        self.signalRClientFactory = { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
 
         loadConfiguration()
@@ -84,7 +89,9 @@ final class AppViewModel: ObservableObject {
         webSocketHub: WebSocketHub,
         configStore: ConfigStore,
         apiClient: APIClient,
-        notificationService: NotificationSending = NotificationService.shared
+        notificationService: NotificationSending = NotificationService.shared,
+        signalRCredentialsProvider: (() -> ConfigStore.VBLCredentials?)? = nil,
+        signalRClientFactory: ((any SignalRDelegate) -> any SignalRClienting)? = nil
     ) {
         self.runtimeMode = runtimeMode
         self.webSocketHub = webSocketHub
@@ -92,6 +99,8 @@ final class AppViewModel: ObservableObject {
         self.apiClient = apiClient
         self.scoreCache = ScoreCache(apiClient: apiClient)
         self.notificationService = notificationService
+        self.signalRCredentialsProvider = signalRCredentialsProvider ?? { configStore.loadCredentials() }
+        self.signalRClientFactory = signalRClientFactory ?? { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
         
         loadConfiguration()
@@ -1673,11 +1682,11 @@ final class AppViewModel: ObservableObject {
 
     private func startSignalR() {
         guard signalRClient == nil else { return }
-        guard let credentials = configStore.loadCredentials() else {
+        guard let credentials = signalRCredentialsProvider() else {
             signalRStatus = .noCredentials
             return
         }
-        let client = VBLSignalRClient(delegate: self)
+        let client = signalRClientFactory(self)
         signalRClient = client
         Task {
             await client.connect(credentials: credentials)
