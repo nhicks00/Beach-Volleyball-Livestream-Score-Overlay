@@ -734,8 +734,8 @@ final class AppViewModel: ObservableObject {
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
 
                 // Build team lookup from hydrate response
-                let teamLookup = buildTeamLookup(from: json)
-                let gameIdLookup = buildGameIdLookup(from: json)
+                let teamLookup = Self.buildTeamLookup(from: json)
+                let gameIdLookup = Self.buildGameIdLookup(from: json)
 
                 guard !teamLookup.isEmpty || !gameIdLookup.isEmpty else { continue }
 
@@ -779,35 +779,15 @@ final class AppViewModel: ObservableObject {
 
     /// Build a lookup of matchIdString → [gameId] from hydrate JSON.
     /// Hydrate structure: brackets[].matches[].games[].id and pools[].matches[].games[].id
-    private func buildGameIdLookup(from json: [String: Any]) -> [String: [Int]] {
+    static func buildGameIdLookup(from json: [String: Any]) -> [String: [Int]] {
         var lookup: [String: [Int]] = [:]
 
-        func extractGames(from matches: [[String: Any]]) {
-            for match in matches {
-                guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
-                if let games = match["games"] as? [[String: Any]] {
-                    let gameIds = games.compactMap { $0["id"] as? Int }.filter { $0 > 0 }
-                    if !gameIds.isEmpty {
-                        lookup[String(matchId)] = gameIds
-                    }
-                }
-            }
-        }
-
-        // Bracket matches
-        if let brackets = json["brackets"] as? [[String: Any]] {
-            for bracket in brackets {
-                if let matches = bracket["matches"] as? [[String: Any]] {
-                    extractGames(from: matches)
-                }
-            }
-        }
-
-        // Pool matches
-        if let pools = json["pools"] as? [[String: Any]] {
-            for pool in pools {
-                if let matches = pool["matches"] as? [[String: Any]] {
-                    extractGames(from: matches)
+        for match in extractHydrateMatches(from: json) {
+            guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
+            if let games = match["games"] as? [[String: Any]] {
+                let gameIds = games.compactMap { $0["id"] as? Int }.filter { $0 > 0 }
+                if !gameIds.isEmpty {
+                    lookup[String(matchId)] = gameIds
                 }
             }
         }
@@ -832,7 +812,7 @@ final class AppViewModel: ObservableObject {
     }
 
     /// Build a lookup of matchId → (team1, team2) from hydrate JSON
-    private func buildTeamLookup(from json: [String: Any]) -> [String: (team1: String?, team2: String?)] {
+    static func buildTeamLookup(from json: [String: Any]) -> [String: (team1: String?, team2: String?)] {
         var lookup: [String: (team1: String?, team2: String?)] = [:]
 
         // Parse teams array
@@ -853,43 +833,86 @@ final class AppViewModel: ObservableObject {
             }
         }
 
-        // Parse bracket matches
-        if let brackets = json["brackets"] as? [[String: Any]] {
-            for bracket in brackets {
-                if let matches = bracket["matches"] as? [[String: Any]] {
-                    for match in matches {
-                        guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
-                        let homeId = match["homeTeamId"] as? Int
-                        let awayId = match["awayTeamId"] as? Int
-                        let t1 = homeId.flatMap { teamNames[$0] }
-                        let t2 = awayId.flatMap { teamNames[$0] }
-                        if t1 != nil || t2 != nil {
-                            lookup[String(matchId)] = (team1: t1, team2: t2)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Parse pool matches
-        if let pools = json["pools"] as? [[String: Any]] {
-            for pool in pools {
-                if let matches = pool["matches"] as? [[String: Any]] {
-                    for match in matches {
-                        guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
-                        let homeId = match["homeTeamId"] as? Int
-                        let awayId = match["awayTeamId"] as? Int
-                        let t1 = homeId.flatMap { teamNames[$0] }
-                        let t2 = awayId.flatMap { teamNames[$0] }
-                        if t1 != nil || t2 != nil {
-                            lookup[String(matchId)] = (team1: t1, team2: t2)
-                        }
-                    }
-                }
+        for match in extractHydrateMatches(from: json) {
+            guard let matchId = match["id"] as? Int, matchId > 0 else { continue }
+            let homeId = extractHydrateTeamId(from: match["homeTeam"])
+                ?? (match["homeTeamId"] as? Int)
+            let awayId = extractHydrateTeamId(from: match["awayTeam"])
+                ?? (match["awayTeamId"] as? Int)
+            let t1 = homeId.flatMap { teamNames[$0] }
+            let t2 = awayId.flatMap { teamNames[$0] }
+            if t1 != nil || t2 != nil {
+                lookup[String(matchId)] = (team1: t1, team2: t2)
             }
         }
 
         return lookup
+    }
+
+    static func extractHydrateMatches(from json: [String: Any]) -> [[String: Any]] {
+        var matches: [[String: Any]] = []
+
+        func appendMatches(from brackets: [[String: Any]]) {
+            for bracket in brackets {
+                if let bracketMatches = bracket["matches"] as? [[String: Any]] {
+                    matches.append(contentsOf: bracketMatches)
+                }
+            }
+        }
+
+        func appendPoolMatches(from pools: [[String: Any]]) {
+            for pool in pools {
+                if let poolMatches = pool["matches"] as? [[String: Any]] {
+                    matches.append(contentsOf: poolMatches)
+                }
+            }
+        }
+
+        func appendFlightPools(from flights: [[String: Any]]) {
+            for flight in flights {
+                if let pools = flight["pools"] as? [[String: Any]] {
+                    appendPoolMatches(from: pools)
+                }
+            }
+        }
+
+        if let days = json["days"] as? [[String: Any]] {
+            for day in days {
+                if let brackets = day["brackets"] as? [[String: Any]] {
+                    appendMatches(from: brackets)
+                }
+                if let flights = day["flights"] as? [[String: Any]] {
+                    appendFlightPools(from: flights)
+                }
+                if let pools = day["pools"] as? [[String: Any]] {
+                    appendPoolMatches(from: pools)
+                }
+            }
+        }
+
+        if let brackets = json["brackets"] as? [[String: Any]] {
+            appendMatches(from: brackets)
+        }
+        if let flights = json["flights"] as? [[String: Any]] {
+            appendFlightPools(from: flights)
+        }
+        if let pools = json["pools"] as? [[String: Any]] {
+            appendPoolMatches(from: pools)
+        }
+
+        return matches
+    }
+
+    static func extractHydrateTeamId(from rawTeam: Any?) -> Int? {
+        guard let team = rawTeam as? [String: Any] else {
+            return nil
+        }
+
+        if let teamId = team["teamId"] as? Int, teamId > 0 {
+            return teamId
+        }
+
+        return nil
     }
 
     /// Extract match ID from a vMix API URL like .../matches/325750/vmix...

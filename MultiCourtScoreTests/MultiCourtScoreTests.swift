@@ -665,6 +665,42 @@ struct Set3TiebreakTests {
     }
 }
 
+// MARK: - Hydrate Parsing Tests
+
+@MainActor
+struct HydrateParsingTests {
+
+    @Test func extractHydrateMatches_readsDayScopedBracketAndPoolMatches() async throws {
+        let matches = AppViewModel.extractHydrateMatches(from: makeDayScopedHydrateJSON())
+        let matchIds = matches.compactMap { $0["id"] as? Int }
+
+        #expect(matchIds == [101, 201])
+    }
+
+    @Test func buildGameIdLookup_readsDayScopedGames() async throws {
+        let lookup = AppViewModel.buildGameIdLookup(from: makeDayScopedHydrateJSON())
+
+        #expect(lookup["101"] == [1001, 1002])
+        #expect(lookup["201"] == [2001])
+    }
+
+    @Test func buildTeamLookup_resolvesNestedTeamIdsFromDayScopedHydrate() async throws {
+        let lookup = AppViewModel.buildTeamLookup(from: makeDayScopedHydrateJSON())
+
+        #expect(lookup["101"]?.team1 == "Alice Smith / Beth Jones")
+        #expect(lookup["101"]?.team2 == "Cara Diaz / Dana Reed")
+        #expect(lookup["201"]?.team1 == "Eva Long / Finn West")
+        #expect(lookup["201"]?.team2 == "Gina Shaw / Hale Young")
+    }
+
+    @Test func extractHydrateMatches_keepsLegacyTopLevelFallback() async throws {
+        let matches = AppViewModel.extractHydrateMatches(from: makeLegacyHydrateJSON())
+        let matchIds = matches.compactMap { $0["id"] as? Int }
+
+        #expect(matchIds == [301, 401])
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
@@ -694,4 +730,83 @@ private func makeSnapshot(
         timestamp: Date(),
         setsToWin: setsToWin
     )
+}
+
+private func makeDayScopedHydrateJSON() -> [String: Any] {
+    [
+        "teams": [
+            makeHydrateTeam(id: 11, players: [("Alice", "Smith"), ("Beth", "Jones")]),
+            makeHydrateTeam(id: 22, players: [("Cara", "Diaz"), ("Dana", "Reed")]),
+            makeHydrateTeam(id: 33, players: [("Eva", "Long"), ("Finn", "West")]),
+            makeHydrateTeam(id: 44, players: [("Gina", "Shaw"), ("Hale", "Young")])
+        ],
+        "days": [
+            [
+                "brackets": [
+                    [
+                        "matches": [
+                            [
+                                "id": 101,
+                                "homeTeamId": 11,
+                                "awayTeamId": 22,
+                                "games": [
+                                    ["id": 1001],
+                                    ["id": 1002]
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "flights": [
+                    [
+                        "pools": [
+                            [
+                                "matches": [
+                                    [
+                                        "id": 201,
+                                        "homeTeam": ["teamId": 33],
+                                        "awayTeam": ["teamId": 44],
+                                        "games": [
+                                            ["id": 2001]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ]
+}
+
+private func makeLegacyHydrateJSON() -> [String: Any] {
+    [
+        "brackets": [
+            [
+                "matches": [
+                    ["id": 301]
+                ]
+            ]
+        ],
+        "pools": [
+            [
+                "matches": [
+                    ["id": 401]
+                ]
+            ]
+        ]
+    ]
+}
+
+private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: Any] {
+    [
+        "id": id,
+        "players": players.map { firstName, lastName in
+            [
+                "firstName": firstName,
+                "lastName": lastName
+            ]
+        }
+    ]
 }
