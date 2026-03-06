@@ -110,6 +110,8 @@ final class AppViewModel: ObservableObject {
             serverRunning = webSocketHub.isRunning
             if let startupError = webSocketHub.startupError {
                 error = .configError(startupError)
+            } else if serverRunning {
+                error = nil
             }
             print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
         }

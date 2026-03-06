@@ -35,6 +35,7 @@ final class WebSocketHub {
 
         // Block further start calls immediately
         isStarting = true
+        startupError = nil
         appViewModel = viewModel
         
         // Ensure old app is cleaned up
@@ -61,35 +62,22 @@ final class WebSocketHub {
             
             // Install routes
             installRoutes(newApp)
-            
-            // Start server in background
-            Task.detached(priority: .utility) { [newApp] in
-                do {
-                    print("⏳ Starting overlay server on port \(port)...")
-                    try await newApp.startup()
 
-                    await MainActor.run {
-                        WebSocketHub.shared.isRunning = true
-                        WebSocketHub.shared.isStarting = false
-                        WebSocketHub.shared.startedAt = Date()
-                        WebSocketHub.shared.startupError = nil
-                        print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
-                    }
-                } catch {
-                    print("❌ Failed to start overlay server: \(error)")
-                    let errorMessage = error.localizedDescription
-                    await MainActor.run {
-                        WebSocketHub.shared.isRunning = false
-                        WebSocketHub.shared.isStarting = false
-                        WebSocketHub.shared.app = nil
-                        WebSocketHub.shared.startupError = "Port \(port) unavailable: \(errorMessage)"
-                    }
-                }
-            }
+            print("⏳ Starting overlay server on port \(port)...")
+            try await newApp.startup()
+
+            isRunning = true
+            isStarting = false
+            startedAt = Date()
+            startupError = nil
+            print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
         } catch {
-            print("❌ Failed to initialize Vapor Application: \(error)")
+            print("❌ Failed to start overlay server: \(error)")
             self.isRunning = false
             self.isStarting = false
+            self.startedAt = nil
+            self.app = nil
+            self.startupError = "Port \(port) unavailable: \(error.localizedDescription)"
         }
     }
     
