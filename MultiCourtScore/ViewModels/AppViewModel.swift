@@ -431,115 +431,18 @@ final class AppViewModel: ObservableObject {
                 return
             }
             
-            // Inactivity Check: Has score CHANGED (points OR sets) since last poll?
-            let currentS1 = snapshot.team1Score
-            let currentS2 = snapshot.team2Score
-            let currentP1 = snapshot.setHistory.last?.team1Score ?? 0
-            let currentP2 = snapshot.setHistory.last?.team2Score ?? 0
-            let prevData = lastScoreSnapshot[courtId]
-            
-            if prevData == nil ||
-               prevData?.pts1 != currentP1 || prevData?.pts2 != currentP2 ||
-               prevData?.s1 != currentS1 || prevData?.s2 != currentS2 {
-                // Infer serving team from point changes
-                if let prev = prevData {
-                    if currentP1 > prev.pts1 {
-                        lastServeTeam[courtId] = "home"
-                    } else if currentP2 > prev.pts2 {
-                        lastServeTeam[courtId] = "away"
-                    }
+            let didAdvance = await applySnapshotUpdate(
+                courtId: courtId,
+                snapshot: snapshot,
+                matchItem: matchItem,
+                allowStaleAdvance: true
+            )
+            if didAdvance {
+                if let writeIdx = courtIndex(for: courtId) {
+                    courts[writeIdx].lastPollTime = Date()
+                    courts[writeIdx].errorMessage = nil
                 }
-                // Point or set changed: update tracker
-                lastScoreSnapshot[courtId] = (pts1: currentP1, pts2: currentP2, s1: currentS1, s2: currentS2)
-                lastScoreChangeTime[courtId] = Date()
-            }
-            
-            let timeSinceLastScore = Date().timeIntervalSince(lastScoreChangeTime[courtId] ?? Date())
-            let isStale = timeSinceLastScore >= appSettings.staleMatchTimeout
-            
-            let previousStatus = courts[idx].status
-            let matchConcluded = isMatchConcluded(snapshot: snapshot, for: matchItem)
-            let newStatus = determineStatus(from: snapshot, matchConcluded: matchConcluded)
-            if newStatus == .live && !matchConcluded {
-                observedActiveScoring[courtId] = true
-            }
-            
-            // Update stopwatch
-            if previousStatus != .live && newStatus == .live {
-                courts[idx].liveSince = Date()
-            }
-            if newStatus != .live {
-                courts[idx].liveSince = nil
-            }
-            
-            // Handle match completion OR Stale timeout
-            if matchConcluded || isStale {
-                if isStale && !matchConcluded {
-                    print("🚨 Court \(courtId) match is stale (no score change for 15m). Auto-advancing.")
-                }
-                
-                courts[idx].status = .finished
-                courts[idx].lastSnapshot = snapshot
-                
-                // Record when match finished (if not already recorded)
-                if courts[idx].finishedAt == nil {
-                    courts[idx].finishedAt = Date()
-                }
-                
-                // Check if we should advance to next match
-                let nextIndex = activeIdx + 1
-                if nextIndex < courts[idx].queue.count {
-                    let holdDuration = appSettings.holdScoreDuration
-                    let timeSinceFinish = Date().timeIntervalSince(courts[idx].finishedAt ?? Date())
-                    
-                    // Advance if stale, or if this is startup/backlog final data, or when hold conditions are met.
-                    let holdExpired = timeSinceFinish >= holdDuration
-                    // Keep post-match hold when we have evidence of live scoring or an explicit final status.
-                    let hasScoreData = snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
-                    let isFinalStatus = snapshot.status.lowercased().contains("final")
-                    let shouldHoldPostMatch = matchConcluded
-                        && (observedActiveScoring[courtId] ?? false || hasScoreData || isFinalStatus)
-                        && (previousStatus == .live || previousStatus == .finished || hasScoreData || isFinalStatus)
-                    let nextStarted = shouldHoldPostMatch ? await nextMatchHasStarted(courts[idx].queue[nextIndex]) : true
-                    let shouldAdvance = isStale || (!shouldHoldPostMatch) || holdExpired || nextStarted
-                    
-                    if shouldAdvance {
-                        // Skip over any consecutive already-final matches so we land on the first playable match.
-                        let targetIndex = await firstNonFinalQueueIndex(courtId: courtId, startingAt: nextIndex)
-
-                        guard let writeIdx = courtIndex(for: courtId),
-                              targetIndex < courts[writeIdx].queue.count else {
-                            return
-                        }
-
-                        courts[writeIdx].activeIndex = targetIndex
-                        courts[writeIdx].lastSnapshot = nil
-                        courts[writeIdx].status = .waiting
-                        courts[writeIdx].liveSince = nil
-                        courts[writeIdx].finishedAt = nil  // Reset for next match
-                        observedActiveScoring[courtId] = false
-                        lastScoreChangeTime[courtId] = nil
-                        lastScoreSnapshot[courtId] = nil
-
-                        let skippedCompleted = max(0, targetIndex - nextIndex)
-                        if skippedCompleted > 0 {
-                            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1), skipped \(skippedCompleted) completed match(es)")
-                        } else {
-                            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1)")
-                        }
-
-                        rebuildGameIdMap()
-
-                        // Trigger immediate metadata refresh for the new sequence
-                        await refreshQueueMetadata(for: courtId)
-                        lastQueueRefreshTimes[courtId] = Date()
-                        scheduleSave()
-                    }
-                }
-            } else {
-                courts[idx].status = newStatus
-                courts[idx].lastSnapshot = snapshot
-                courts[idx].finishedAt = nil  // Clear if match is not final
+                return
             }
             
             
@@ -1837,16 +1740,36 @@ extension AppViewModel: SignalRDelegate {
             snapshot.serve = serve
         }
 
-        // Apply the snapshot update using shared downstream logic
-        applySnapshotUpdate(courtId: courtId, snapshot: snapshot, matchItem: matchItem)
+        // Apply the snapshot update using shared downstream logic.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let _ = await self.applySnapshotUpdate(
+                courtId: courtId,
+                snapshot: snapshot,
+                matchItem: matchItem,
+                allowStaleAdvance: false
+            )
+        }
 
         print("[SignalR] Court \(courtId) updated: Set \(gameNumber + 1) → \(homeScore)-\(awayScore)\(isFinal ? " (Final)" : "")")
     }
 
     /// Shared downstream logic for applying a score snapshot update.
     /// Used by both pollOnce and SignalR mutation processing.
-    private func applySnapshotUpdate(courtId: Int, snapshot: ScoreSnapshot, matchItem: MatchItem) {
-        guard let idx = courtIndex(for: courtId) else { return }
+    private func applySnapshotUpdate(
+        courtId: Int,
+        snapshot: ScoreSnapshot,
+        matchItem: MatchItem,
+        allowStaleAdvance: Bool
+    ) async -> Bool {
+        guard let idx = courtIndex(for: courtId),
+              let activeIdx = courts[idx].activeIndex,
+              activeIdx < courts[idx].queue.count else {
+            return false
+        }
+        guard courts[idx].queue[activeIdx].id == matchItem.id else {
+            return false
+        }
 
         // Inactivity tracking
         let currentP1 = snapshot.setHistory.last?.team1Score ?? 0
@@ -1861,6 +1784,9 @@ extension AppViewModel: SignalRDelegate {
             lastScoreSnapshot[courtId] = (pts1: currentP1, pts2: currentP2, s1: currentS1, s2: currentS2)
             lastScoreChangeTime[courtId] = Date()
         }
+
+        let timeSinceLastScore = Date().timeIntervalSince(lastScoreChangeTime[courtId] ?? Date())
+        let isStale = allowStaleAdvance && timeSinceLastScore >= appSettings.staleMatchTimeout
 
         let previousStatus = courts[idx].status
         let matchConcluded = isMatchConcluded(snapshot: snapshot, for: matchItem)
@@ -1878,12 +1804,27 @@ extension AppViewModel: SignalRDelegate {
             courts[idx].liveSince = nil
         }
 
-        if matchConcluded {
+        if matchConcluded || isStale {
+            if isStale && !matchConcluded {
+                print("🚨 Court \(courtId) match is stale (no score change for 15m). Auto-advancing.")
+            }
+
             courts[idx].status = .finished
             courts[idx].lastSnapshot = snapshot
             if courts[idx].finishedAt == nil {
                 courts[idx].finishedAt = Date()
             }
+
+            let didAdvance = await advanceQueueIfNeededAfterConclusion(
+                courtId: courtId,
+                snapshot: snapshot,
+                previousStatus: previousStatus,
+                matchConcluded: matchConcluded,
+                isStale: isStale
+            )
+
+            courts[idx].lastPollTime = Date()
+            return didAdvance
         } else {
             courts[idx].status = newStatus
             courts[idx].lastSnapshot = snapshot
@@ -1891,6 +1832,104 @@ extension AppViewModel: SignalRDelegate {
         }
 
         courts[idx].lastPollTime = Date()
+        return false
+    }
+
+    private func advanceQueueIfNeededAfterConclusion(
+        courtId: Int,
+        snapshot: ScoreSnapshot,
+        previousStatus: CourtStatus,
+        matchConcluded: Bool,
+        isStale: Bool
+    ) async -> Bool {
+        guard let idx = courtIndex(for: courtId),
+              let activeIdx = courts[idx].activeIndex else {
+            return false
+        }
+
+        let nextIndex = activeIdx + 1
+        guard nextIndex < courts[idx].queue.count else {
+            return false
+        }
+
+        let hasScoreData = snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
+        let isFinalStatus = snapshot.status.lowercased().contains("final")
+        let shouldHoldPostMatch = Self.shouldHoldPostMatch(
+            matchConcluded: matchConcluded,
+            observedActiveScoring: observedActiveScoring[courtId] ?? false,
+            hasScoreData: hasScoreData,
+            isFinalStatus: isFinalStatus,
+            previousStatus: previousStatus
+        )
+        let timeSinceFinish = Date().timeIntervalSince(courts[idx].finishedAt ?? Date())
+        let holdExpired = timeSinceFinish >= appSettings.holdScoreDuration
+        let nextStarted = shouldHoldPostMatch ? await nextMatchHasStarted(courts[idx].queue[nextIndex]) : false
+        let shouldAdvance = Self.shouldAdvanceAfterConclusion(
+            matchConcluded: matchConcluded,
+            isStale: isStale,
+            holdExpired: holdExpired,
+            shouldHoldPostMatch: shouldHoldPostMatch,
+            nextMatchHasStarted: nextStarted
+        )
+
+        guard shouldAdvance else {
+            return false
+        }
+
+        let targetIndex = await firstNonFinalQueueIndex(courtId: courtId, startingAt: nextIndex)
+        guard let writeIdx = courtIndex(for: courtId),
+              targetIndex < courts[writeIdx].queue.count else {
+            return false
+        }
+
+        courts[writeIdx].activeIndex = targetIndex
+        courts[writeIdx].lastSnapshot = nil
+        courts[writeIdx].status = .waiting
+        courts[writeIdx].liveSince = nil
+        courts[writeIdx].finishedAt = nil
+        observedActiveScoring[courtId] = false
+        lastScoreChangeTime[courtId] = nil
+        lastScoreSnapshot[courtId] = nil
+        lastServeTeam.removeValue(forKey: courtId)
+
+        let skippedCompleted = max(0, targetIndex - nextIndex)
+        if skippedCompleted > 0 {
+            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1), skipped \(skippedCompleted) completed match(es)")
+        } else {
+            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1)")
+        }
+
+        rebuildGameIdMap()
+        await refreshQueueMetadata(for: courtId)
+        lastQueueRefreshTimes[courtId] = Date()
+        scheduleSave()
+        return true
+    }
+
+    static func shouldHoldPostMatch(
+        matchConcluded: Bool,
+        observedActiveScoring: Bool,
+        hasScoreData: Bool,
+        isFinalStatus: Bool,
+        previousStatus: CourtStatus
+    ) -> Bool {
+        matchConcluded
+            && (observedActiveScoring || hasScoreData || isFinalStatus)
+            && (previousStatus == .live || previousStatus == .finished || hasScoreData || isFinalStatus)
+    }
+
+    static func shouldAdvanceAfterConclusion(
+        matchConcluded: Bool,
+        isStale: Bool,
+        holdExpired: Bool,
+        shouldHoldPostMatch: Bool,
+        nextMatchHasStarted: Bool
+    ) -> Bool {
+        guard matchConcluded || isStale else {
+            return false
+        }
+
+        return isStale || !shouldHoldPostMatch || holdExpired || nextMatchHasStarted
     }
 }
 
