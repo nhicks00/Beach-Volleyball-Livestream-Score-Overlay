@@ -45,6 +45,7 @@ struct SettingsView: View {
     @State private var showingCredentialsSaved = false
     @State private var showSettingsSaved = false
     @State private var searchText = ""
+    @State private var credentialsLoadRequested = false
 
     private let configStore = ConfigStore()
 
@@ -92,7 +93,7 @@ struct SettingsView: View {
         .background(AppColors.background)
         .onExitCommand { closeSettings() }
         .onAppear {
-            loadCredentials()
+            loadCredentialsIfNeeded()
         }
     }
 
@@ -601,10 +602,18 @@ struct SettingsView: View {
         password = ""
     }
 
-    private func loadCredentials() {
-        if let creds = configStore.loadCredentials() {
-            username = creds.username
-            password = creds.password
+    private func loadCredentialsIfNeeded() {
+        guard !credentialsLoadRequested else { return }
+        credentialsLoadRequested = true
+
+        let store = configStore
+        DispatchQueue.global(qos: .userInitiated).async {
+            let creds = store.loadCredentials()
+            DispatchQueue.main.async {
+                guard let creds else { return }
+                username = creds.username
+                password = creds.password
+            }
         }
     }
 }
