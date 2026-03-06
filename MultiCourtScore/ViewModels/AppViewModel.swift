@@ -445,6 +445,11 @@ final class AppViewModel: ObservableObject {
         )
     }
 
+    /// Test-only hook to refresh SignalR game-id routing after queue setup.
+    func rebuildGameIdMapForTesting() {
+        rebuildGameIdMap()
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
