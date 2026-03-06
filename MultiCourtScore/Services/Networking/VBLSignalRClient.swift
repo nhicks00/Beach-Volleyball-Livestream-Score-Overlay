@@ -99,6 +99,12 @@ struct AnyCodable: Decodable {
 
 // MARK: - SignalR Client Actor
 
+protocol SignalRClienting: Actor {
+    func connect(credentials: ConfigStore.VBLCredentials)
+    func disconnect()
+    func subscribeToTournament(tournamentId: Int, divisionId: Int) async
+}
+
 actor VBLSignalRClient {
     // MARK: - Constants
     private static let apiBase = "https://volleyballlife-api-dot-net-8.azurewebsites.net"
@@ -512,3 +518,5 @@ actor VBLSignalRClient {
         return type
     }
 }
+
+extension VBLSignalRClient: SignalRClienting {}
