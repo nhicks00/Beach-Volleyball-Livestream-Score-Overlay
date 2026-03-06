@@ -955,6 +955,160 @@ struct QueueMergeTests {
 
 @MainActor
 @Suite(.serialized)
+struct QueuePollingEdgeCaseTests {
+
+    @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {
+        StubURLProtocol.reset()
+        defer { StubURLProtocol.reset() }
+
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-1",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-2",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: secondMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_keepsCurrentMatchWhenItIsAlreadyLive() async throws {
+        StubURLProtocol.reset()
+        defer { StubURLProtocol.reset() }
+
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/live-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/live-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 10, away: 9),
+            for: secondMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "In Progress")
+        #expect(snapshot.setHistory.last?.team1Score == 8)
+        #expect(snapshot.setHistory.last?.team2Score == 7)
+    }
+
+    @Test func runImmediatePollCycle_skipsBacklogOfCompletedMatchesBeforePollingNextPlayableMatch() async throws {
+        StubURLProtocol.reset()
+        defer { StubURLProtocol.reset() }
+
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let finishedMatchOne = makeMatchItem(
+            url: "https://example.com/matches/finished-1",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let finishedMatchTwo = makeMatchItem(
+            url: "https://example.com/matches/finished-2",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let playableMatch = makeMatchItem(
+            url: "https://example.com/matches/playable-3",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 17),
+            for: finishedMatchOne.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 19),
+            for: finishedMatchTwo.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: playableMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [finishedMatchOne, finishedMatchTwo, playableMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 2)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Pre-Match")
+        #expect(snapshot.matchNumber == playableMatch.matchNumber)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
@@ -1109,7 +1263,7 @@ private func makeLegacyHydrateJSON() -> [String: Any] {
 }
 
 @MainActor
-private func makeIsolatedAppViewModel() -> (AppViewModel, ConfigStore, () -> Void) {
+private func makeIsolatedAppViewModel(apiClient: APIClient = APIClient()) -> (AppViewModel, ConfigStore, () -> Void) {
     let tempRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("MultiCourtScoreTests-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -1118,7 +1272,6 @@ private func makeIsolatedAppViewModel() -> (AppViewModel, ConfigStore, () -> Voi
     let cleanup: () -> Void = {
         try? FileManager.default.removeItem(at: tempRoot)
     }
-    let apiClient = APIClient()
     let viewModel = AppViewModel(
         runtimeMode: .live,
         webSocketHub: .shared,
@@ -1161,6 +1314,82 @@ private func reserveFreePort() throws -> Int {
     let (socket, port) = try reserveListeningSocket()
     close(socket)
     return port
+}
+
+private func makeStubSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [StubURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+private func makeScoreDict(
+    status: String,
+    home: Int,
+    away: Int,
+    setNumber: Int = 1
+) -> [String: Any] {
+    [
+        "status": status,
+        "setNumber": setNumber,
+        "score": [
+            "home": home,
+            "away": away
+        ]
+    ]
+}
+
+private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var responses: [URL: (statusCode: Int, data: Data)] = [:]
+
+    static func reset() {
+        lock.lock()
+        responses.removeAll()
+        lock.unlock()
+    }
+
+    static func registerJSON(_ json: [String: Any], for url: URL, statusCode: Int = 200) {
+        let data = (try? JSONSerialization.data(withJSONObject: json, options: [])) ?? Data()
+        lock.lock()
+        responses[url] = (statusCode, data)
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+
+        Self.lock.lock()
+        let stub = Self.responses[url]
+        Self.lock.unlock()
+
+        guard let stub else {
+            client?.urlProtocol(self, didFailWithError: URLError(.fileDoesNotExist))
+            return
+        }
+
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: stub.statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: stub.data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private func reserveListeningSocket() throws -> (Int32, Int) {
