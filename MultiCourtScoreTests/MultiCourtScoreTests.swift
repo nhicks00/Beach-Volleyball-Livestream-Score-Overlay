@@ -7,6 +7,7 @@
 
 import Testing
 import Foundation
+import Darwin
 @testable import MultiCourtScore
 
 // MARK: - ScoreSnapshot Tests
@@ -789,6 +790,116 @@ struct QueueAdvanceDecisionTests {
     }
 }
 
+@MainActor
+struct QueueMergeTests {
+
+    @Test func mergeQueue_updatesExistingMetadataWithoutResettingQueuePosition() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let existingMatch = makeMatchItem(
+            url: "https://example.com/match/original",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "7",
+            courtNumber: "Ct 1",
+            scheduledTime: "8:00AM",
+            setsToWin: 1,
+            pointCap: 21,
+            gameIds: [111]
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/match/second",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "8"
+        )
+
+        viewModel.replaceQueue(1, with: [existingMatch, secondMatch], startIndex: 1)
+
+        let updatedExisting = makeMatchItem(
+            url: "https://example.com/match/live",
+            team1: existingMatch.team1Name,
+            team2: existingMatch.team2Name,
+            matchNumber: existingMatch.matchNumber,
+            courtNumber: "Center Court",
+            scheduledTime: "8:30AM",
+            setsToWin: 2,
+            pointCap: 23,
+            gameIds: [222, 333]
+        )
+        let newAppendedMatch = makeMatchItem(
+            url: "https://example.com/match/new",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "9"
+        )
+
+        viewModel.mergeQueue(1, with: [updatedExisting, newAppendedMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.queue.count == 3)
+        #expect(court.queue[0].apiURL == updatedExisting.apiURL)
+        #expect(court.queue[0].courtNumber == "Center Court")
+        #expect(court.queue[0].scheduledTime == "8:30AM")
+        #expect(court.queue[0].setsToWin == 2)
+        #expect(court.queue[0].pointCap == 23)
+        #expect(court.queue[0].gameIds == [222, 333])
+        #expect(court.queue[1].matchNumber == "8")
+        #expect(court.queue[2].matchNumber == "9")
+    }
+
+    @Test func mergeQueue_usesMatchNumberToKeepRematchesDistinct() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let original = makeMatchItem(
+            url: "https://example.com/match/semis",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "12"
+        )
+        let rematch = makeMatchItem(
+            url: "https://example.com/match/finals",
+            team1: original.team1Name,
+            team2: original.team2Name,
+            matchNumber: "18"
+        )
+
+        viewModel.replaceQueue(1, with: [original])
+        viewModel.mergeQueue(1, with: [rematch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue.count == 2)
+        #expect(court.queue.map(\.matchNumber) == ["12", "18"])
+        #expect(court.queue[0].apiURL == original.apiURL)
+        #expect(court.queue[1].apiURL == rematch.apiURL)
+    }
+
+    @Test func saveConfigurationNow_writesCourtsIntoInjectedConfigStoreDirectory() async throws {
+        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let queuedMatch = makeMatchItem(
+            url: "https://example.com/match/persisted",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5"
+        )
+
+        viewModel.replaceQueue(1, with: [queuedMatch])
+
+        let data = try Data(contentsOf: configStore.courtsConfigURL)
+        let savedCourts = try JSONDecoder().decode([Court].self, from: data)
+        let savedCourt = try #require(savedCourts.first(where: { $0.id == 1 }))
+
+        #expect(savedCourt.queue.count == 1)
+        #expect(savedCourt.queue[0].apiURL == queuedMatch.apiURL)
+        #expect(savedCourt.queue[0].matchNumber == "5")
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
@@ -885,6 +996,50 @@ private func makeLegacyHydrateJSON() -> [String: Any] {
             ]
         ]
     ]
+}
+
+@MainActor
+private func makeIsolatedAppViewModel() -> (AppViewModel, ConfigStore, () -> Void) {
+    let tempRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MultiCourtScoreTests-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+    let configStore = ConfigStore(appSupportOverride: tempRoot)
+    let cleanup: () -> Void = {
+        try? FileManager.default.removeItem(at: tempRoot)
+    }
+    let apiClient = APIClient()
+    let viewModel = AppViewModel(
+        runtimeMode: .live,
+        webSocketHub: .shared,
+        configStore: configStore,
+        apiClient: apiClient
+    )
+    return (viewModel, configStore, cleanup)
+}
+
+private func makeMatchItem(
+    url: String,
+    team1: String?,
+    team2: String?,
+    matchNumber: String?,
+    courtNumber: String? = nil,
+    scheduledTime: String? = nil,
+    setsToWin: Int? = nil,
+    pointCap: Int? = nil,
+    gameIds: [Int]? = nil
+) -> MatchItem {
+    MatchItem(
+        apiURL: URL(string: url)!,
+        team1Name: team1,
+        team2Name: team2,
+        scheduledTime: scheduledTime,
+        matchNumber: matchNumber,
+        courtNumber: courtNumber,
+        setsToWin: setsToWin,
+        pointCap: pointCap,
+        gameIds: gameIds
+    )
 }
 
 private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: Any] {

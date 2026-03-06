@@ -10,10 +10,22 @@ import Security
 
 class ConfigStore {
     private let fileManager = FileManager.default
+    private let appSupportOverride: URL?
+
+    init(appSupportOverride: URL? = nil) {
+        self.appSupportOverride = appSupportOverride
+    }
     
     // MARK: - App Support Directory
     
     private var appSupportURL: URL {
+        if let overrideURL = appSupportOverride {
+            if !fileManager.fileExists(atPath: overrideURL.path) {
+                try? fileManager.createDirectory(at: overrideURL, withIntermediateDirectories: true)
+            }
+            return overrideURL
+        }
+
         if let overridePath = ProcessInfo.processInfo.environment["MULTICOURTSCORE_APP_SUPPORT_DIR"],
            !overridePath.isEmpty {
             let url = URL(fileURLWithPath: overridePath, isDirectory: true)

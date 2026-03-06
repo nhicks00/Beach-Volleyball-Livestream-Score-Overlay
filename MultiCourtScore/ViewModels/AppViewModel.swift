@@ -64,9 +64,29 @@ final class AppViewModel: ObservableObject {
     
     init() {
         self.runtimeMode = Self.detectRuntimeMode()
-        self.webSocketHub = WebSocketHub.shared
+        self.webSocketHub = .shared
         self.configStore = ConfigStore()
         self.apiClient = APIClient()
+        self.scoreCache = ScoreCache(apiClient: apiClient)
+        self.appSettings = configStore.loadSettings()
+
+        loadConfiguration()
+        ensureAllCourtsExist()
+        if isUITestMode {
+            loadUITestScenario()
+        }
+    }
+
+    init(
+        runtimeMode: RuntimeMode,
+        webSocketHub: WebSocketHub,
+        configStore: ConfigStore,
+        apiClient: APIClient
+    ) {
+        self.runtimeMode = runtimeMode
+        self.webSocketHub = webSocketHub
+        self.configStore = configStore
+        self.apiClient = apiClient
         self.scoreCache = ScoreCache(apiClient: apiClient)
         self.appSettings = configStore.loadSettings()
         
@@ -1530,14 +1550,8 @@ final class AppViewModel: ObservableObject {
     
     // MARK: - Configuration Persistence
 
-    private lazy var configURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appFolder = appSupport.appendingPathComponent("MultiCourtScore")
-        try? FileManager.default.createDirectory(at: appFolder, withIntermediateDirectories: true)
-        return appFolder.appendingPathComponent("courts_config.json")
-    }()
-
     private func loadConfiguration() {
+        let configURL = configStore.courtsConfigURL
         guard FileManager.default.fileExists(atPath: configURL.path),
               let data = try? Data(contentsOf: configURL),
               let loaded = try? JSONDecoder().decode([Court].self, from: data) else {
@@ -1578,6 +1592,7 @@ final class AppViewModel: ObservableObject {
 
     private func saveConfigurationNow() {
         saveTask?.cancel()
+        let configURL = configStore.courtsConfigURL
         guard let data = try? Self.jsonEncoder.encode(courts) else { return }
         try? data.write(to: configURL, options: .atomic)
     }
