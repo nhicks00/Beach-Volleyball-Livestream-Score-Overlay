@@ -1100,6 +1100,251 @@ struct QueuePollingEdgeCaseTests {
 
 @MainActor
 @Suite(.serialized)
+struct QueueConclusionTimingTests {
+
+    @Test func runImmediatePollCycle_advancesStaleLiveMatchToNextQueueItem() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let staleMatch = makeMatchItem(
+            url: "https://example.com/matches/stale-live",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/stale-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: staleMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [staleMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.appSettings.staleMatchTimeout = 0
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+
+    @Test func runImmediatePollCycle_holdsObservedFinalWhenNextMatchHasNotStarted() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/hold-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/hold-next-pre",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "4",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 18,
+                team2Score: 16,
+                setHistory: [SetScore(setNumber: 1, team1Score: 18, team2Score: 16, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 16,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 16, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .finished)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Final")
+        #expect(court.finishedAt != nil)
+    }
+
+    @Test func runImmediatePollCycle_advancesHeldFinalWhenHoldExpires() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/expire-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/expire-next-pre",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "6",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 19,
+                team2Score: 18,
+                setHistory: [SetScore(setNumber: 1, team1Score: 19, team2Score: 18, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 19,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 19, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        viewModel.appSettings.holdScoreDuration = 0
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 19,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 19, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+
+    @Test func runImmediatePollCycle_advancesHeldFinalAsSoonAsNextMatchStarts() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/next-live-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "7",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextLiveMatch = makeMatchItem(
+            url: "https://example.com/matches/next-live-match",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "8",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextLiveMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextLiveMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 16,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 16, team2Score: 14, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 5, away: 4),
+            for: nextLiveMatch.apiURL
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 14, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct CourtReassignmentTests {
 
     @Test func runCourtChangeForTesting_movesLiveMatchBehindTargetLiveMatchAndResetsSourceCourt() async throws {
