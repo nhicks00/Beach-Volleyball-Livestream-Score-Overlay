@@ -701,6 +701,94 @@ struct HydrateParsingTests {
     }
 }
 
+@MainActor
+struct QueueAdvanceDecisionTests {
+
+    @Test func shouldHoldPostMatch_isTrue_forObservedLiveFinal() async throws {
+        let shouldHold = AppViewModel.shouldHoldPostMatch(
+            matchConcluded: true,
+            observedActiveScoring: true,
+            hasScoreData: true,
+            isFinalStatus: true,
+            previousStatus: .live
+        )
+
+        #expect(shouldHold)
+    }
+
+    @Test func shouldHoldPostMatch_isFalse_forSyntheticBacklogWithoutEvidence() async throws {
+        let shouldHold = AppViewModel.shouldHoldPostMatch(
+            matchConcluded: true,
+            observedActiveScoring: false,
+            hasScoreData: false,
+            isFinalStatus: false,
+            previousStatus: .waiting
+        )
+
+        #expect(!shouldHold)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesStaleMatchImmediately() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: false,
+            isStale: true,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_holdsRecentFinalUntilNextMatchStarts() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(!shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesWhenHoldExpires() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: true,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesBacklogFinalWhenNoHoldNeeded() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: false,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesHeldFinalWhenNextMatchAlreadyStarted() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: true
+        )
+
+        #expect(shouldAdvance)
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
