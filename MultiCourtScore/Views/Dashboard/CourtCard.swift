@@ -138,6 +138,8 @@ struct CourtCard: View {
             color: court.status == .live ? AppColors.success.opacity(0.25) : Color.clear,
             radius: court.status == .live ? 12 : 0
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("court.card.\(court.id)")
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
@@ -239,6 +241,7 @@ struct CourtCard: View {
             }
             .buttonStyle(.plain)
             .help("Copy overlay URL")
+            .accessibilityIdentifier("court.\(court.id).copyURL")
 
             StatusBadge(label: statusLabel, color: statusColor, isLive: court.status == .live)
         }
@@ -483,6 +486,7 @@ struct CourtCard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled((court.activeIndex ?? 0) <= 0)
+                .accessibilityIdentifier("court.\(court.id).prev")
                 
                 Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
                     .font(.system(size: 14, weight: .semibold))
@@ -508,6 +512,7 @@ struct CourtCard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
+                .accessibilityIdentifier("court.\(court.id).next")
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 3)
@@ -534,6 +539,7 @@ struct CourtCard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(court.queue.isEmpty || court.status.isPolling)
+                .accessibilityIdentifier("court.\(court.id).start")
                 
                 Button {
                     onStop()
@@ -554,6 +560,7 @@ struct CourtCard: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!court.status.isPolling)
+                .accessibilityIdentifier("court.\(court.id).stop")
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 3)

@@ -10,6 +10,11 @@ import SwiftUI
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    enum RuntimeMode {
+        case live
+        case uiTest
+    }
+
     // MARK: - Published State
     @Published private(set) var courts: [Court] = []
     @Published private(set) var isLoading = false
@@ -24,6 +29,7 @@ final class AppViewModel: ObservableObject {
     private let configStore: ConfigStore
     private let apiClient: APIClient
     private let scoreCache: ScoreCache
+    private let runtimeMode: RuntimeMode
     private var signalRClient: VBLSignalRClient?
     
     // MARK: - Private State
@@ -49,10 +55,15 @@ final class AppViewModel: ObservableObject {
     // Periodic hydrate re-fetch for resolving TBD bracket teams
     private var lastHydrateRefresh: [Int: Date] = [:]  // divisionId → last fetch time
     private static let hydrateRefreshInterval: TimeInterval = 60  // seconds
+
+    var isUITestMode: Bool {
+        runtimeMode == .uiTest
+    }
     
     // MARK: - Initialization
     
     init() {
+        self.runtimeMode = Self.detectRuntimeMode()
         self.webSocketHub = WebSocketHub.shared
         self.configStore = ConfigStore()
         self.apiClient = APIClient()
@@ -61,11 +72,19 @@ final class AppViewModel: ObservableObject {
         
         loadConfiguration()
         ensureAllCourtsExist()
+        if isUITestMode {
+            loadUITestScenario()
+        }
     }
     
     // MARK: - Services Lifecycle
 
     func startServices() {
+        guard !isUITestMode else {
+            serverRunning = true
+            return
+        }
+
         Task {
             await webSocketHub.start(with: self, port: appSettings.serverPort)
             serverRunning = webSocketHub.isRunning
@@ -81,6 +100,11 @@ final class AppViewModel: ObservableObject {
     }
 
     func stopServices() {
+        guard !isUITestMode else {
+            serverRunning = false
+            return
+        }
+
         stopAllPolling()
         stopWatchdog()
         stopSignalR()
@@ -232,6 +256,18 @@ final class AppViewModel: ObservableObject {
         
         guard let idx = courtIndex(for: courtId) else { return }
         guard !courts[idx].queue.isEmpty else { return }
+
+        if isUITestMode {
+            if courts[idx].activeIndex == nil {
+                courts[idx].activeIndex = 0
+            }
+            courts[idx].status = courts[idx].lastSnapshot == nil ? .waiting : .live
+            courts[idx].lastPollTime = Date()
+            courts[idx].errorMessage = nil
+            observedActiveScoring[courtId] = courts[idx].lastSnapshot != nil
+            saveConfigurationNow()
+            return
+        }
         
         if courts[idx].activeIndex == nil {
             courts[idx].activeIndex = 0
@@ -1593,6 +1629,120 @@ final class AppViewModel: ObservableObject {
         guard appSettings.signalREnabled else { return }
         stopSignalR()
         startSignalR()
+    }
+
+    private static func detectRuntimeMode() -> RuntimeMode {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--uitest-mode") ? .uiTest : .live
+    }
+
+    private func loadUITestScenario() {
+        for idx in courts.indices {
+            courts[idx] = Court.create(id: courts[idx].id, name: CourtNaming.defaultName(for: courts[idx].id))
+        }
+
+        appSettings.autoStartPolling = false
+        appSettings.signalREnabled = false
+
+        let courtOneQueue = [
+            MatchItem(
+                apiURL: URL(string: "https://example.com/matches/1001/vmix")!,
+                label: "1",
+                team1Name: "Riley Adams / Sam Brooks",
+                team2Name: "Taylor Clark / Jules Diaz",
+                team1Seed: "2",
+                team2Seed: "5",
+                matchType: "Pool Play",
+                scheduledTime: "8:00AM",
+                startDate: "Sat",
+                matchNumber: "1",
+                courtNumber: "7",
+                setsToWin: 1,
+                pointsPerSet: 21,
+                pointCap: 23
+            ),
+            MatchItem(
+                apiURL: URL(string: "https://example.com/matches/1002/vmix")!,
+                label: "2",
+                team1Name: "Alex Ellis / Casey Frost",
+                team2Name: "Jordan Gray / Parker Holt",
+                team1Seed: "3",
+                team2Seed: "6",
+                matchType: "Pool Play",
+                scheduledTime: "8:35AM",
+                startDate: "Sat",
+                matchNumber: "2",
+                courtNumber: "7",
+                setsToWin: 1,
+                pointsPerSet: 21,
+                pointCap: 23
+            )
+        ]
+        replaceQueue(1, with: courtOneQueue, startIndex: 0)
+
+        let courtTwoMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/2001/vmix")!,
+            label: "7",
+            team1Name: "Morgan Ivy / Quinn James",
+            team2Name: "Reese Knight / Logan Mills",
+            team1Seed: "1",
+            team2Seed: "4",
+            matchType: "Bracket Play",
+            scheduledTime: "9:15AM",
+            startDate: "Sun",
+            matchNumber: "7",
+            courtNumber: "8",
+            setsToWin: 2,
+            pointsPerSet: 21
+        )
+        replaceQueue(2, with: [courtTwoMatch], startIndex: 0)
+        if let idx = courtIndex(for: 2) {
+            courts[idx].status = .live
+            courts[idx].liveSince = Date()
+            courts[idx].lastSnapshot = ScoreSnapshot(
+                courtId: 2,
+                matchId: 2001,
+                status: "In Progress",
+                setNumber: 1,
+                team1Name: courtTwoMatch.team1Name ?? "Team 1",
+                team2Name: courtTwoMatch.team2Name ?? "Team 2",
+                team1Seed: courtTwoMatch.team1Seed,
+                team2Seed: courtTwoMatch.team2Seed,
+                scheduledTime: courtTwoMatch.scheduledTime,
+                matchNumber: courtTwoMatch.matchNumber,
+                courtNumber: courtTwoMatch.courtNumber,
+                team1Score: 0,
+                team2Score: 0,
+                serve: "home",
+                setHistory: [
+                    SetScore(setNumber: 1, team1Score: 12, team2Score: 10, isComplete: false)
+                ],
+                timestamp: Date(),
+                setsToWin: courtTwoMatch.setsToWin ?? 2
+            )
+        }
+
+        let courtThreeQueue = [
+            MatchItem(
+                apiURL: URL(string: "https://example.com/matches/3001/vmix")!,
+                label: "11",
+                team1Name: "Drew Nash / Avery Owen",
+                team2Name: "Blake Price / Kendall Reed",
+                team1Seed: "8",
+                team2Seed: "9",
+                matchType: "Bracket Play",
+                scheduledTime: "10:00AM",
+                startDate: "Sun",
+                matchNumber: "11",
+                courtNumber: "11",
+                setsToWin: 2,
+                pointsPerSet: 21
+            )
+        ]
+        replaceQueue(3, with: courtThreeQueue, startIndex: 0)
+        if let idx = courtIndex(for: 3) {
+            courts[idx].status = .waiting
+        }
     }
 }
 

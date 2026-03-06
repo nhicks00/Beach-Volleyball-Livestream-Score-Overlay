@@ -158,6 +158,7 @@ struct QueueEditorView: View {
                     .background(Circle().fill(AppColors.surfaceHover))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("queueEditor.close")
             .help("Close (Esc)")
         }
         .padding(.horizontal, 20)
