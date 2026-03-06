@@ -1496,6 +1496,7 @@ final class AppViewModel: ObservableObject {
         let pointsPerSet = inferredFormat.pointsPerSet
         let pointCap = inferredFormat.pointCap
         let setsToWin = inferredFormat.setsToWin
+        let configuredSetCount = max(currentMatch?.setsToPlay ?? 0, setsToWin)
         
         // Parse set scores from "gameX" keys as ints or strings
         // Based on user screenshot: "game1": 15
@@ -1530,17 +1531,17 @@ final class AppViewModel: ObservableObject {
             }
         }
         
-        // Set 2 (only if setsToWin > 1)
-        if setsToWin > 1 && (g2a_raw > 0 || g2b_raw > 0) {
+        // Set 2
+        if configuredSetCount >= 2 && (g2a_raw > 0 || g2b_raw > 0) {
             let complete = isSetComplete(g2a_raw, g2b_raw, target: pointsPerSet, cap: pointCap)
             setHistory.append(SetScore(setNumber: 2, team1Score: g2a_raw, team2Score: g2b_raw, isComplete: complete))
             if complete {
                 if g2a_raw > g2b_raw { score1 += 1 } else { score2 += 1 }
             }
         }
-        
+
         // Set 3 (tiebreak: use 15 or match format if lower, e.g., training to 11)
-        if setsToWin >= 2 && (g3a_raw > 0 || g3b_raw > 0) {
+        if configuredSetCount >= 3 && (g3a_raw > 0 || g3b_raw > 0) {
             let tiebreakTarget = min(pointsPerSet, 15)
             let complete = isSetComplete(g3a_raw, g3b_raw, target: tiebreakTarget, cap: pointCap)
             setHistory.append(SetScore(setNumber: 3, team1Score: g3a_raw, team2Score: g3b_raw, isComplete: complete))
@@ -1555,9 +1556,18 @@ final class AppViewModel: ObservableObject {
         // Determine status - use actual setsToWin
         let won1 = score1 >= setsToWin
         let won2 = score2 >= setsToWin
+        let completedSets = setHistory.filter(\.isComplete).count
         
         let status: String
-        if won1 || won2 {
+        if let setsToPlay = currentMatch?.setsToPlay {
+            if completedSets >= setsToPlay {
+                status = "Final"
+            } else if !setHistory.isEmpty || g1a_raw > 0 || g1b_raw > 0 {
+                status = "In Progress"
+            } else {
+                status = "Pre-Match"
+            }
+        } else if won1 || won2 {
             status = "Final"
         } else if !setHistory.isEmpty || g1a_raw > 0 || g1b_raw > 0 {
             status = "In Progress"
