@@ -958,9 +958,6 @@ struct QueueMergeTests {
 struct QueuePollingEdgeCaseTests {
 
     @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {
-        StubURLProtocol.reset()
-        defer { StubURLProtocol.reset() }
-
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
@@ -1002,9 +999,6 @@ struct QueuePollingEdgeCaseTests {
     }
 
     @Test func runImmediatePollCycle_keepsCurrentMatchWhenItIsAlreadyLive() async throws {
-        StubURLProtocol.reset()
-        defer { StubURLProtocol.reset() }
-
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
@@ -1049,9 +1043,6 @@ struct QueuePollingEdgeCaseTests {
     }
 
     @Test func runImmediatePollCycle_skipsBacklogOfCompletedMatchesBeforePollingNextPlayableMatch() async throws {
-        StubURLProtocol.reset()
-        defer { StubURLProtocol.reset() }
-
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
@@ -1104,6 +1095,155 @@ struct QueuePollingEdgeCaseTests {
         let snapshot = try #require(court.lastSnapshot)
         #expect(snapshot.status == "Pre-Match")
         #expect(snapshot.matchNumber == playableMatch.matchNumber)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct CourtReassignmentTests {
+
+    @Test func runCourtChangeForTesting_movesLiveMatchBehindTargetLiveMatchAndResetsSourceCourt() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let notificationService = RecordingNotificationService()
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            apiClient: apiClient,
+            notificationService: notificationService
+        )
+        defer { cleanup() }
+
+        let movingMatch = makeMatchItem(
+            url: "https://example.com/matches/move-live",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5",
+            physicalCourt: "Court Alpha",
+            scheduledTime: "9:15AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let sourceNextMatch = makeMatchItem(
+            url: "https://example.com/matches/source-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "6",
+            scheduledTime: "10:00AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let targetLiveMatch = makeMatchItem(
+            url: "https://example.com/matches/target-live",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "11",
+            scheduledTime: "9:00AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let targetQueuedMatch = makeMatchItem(
+            url: "https://example.com/matches/target-queued",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "12",
+            scheduledTime: "10:30AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: movingMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 10, away: 9),
+            for: targetLiveMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [movingMatch, sourceNextMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [targetLiveMatch, targetQueuedMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 2)
+        await viewModel.runCourtChangeForTesting(matchId: movingMatch.id, fromCourt: 1, toCourt: 2)
+
+        let sourceCourt = try #require(viewModel.court(for: 1))
+        #expect(sourceCourt.queue.map(\.id) == [sourceNextMatch.id])
+        #expect(sourceCourt.activeIndex == 0)
+        #expect(sourceCourt.status == .waiting)
+        #expect(sourceCourt.lastSnapshot == nil)
+
+        let targetCourt = try #require(viewModel.court(for: 2))
+        #expect(targetCourt.activeIndex == 0)
+        #expect(targetCourt.status == .live)
+        #expect(targetCourt.queue.count == 3)
+        #expect(targetCourt.queue[0].id == targetLiveMatch.id)
+        #expect(targetCourt.queue[1].id == movingMatch.id)
+        #expect(targetCourt.queue[2].id == targetQueuedMatch.id)
+
+        #expect(notificationService.courtChangeEvents.count == 1)
+        let event = try #require(notificationService.courtChangeEvents.first)
+        #expect(event.oldCamera == 1)
+        #expect(event.newCamera == 2)
+        #expect(event.isLiveMatch)
+    }
+
+    @Test func runCourtChangeForTesting_decrementsActiveIndexWhenQueuedMatchMovesOffSourceCourt() async throws {
+        let notificationService = RecordingNotificationService()
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(notificationService: notificationService)
+        defer { cleanup() }
+
+        let movedMatch = makeMatchItem(
+            url: "https://example.com/matches/move-queued",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3",
+            physicalCourt: "Court Beta",
+            scheduledTime: "8:00AM"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/stays-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "4",
+            scheduledTime: "9:00AM"
+        )
+        let laterSourceMatch = makeMatchItem(
+            url: "https://example.com/matches/stays-later",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "5",
+            scheduledTime: "10:00AM"
+        )
+        let targetExistingEarly = makeMatchItem(
+            url: "https://example.com/matches/target-early",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "9",
+            scheduledTime: "9:30AM"
+        )
+        let targetExistingLate = makeMatchItem(
+            url: "https://example.com/matches/target-late",
+            team1: "Quinn Ash / Rory Blue",
+            team2: "Sage Cove / Tali Dawn",
+            matchNumber: "10",
+            scheduledTime: "11:00AM"
+        )
+
+        viewModel.replaceQueue(1, with: [movedMatch, activeMatch, laterSourceMatch], startIndex: 1)
+        viewModel.replaceQueue(2, with: [targetExistingEarly, targetExistingLate], startIndex: 0)
+
+        await viewModel.runCourtChangeForTesting(matchId: movedMatch.id, fromCourt: 1, toCourt: 2)
+
+        let sourceCourt = try #require(viewModel.court(for: 1))
+        #expect(sourceCourt.activeIndex == 0)
+        #expect(sourceCourt.queue.map(\.id) == [activeMatch.id, laterSourceMatch.id])
+
+        let targetCourt = try #require(viewModel.court(for: 2))
+        #expect(targetCourt.queue.map(\.id) == [movedMatch.id, targetExistingEarly.id, targetExistingLate.id])
+
+        #expect(notificationService.courtChangeEvents.count == 1)
+        let event = try #require(notificationService.courtChangeEvents.first)
+        #expect(!event.isLiveMatch)
     }
 }
 
@@ -1263,7 +1403,10 @@ private func makeLegacyHydrateJSON() -> [String: Any] {
 }
 
 @MainActor
-private func makeIsolatedAppViewModel(apiClient: APIClient = APIClient()) -> (AppViewModel, ConfigStore, () -> Void) {
+private func makeIsolatedAppViewModel(
+    apiClient: APIClient = APIClient(),
+    notificationService: NotificationSending? = nil
+) -> (AppViewModel, ConfigStore, () -> Void) {
     let tempRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("MultiCourtScoreTests-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -1272,11 +1415,13 @@ private func makeIsolatedAppViewModel(apiClient: APIClient = APIClient()) -> (Ap
     let cleanup: () -> Void = {
         try? FileManager.default.removeItem(at: tempRoot)
     }
+    let resolvedNotificationService = notificationService ?? RecordingNotificationService()
     let viewModel = AppViewModel(
         runtimeMode: .live,
         webSocketHub: .shared,
         configStore: configStore,
-        apiClient: apiClient
+        apiClient: apiClient,
+        notificationService: resolvedNotificationService
     )
     return (viewModel, configStore, cleanup)
 }
@@ -1287,6 +1432,7 @@ private func makeMatchItem(
     team2: String?,
     matchNumber: String?,
     courtNumber: String? = nil,
+    physicalCourt: String? = nil,
     scheduledTime: String? = nil,
     setsToWin: Int? = nil,
     pointCap: Int? = nil,
@@ -1299,6 +1445,7 @@ private func makeMatchItem(
         scheduledTime: scheduledTime,
         matchNumber: matchNumber,
         courtNumber: courtNumber,
+        physicalCourt: physicalCourt,
         setsToWin: setsToWin,
         pointCap: pointCap,
         gameIds: gameIds
@@ -1390,6 +1537,20 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+@MainActor
+private final class RecordingNotificationService: NotificationSending {
+    private(set) var courtChangeEvents: [CourtChangeEvent] = []
+    private(set) var completedMatchEvents: [(matchLabel: String, winner: String, cameraId: Int)] = []
+
+    func sendCourtChangeAlert(_ event: CourtChangeEvent) async {
+        courtChangeEvents.append(event)
+    }
+
+    func sendMatchCompleteAlert(matchLabel: String, winner: String, cameraId: Int) async {
+        completedMatchEvents.append((matchLabel, winner, cameraId))
+    }
 }
 
 private func reserveListeningSocket() throws -> (Int32, Int) {
