@@ -73,6 +73,7 @@ struct SettingsView: View {
                             .background(Circle().fill(AppColors.surfaceHover))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.close")
                     .help("Close (Esc)")
                 }
                 .padding(.horizontal, 24)

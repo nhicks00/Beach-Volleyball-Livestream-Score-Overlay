@@ -215,6 +215,7 @@ struct DashboardView: View {
             .easeInOut(duration: 0.2),
             value: editorConfig != nil || showScannerModal || showSettingsModal
         )
+        .accessibilityIdentifier("dashboard.root")
         // Rename Alert
         .alert("Rename Overlay", isPresented: Binding(
             get: { renamingCourtId != nil },
@@ -285,6 +286,7 @@ struct DashboardView: View {
                     Label("Start All", systemImage: "play.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.startAll")
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .tint(AppColors.success)
@@ -293,6 +295,7 @@ struct DashboardView: View {
                     Label("Stop All", systemImage: "stop.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.stopAll")
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .tint(AppColors.error)
@@ -309,6 +312,7 @@ struct DashboardView: View {
                     Label("Scan VBL", systemImage: "magnifyingglass")
                         .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.scan")
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .tint(AppColors.primary)
@@ -319,6 +323,7 @@ struct DashboardView: View {
                     Label("Clear All", systemImage: "trash")
                         .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.clearAll")
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
 
@@ -331,6 +336,7 @@ struct DashboardView: View {
                     Image(systemName: "gear")
                         .font(.system(size: 16))
                 }
+                .accessibilityIdentifier("toolbar.settings")
                 .buttonStyle(.borderless)
                 .foregroundColor(AppColors.textSecondary)
             }
@@ -361,6 +367,7 @@ struct DashboardView: View {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.startAll")
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .tint(AppColors.success)
@@ -370,6 +377,7 @@ struct DashboardView: View {
                         Image(systemName: "stop.circle.fill")
                             .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.stopAll")
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .tint(AppColors.error)
@@ -384,6 +392,7 @@ struct DashboardView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.scan")
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .tint(AppColors.primary)
@@ -395,6 +404,7 @@ struct DashboardView: View {
                         Image(systemName: "trash")
                             .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.clearAll")
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .help("Clear All")
@@ -408,6 +418,7 @@ struct DashboardView: View {
                         Image(systemName: "gear")
                             .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.settings")
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .help("Settings")

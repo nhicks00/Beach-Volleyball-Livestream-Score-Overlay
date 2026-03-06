@@ -101,6 +101,7 @@ struct ScanWorkflowView: View {
                         .foregroundColor(AppColors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("scan.close.sidebar")
             }
             .padding(16)
 
@@ -199,6 +200,7 @@ struct ScanWorkflowView: View {
                     .background(Circle().fill(AppColors.surfaceHover))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("scan.close")
             .help("Close (Esc)")
         }
         .padding(AppLayout.contentPadding)

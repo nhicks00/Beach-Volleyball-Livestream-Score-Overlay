@@ -14,6 +14,15 @@ class ConfigStore {
     // MARK: - App Support Directory
     
     private var appSupportURL: URL {
+        if let overridePath = ProcessInfo.processInfo.environment["MULTICOURTSCORE_APP_SUPPORT_DIR"],
+           !overridePath.isEmpty {
+            let url = URL(fileURLWithPath: overridePath, isDirectory: true)
+            if !fileManager.fileExists(atPath: url.path) {
+                try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            }
+            return url
+        }
+
         let url = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("MultiCourtScore")
         

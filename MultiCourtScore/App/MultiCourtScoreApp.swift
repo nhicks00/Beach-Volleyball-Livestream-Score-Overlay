@@ -9,7 +9,13 @@ import SwiftUI
 
 @main
 struct MultiCourtScoreApp: App {
-    @StateObject private var appViewModel = AppViewModel()
+    @StateObject private var appViewModel: AppViewModel
+    @State private var didBootstrap = false
+
+    init() {
+        let viewModel = AppViewModel()
+        _appViewModel = StateObject(wrappedValue: viewModel)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -17,6 +23,8 @@ struct MultiCourtScoreApp: App {
                 .environmentObject(appViewModel)
                 .background(WindowBehaviorConfigurator())
                 .onAppear {
+                    guard !didBootstrap else { return }
+                    didBootstrap = true
                     appViewModel.startServices()
                     applyTheme(appViewModel.appSettings.overlayTheme)
                     if appViewModel.appSettings.autoStartPolling {
@@ -28,6 +36,8 @@ struct MultiCourtScoreApp: App {
                 }
                 .frame(minWidth: 1100, minHeight: 760)
         }
+        .defaultLaunchBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .presented : .automatic)
+        .restorationBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .disabled : .automatic)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
@@ -84,6 +94,22 @@ private struct WindowBehaviorConfigurator: NSViewRepresentable {
         window.titlebarAppearsTransparent = true
         window.collectionBehavior.formUnion([.fullScreenPrimary, .fullScreenAllowsTiling])
         window.tabbingMode = .disallowed
+
+        if ProcessInfo.processInfo.arguments.contains("--uitest-mode") {
+            let targetSize = NSSize(width: 1440, height: 940)
+            if window.frame.size != targetSize {
+                window.setContentSize(targetSize)
+                window.center()
+            }
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
 
         // Force the green zoom button to use native fullscreen instead of desktop zoom.
         if let zoomButton = window.standardWindowButton(.zoomButton) {
