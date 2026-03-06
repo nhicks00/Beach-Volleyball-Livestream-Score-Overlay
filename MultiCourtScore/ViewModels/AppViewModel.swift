@@ -375,6 +375,23 @@ final class AppViewModel: ObservableObject {
         saveConfigurationNow()
     }
 
+    /// Deterministic single poll-cycle hook used by tests.
+    func runImmediatePollCycleForTesting(courtId: Int) async {
+        guard !isUITestMode else { return }
+        guard let idx = courtIndex(for: courtId),
+              !courts[idx].queue.isEmpty else { return }
+
+        if courts[idx].activeIndex == nil {
+            courts[idx].activeIndex = 0
+        }
+        if !courts[idx].status.isPolling {
+            courts[idx].status = .waiting
+        }
+
+        await advanceToFirstPlayableMatchIfNeeded(courtId: courtId)
+        await pollOnce(courtId)
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
