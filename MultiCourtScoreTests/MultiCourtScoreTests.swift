@@ -1096,6 +1096,143 @@ struct QueuePollingEdgeCaseTests {
         #expect(snapshot.status == "Pre-Match")
         #expect(snapshot.matchNumber == playableMatch.matchNumber)
     }
+
+    @Test func runImmediatePollCycle_doesNotAdvancePlayAllPoolMatchAfterOnlyOneCompletedSet() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let currentMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-current")!,
+            team1Name: "William Mota / Derek Strause",
+            team2Name: "Nathan Hicks / Reid Malone",
+            team1Seed: "1",
+            team2Seed: "3",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:00AM",
+            startDate: "Fri",
+            matchNumber: "1",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+        let nextMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-next")!,
+            team1Name: "Marvin Pacheco / Derek Toliver",
+            team2Name: "George Black / Daniel Wenger",
+            team1Seed: "2",
+            team2Seed: "4",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:40AM",
+            startDate: "Fri",
+            matchNumber: "2",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: currentMatch.team1Name ?? "Team A",
+                team2Name: currentMatch.team2Name ?? "Team B",
+                game1: (18, 21),
+                game2: (0, 0)
+            ),
+            for: currentMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [currentMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "In Progress")
+        #expect(snapshot.setHistory.count == 1)
+        let firstSet = try #require(snapshot.setHistory.first)
+        #expect(firstSet == SetScore(setNumber: 1, team1Score: 18, team2Score: 21, isComplete: true))
+    }
+
+    @Test func runImmediatePollCycle_advancesPlayAllPoolMatchAfterRequiredSetsComplete() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let currentMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-finished")!,
+            team1Name: "William Mota / Derek Strause",
+            team2Name: "Nathan Hicks / Reid Malone",
+            team1Seed: "1",
+            team2Seed: "3",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:00AM",
+            startDate: "Fri",
+            matchNumber: "1",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+        let nextMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-finished-next")!,
+            team1Name: "Marvin Pacheco / Derek Toliver",
+            team2Name: "George Black / Daniel Wenger",
+            team1Seed: "2",
+            team2Seed: "4",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:40AM",
+            startDate: "Fri",
+            matchNumber: "2",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: currentMatch.team1Name ?? "Team A",
+                team2Name: currentMatch.team2Name ?? "Team B",
+                game1: (18, 21),
+                game2: (21, 19)
+            ),
+            for: currentMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [currentMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Pre-Match")
+    }
 }
 
 @MainActor
@@ -2125,6 +2262,31 @@ private func makeScoreDict(
             "away": away
         ]
     ]
+}
+
+private func makeVMixArrayData(
+    team1Name: String,
+    team2Name: String,
+    game1: (Int, Int),
+    game2: (Int, Int) = (0, 0),
+    game3: (Int, Int) = (0, 0)
+) -> Data {
+    let payload: [[String: Any]] = [
+        [
+            "teamName": team1Name,
+            "game1": game1.0,
+            "game2": game2.0,
+            "game3": game3.0
+        ],
+        [
+            "teamName": team2Name,
+            "game1": game1.1,
+            "game2": game2.1,
+            "game3": game3.1
+        ]
+    ]
+
+    return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
 }
 
 private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
