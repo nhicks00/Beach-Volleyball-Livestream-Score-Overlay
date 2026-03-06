@@ -1464,6 +1464,183 @@ struct SignalRSubscriptionTests {
 
 @MainActor
 @Suite(.serialized)
+struct SignalRMutationQueueTests {
+
+    @Test func signalRDidReceiveMutation_advancesSingleSetQueueAndRemapsNextGameId() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let finishedPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-pool-finished",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23,
+            gameIds: [901]
+        )
+        let nextPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-pool-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23,
+            gameIds: [902]
+        )
+
+        viewModel.replaceQueue(1, with: [finishedPoolMatch, nextPoolMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        viewModel.rebuildGameIdMapForTesting()
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 3, away: 2),
+            for: nextPoolMatch.apiURL
+        )
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 901,
+                "home": 8,
+                "away": 7,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.status == "In Progress"
+                && snapshot.setHistory.last?.team1Score == 8
+                && snapshot.setHistory.last?.team2Score == 7
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 901,
+                "home": 21,
+                "away": 16,
+                "number": 0,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1) else { return false }
+            return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 902,
+                "home": 5,
+                "away": 4,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  court.activeIndex == 1,
+                  court.status == .live,
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return snapshot.status == "In Progress"
+                && snapshot.setHistory.last?.team1Score == 5
+                && snapshot.setHistory.last?.team2Score == 4
+        })
+    }
+
+    @Test func signalRDidReceiveMutation_waitsForBestOfThreeMatchToBeWonBeforeAdvancing() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let bracketMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-bracket-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "10",
+            setsToWin: 2,
+            gameIds: [1001, 1002, 1003]
+        )
+        let queuedNextMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-bracket-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "11",
+            setsToWin: 2,
+            gameIds: [1004, 1005, 1006]
+        )
+
+        viewModel.replaceQueue(1, with: [bracketMatch, queuedNextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 2))
+        viewModel.rebuildGameIdMapForTesting()
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 6, away: 5),
+            for: queuedNextMatch.apiURL
+        )
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 1001,
+                "home": 21,
+                "away": 18,
+                "number": 0,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.team1Score == 1
+                && snapshot.team2Score == 0
+                && snapshot.status == "In Progress"
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 1002,
+                "home": 21,
+                "away": 17,
+                "number": 1,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1) else { return false }
+            return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
+        })
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct CourtReassignmentTests {
 
     @Test func runCourtChangeForTesting_movesLiveMatchBehindTargetLiveMatchAndResetsSourceCourt() async throws {
