@@ -62,6 +62,7 @@ final class AppViewModel: ObservableObject {
     // Placeholder pool endpoints can return repeated upstream 500s while a match
     // is still synthetic. Keep the first log line and then rate-limit reminders.
     private var placeholderSuppressionLogTimes: [Int: [String: Date]] = [:]
+    private var queueMetadataSuppressionLogTimes: [Int: [String: Date]] = [:]
     private static let placeholderSuppressionLogInterval: TimeInterval = 300
 
     var isUITestMode: Bool {
@@ -197,6 +198,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].finishedAt = nil
         observedActiveScoring[courtId] = false
+        clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
     }
@@ -230,6 +232,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].finishedAt = nil
             courts[idx].errorMessage = nil
             observedActiveScoring[courtId] = false
+            clearSuppressionLogState(for: courtId)
             saveConfigurationNow()
             runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor changes for court \(courtId); queue emptied")
             return
@@ -258,6 +261,7 @@ final class AppViewModel: ObservableObject {
             observedActiveScoring[courtId] = false
         }
 
+        clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(
             .info,
@@ -272,6 +276,7 @@ final class AppViewModel: ObservableObject {
         if courts[idx].activeIndex == nil && !items.isEmpty {
             courts[idx].activeIndex = 0
         }
+        clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "appended \(items.count) matches to court \(courtId)")
     }
@@ -325,6 +330,7 @@ final class AppViewModel: ObservableObject {
 
         courts[idx].queue = queue
         // activeIndex, status, lastSnapshot, liveSince, finishedAt — all untouched
+        clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(
             .info,
@@ -370,6 +376,7 @@ final class AppViewModel: ObservableObject {
             lastScoreChangeTime.removeValue(forKey: courtId)
             lastScoreSnapshot.removeValue(forKey: courtId)
             lastServeTeam.removeValue(forKey: courtId)
+            clearSuppressionLogState(for: courtId)
         }
         runtimeLog.log(.warning, subsystem: "queue", message: "cleared all court queues and reset runtime state")
         saveConfigurationNow()
@@ -523,6 +530,11 @@ final class AppViewModel: ObservableObject {
     /// Test-only cache reset so multi-step polling scenarios can swap fixtures deterministically.
     func clearScoreCacheForTesting() async {
         await scoreCache.clearAll()
+    }
+
+    /// Test-only hook to force the next queue metadata refresh path to run immediately.
+    func resetQueueMetadataRefreshForTesting(courtId: Int) {
+        lastQueueRefreshTimes[courtId] = .distantPast
     }
 
     /// Test-only hook to drive the shared snapshot transition path directly.
@@ -769,8 +781,38 @@ final class AppViewModel: ObservableObject {
         return true
     }
 
+    private func shouldLogSuppressedQueueMetadataError(for courtId: Int, matchItem: MatchItem, now: Date = Date()) -> Bool {
+        let url = matchItem.apiURL.absoluteString
+        if let lastLoggedAt = queueMetadataSuppressionLogTimes[courtId]?[url],
+           now.timeIntervalSince(lastLoggedAt) < Self.placeholderSuppressionLogInterval {
+            return false
+        }
+
+        var logTimes = queueMetadataSuppressionLogTimes[courtId] ?? [:]
+        logTimes[url] = now
+        queueMetadataSuppressionLogTimes[courtId] = logTimes
+        return true
+    }
+
     private func clearPlaceholderSuppressionLogState(for courtId: Int) {
         placeholderSuppressionLogTimes[courtId] = nil
+    }
+
+    private func clearQueueMetadataSuppressionLogState(for courtId: Int, matchItem: MatchItem? = nil) {
+        guard let matchItem else {
+            queueMetadataSuppressionLogTimes[courtId] = nil
+            return
+        }
+
+        let url = matchItem.apiURL.absoluteString
+        guard var logTimes = queueMetadataSuppressionLogTimes[courtId] else { return }
+        logTimes.removeValue(forKey: url)
+        queueMetadataSuppressionLogTimes[courtId] = logTimes.isEmpty ? nil : logTimes
+    }
+
+    private func clearSuppressionLogState(for courtId: Int) {
+        clearPlaceholderSuppressionLogState(for: courtId)
+        clearQueueMetadataSuppressionLogState(for: courtId)
     }
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {
@@ -1193,8 +1235,19 @@ final class AppViewModel: ObservableObject {
                     if hasChanges {
                         runtimeLog.log(.info, subsystem: "queue-metadata", message: "updated queued metadata for court \(courtId) match index \(i)")
                     }
+                    clearQueueMetadataSuppressionLogState(for: courtId, matchItem: match)
                 } catch {
-                    runtimeLog.log(.warning, subsystem: "queue-metadata", message: "failed to refresh queued metadata for court \(courtId): \(error.localizedDescription)")
+                    if shouldSuppressPollError(error, for: match) {
+                        if shouldLogSuppressedQueueMetadataError(for: courtId, matchItem: match) {
+                            runtimeLog.log(
+                                .info,
+                                subsystem: "queue-metadata",
+                                message: "suppressed placeholder queue metadata refresh for court \(courtId): \(match.apiURL.absoluteString)"
+                            )
+                        }
+                    } else {
+                        runtimeLog.log(.warning, subsystem: "queue-metadata", message: "failed to refresh queued metadata for court \(courtId): \(error.localizedDescription)")
+                    }
                 }
             }
         }
