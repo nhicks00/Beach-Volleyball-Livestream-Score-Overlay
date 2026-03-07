@@ -172,6 +172,10 @@ final class RuntimeLogStore: @unchecked Sendable {
         process.arguments = [
             "-c",
             "-k",
+            "--norsrc",
+            "--noextattr",
+            "--noqtn",
+            "--noacl",
             "--keepParent",
             sourceDirectory.path,
             destinationURL.path
