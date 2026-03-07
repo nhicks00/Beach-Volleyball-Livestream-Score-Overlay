@@ -22,6 +22,7 @@ final class WebSocketHub {
     private var isStarting = false
     private var startedAt: Date?
     public private(set) var startupError: String?
+    private let runtimeLog = RuntimeLogStore.shared
 
     private init() {}
 
@@ -29,7 +30,9 @@ final class WebSocketHub {
 
     func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) async {
         guard !isRunning && !isStarting else {
-            if isRunning { print("⚠️ Overlay server already running") }
+            if isRunning {
+                runtimeLog.log(.warning, subsystem: "overlay-server", message: "start requested while server is already running")
+            }
             return
         }
 
@@ -40,11 +43,11 @@ final class WebSocketHub {
         
         // Ensure old app is cleaned up
         if let oldApp = app {
-            print("Cleaning up existing server instance...")
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "cleaning up existing server instance before restart")
             do {
                 try await oldApp.asyncShutdown()
             } catch {
-                print("Error shutting down old app: \(error)")
+                runtimeLog.log(.warning, subsystem: "overlay-server", message: "error shutting down previous instance: \(error.localizedDescription)")
             }
             app = nil
         }
@@ -63,16 +66,16 @@ final class WebSocketHub {
             // Install routes
             installRoutes(newApp)
 
-            print("⏳ Starting overlay server on port \(port)...")
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "starting on port \(port)")
             try await newApp.startup()
 
             isRunning = true
             isStarting = false
             startedAt = Date()
             startupError = nil
-            print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "running at http://localhost:\(port)/overlay/court/X")
         } catch {
-            print("❌ Failed to start overlay server: \(error)")
+            runtimeLog.log(.error, subsystem: "overlay-server", message: "failed to start on port \(port): \(error.localizedDescription)")
             self.isRunning = false
             self.isStarting = false
             self.startedAt = nil
@@ -89,13 +92,13 @@ final class WebSocketHub {
         isStarting = false
         startedAt = nil
         Task.detached {
-            print("🛑 Stopping overlay server...")
+            RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopping")
             do {
                 try await appToStop?.asyncShutdown()
             } catch {
-                print("⚠️ Error shutting down app: \(error)")
+                RuntimeLogStore.shared.log(.warning, subsystem: "overlay-server", message: "error during shutdown: \(error.localizedDescription)")
             }
-            print("🛑 Overlay server stopped")
+            RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopped")
         }
     }
 
@@ -278,6 +281,19 @@ final class WebSocketHub {
                 response.body = .init(string: lines.joined(separator: "\n"))
                 return response
             }
+        }
+
+        app.get("debug", "logs") { _ async throws -> Response in
+            let response = Response(status: .ok)
+            response.headers.contentType = .plainText
+
+            let logText = self.runtimeLog.recentEntries()
+            if logText.isEmpty {
+                response.body = .init(string: "Runtime log is empty.\nPath: \(self.runtimeLog.logFilePath)")
+            } else {
+                response.body = .init(string: "Path: \(self.runtimeLog.logFilePath)\n\n\(logText)")
+            }
+            return response
         }
 
         // Main overlay page
