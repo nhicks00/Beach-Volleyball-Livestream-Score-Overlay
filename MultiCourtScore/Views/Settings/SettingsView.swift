@@ -494,8 +494,10 @@ struct SettingsView: View {
     // MARK: - Logs Pane (NEW)
 
     private var logsPane: some View {
-        ScrollView {
+        return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                systemHealthSection(health: currentHealthSnapshot)
+
                 DetailSection(title: "Runtime Diagnostics") {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -632,6 +634,51 @@ struct SettingsView: View {
         }
     }
 
+    private func systemHealthSection(health: OverlayHealthSnapshot) -> some View {
+        DetailSection(title: "System Health") {
+            VStack(alignment: .leading, spacing: 10) {
+                healthRow(
+                    label: "Overall",
+                    value: health.status.uppercased(),
+                    color: health.status == "ok" ? AppColors.success : AppColors.warning
+                )
+                healthRow(
+                    label: "Overlay Server",
+                    value: health.serverStatus == "running" ? "Running on localhost:\(health.port)" : "Stopped",
+                    color: health.serverStatus == "running" ? AppColors.success : AppColors.error
+                )
+                healthRow(
+                    label: "SignalR",
+                    value: health.signalREnabled ? health.signalRStatus : "Disabled",
+                    color: health.signalREnabled ? appViewModel.signalRStatus.statusColor : AppColors.textMuted
+                )
+                healthRow(
+                    label: "Polling Watch",
+                    value: health.stalePollingCourtIds.isEmpty
+                        ? "No stale courts"
+                        : "Stale courts: \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))",
+                    color: health.stalePollingCourtIds.isEmpty ? AppColors.success : AppColors.warning
+                )
+                healthRow(
+                    label: "Court Coverage",
+                    value: "\(health.courtCount) courts in snapshot",
+                    color: AppColors.textSecondary
+                )
+
+                if let startupError = health.startupError, !startupError.isEmpty {
+                    Text(startupError)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.error)
+                        .textSelection(.enabled)
+                }
+
+                Text("Diagnostics bundles include this snapshot as health.json.")
+                    .font(.system(size: 11))
+                    .foregroundColor(AppColors.textMuted)
+            }
+        }
+    }
+
     // MARK: - About Pane
 
     private var aboutPane: some View {
@@ -698,6 +745,24 @@ struct SettingsView: View {
     private func saveSettings() {
         configStore.saveSettings(settings)
         appViewModel.appSettings = settings
+    }
+
+    private var currentHealthSnapshot: OverlayHealthSnapshot {
+        WebSocketHub.shared.currentHealthSnapshot(port: appViewModel.appSettings.serverPort)
+    }
+
+    private func healthRow(label: String, value: String, color: Color) -> some View {
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(AppColors.textMuted)
+                .frame(width: 96, alignment: .leading)
+
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(color)
+                .textSelection(.enabled)
+        }
     }
 
     private func saveCredentials() {
@@ -788,6 +853,7 @@ struct SettingsView: View {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let healthSnapshot = currentHealthSnapshot
 
             let manifest = DiagnosticsManifest(
                 generatedAt: ISO8601DateFormatter().string(from: Date()),
@@ -821,6 +887,10 @@ struct SettingsView: View {
                 RuntimeLogStore.Attachment(
                     fileName: "court-state.json",
                     data: try encoder.encode(courtSnapshots)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "health.json",
+                    data: try encoder.encode(healthSnapshot)
                 ),
                 RuntimeLogStore.Attachment(
                     fileName: "scanner-logs.txt",

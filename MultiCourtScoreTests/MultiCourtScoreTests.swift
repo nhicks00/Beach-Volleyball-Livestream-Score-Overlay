@@ -2520,6 +2520,12 @@ struct OverlayServerLifecycleTests {
 
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["status"] as? String == "ok")
+        #expect(json["serverStatus"] as? String == "running")
+        #expect(json["port"] as? Int == freePort)
+        #expect(json["signalRStatus"] as? String == SignalRStatus.disabled.displayLabel)
+        #expect(json["signalREnabled"] as? Bool == false)
+        let courts = try #require(json["courts"] as? [[String: Any]])
+        #expect(courts.count == viewModel.courts.count)
 
         WebSocketHub.shared.stop()
         try? await Task.sleep(nanoseconds: 100_000_000)
