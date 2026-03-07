@@ -33,6 +33,7 @@ final class AppViewModel: ObservableObject {
     private let signalRCredentialsProvider: () -> ConfigStore.VBLCredentials?
     private let signalRClientFactory: (any SignalRDelegate) -> any SignalRClienting
     private let runtimeMode: RuntimeMode
+    private let runtimeLog = RuntimeLogStore.shared
     private var signalRClient: (any SignalRClienting)?
     
     // MARK: - Private State
@@ -126,7 +127,7 @@ final class AppViewModel: ObservableObject {
             } else if serverRunning {
                 error = nil
             }
-            print("🚀 MultiCourtScore v2 services started on port \(appSettings.serverPort)")
+            runtimeLog.log(.info, subsystem: "app-lifecycle", message: "services started on port \(appSettings.serverPort)")
         }
         startWatchdog()
         if appSettings.signalREnabled {
@@ -310,7 +311,11 @@ final class AppViewModel: ObservableObject {
         courts[idx].queue = queue
         // activeIndex, status, lastSnapshot, liveSince, finishedAt — all untouched
         saveConfigurationNow()
-        print("[Merge] Court \(courtId): updated \(consumedNewIndices.count) existing, appended \(normalizedNew.count - consumedNewIndices.count) new")
+        runtimeLog.log(
+            .info,
+            subsystem: "queue",
+            message: "merged court \(courtId): updated \(consumedNewIndices.count) existing, appended \(normalizedNew.count - consumedNewIndices.count) new"
+        )
     }
 
     /// Generate a stable key for matching queue items across scans.
@@ -350,6 +355,7 @@ final class AppViewModel: ObservableObject {
             lastScoreSnapshot.removeValue(forKey: courtId)
             lastServeTeam.removeValue(forKey: courtId)
         }
+        runtimeLog.log(.warning, subsystem: "queue", message: "cleared all court queues and reset runtime state")
         saveConfigurationNow()
     }
     
@@ -412,7 +418,7 @@ final class AppViewModel: ObservableObject {
 
         rebuildGameIdMap()
         saveConfigurationNow()
-        print("▶️ Started polling for court \(courtId)")
+        runtimeLog.log(.info, subsystem: "polling", message: "started polling for court \(courtId)")
     }
     
     func stopPolling(for courtId: Int) {
@@ -428,7 +434,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].liveSince = nil
         }
         scheduleSave()
-        print("⏹️ Stopped polling for court \(courtId)")
+        runtimeLog.log(.info, subsystem: "polling", message: "stopped polling for court \(courtId)")
     }
     
     func startAllPolling() {
@@ -589,7 +595,7 @@ final class AppViewModel: ObservableObject {
     private func checkPollingHealth() {
         for court in courts where court.status.isPolling {
             if let lastPoll = court.lastPollTime, Date().timeIntervalSince(lastPoll) > 30 {
-                print("🚨 WATCHDOG: Court \(court.id) stale — restarting")
+                runtimeLog.log(.warning, subsystem: "polling-watchdog", message: "court \(court.id) stale, restarting polling")
                 pollingTimers[court.id]?.invalidate()
                 pollingTimers[court.id] = nil
                 pollsInFlight.remove(court.id)
@@ -661,7 +667,11 @@ final class AppViewModel: ObservableObject {
                    courts[writeIdx].queue[writeActive].id == matchItem.id,
                    (snapshot.team1Name != courts[writeIdx].queue[writeActive].team1Name
                     || snapshot.team2Name != courts[writeIdx].queue[writeActive].team2Name) {
-                    print("🔄 Updated current match team names: \(snapshot.team1Name) vs \(snapshot.team2Name)")
+                    runtimeLog.log(
+                        .info,
+                        subsystem: "queue-metadata",
+                        message: "updated current match teams for court \(courtId): \(snapshot.team1Name) vs \(snapshot.team2Name)"
+                    )
                     courts[writeIdx].queue[writeActive].team1Name = snapshot.team1Name
                     courts[writeIdx].queue[writeActive].team2Name = snapshot.team2Name
                     scheduleSave()
@@ -702,9 +712,13 @@ final class AppViewModel: ObservableObject {
             }
             // Don't change to error status on single failure
             if shouldSuppressError {
-                print("ℹ️ Suppressing placeholder poll error for court \(courtId): \(matchItem.apiURL.absoluteString)")
+                runtimeLog.log(
+                    .info,
+                    subsystem: "polling",
+                    message: "suppressed placeholder poll error for court \(courtId): \(matchItem.apiURL.absoluteString)"
+                )
             } else {
-                print("⚠️ Poll error for court \(courtId): \(error.localizedDescription)")
+                runtimeLog.log(.warning, subsystem: "polling", message: "poll error for court \(courtId): \(error.localizedDescription)")
             }
         }
     }
@@ -801,7 +815,11 @@ final class AppViewModel: ObservableObject {
             return false
         }
 
-        print("🔄 Smart Queue Switch: Found active match at index \(switchIdx). Switching from index \(activeIdx)")
+        runtimeLog.log(
+            .info,
+            subsystem: "queue",
+            message: "smart-switched court \(courtId) from queue index \(activeIdx) to live match at index \(switchIdx)"
+        )
         courts[currentIdx].activeIndex = switchIdx
         courts[currentIdx].lastSnapshot = nil
         courts[currentIdx].status = .waiting
@@ -832,7 +850,7 @@ final class AppViewModel: ObservableObject {
         lastScoreChangeTime[courtId] = nil
         lastScoreSnapshot[courtId] = nil
 
-        print("⏭️ Preflight advanced court \(courtId) to match \(targetIdx + 1)")
+        runtimeLog.log(.info, subsystem: "queue", message: "preflight advanced court \(courtId) to match \(targetIdx + 1)")
     }
 
     // MARK: - Hydrate Re-fetch
@@ -1063,7 +1081,7 @@ final class AppViewModel: ObservableObject {
                 // Re-validate index before each access (queue may have changed)
                 guard let courtIdx = courtIndex(for: courtId),
                       i < courts[courtIdx].queue.count else {
-                    print("⚠️ Queue changed during metadata refresh, stopping early")
+                    runtimeLog.log(.warning, subsystem: "queue-metadata", message: "queue changed during metadata refresh for court \(courtId), stopping early")
                     return
                 }
 
@@ -1077,7 +1095,7 @@ final class AppViewModel: ObservableObject {
                     // Re-validate again before write
                     guard let writeIdx = courtIndex(for: courtId),
                           i < courts[writeIdx].queue.count else {
-                        print("⚠️ Queue changed during metadata refresh, stopping early")
+                        runtimeLog.log(.warning, subsystem: "queue-metadata", message: "queue changed during metadata refresh for court \(courtId), stopping early")
                         return
                     }
                     
@@ -1129,10 +1147,10 @@ final class AppViewModel: ObservableObject {
                     }
                     
                     if hasChanges {
-                        print("✅ Updated queue metadata for match \(i)")
+                        runtimeLog.log(.info, subsystem: "queue-metadata", message: "updated queued metadata for court \(courtId) match index \(i)")
                     }
                 } catch {
-                    print("⚠️ Failed to refresh queue metadata: \(error.localizedDescription)")
+                    runtimeLog.log(.warning, subsystem: "queue-metadata", message: "failed to refresh queued metadata for court \(courtId): \(error.localizedDescription)")
                 }
             }
         }
@@ -1227,7 +1245,11 @@ final class AppViewModel: ObservableObject {
         
         // Log the change
         let matchLabel = change.match.displayName
-        print("🔄 Court change: \(matchLabel) moved from \(CourtNaming.defaultName(for: change.fromCourt)) to \(CourtNaming.defaultName(for: change.toCourt))")
+        runtimeLog.log(
+            .warning,
+            subsystem: "court-change",
+            message: "\(matchLabel) moved from \(CourtNaming.defaultName(for: change.fromCourt)) to \(CourtNaming.defaultName(for: change.toCourt))"
+        )
 
         // Send notification
         let event = CourtChangeEvent(
@@ -1748,9 +1770,9 @@ final class AppViewModel: ObservableObject {
         courts = normalizedCourts
         if didNormalize {
             saveConfigurationNow()
-            print("🧹 Normalized legacy pool formats in saved queues")
+            runtimeLog.log(.info, subsystem: "config", message: "normalized legacy pool formats in saved queues")
         }
-        print("📂 Loaded configuration with \(courts.count) courts")
+        runtimeLog.log(.info, subsystem: "config", message: "loaded configuration with \(courts.count) courts")
     }
 
     private func scheduleSave() {
@@ -1966,7 +1988,7 @@ extension AppViewModel: SignalRDelegate {
               let gameId = dict["id"] as? Int else { return }
 
         guard let courtId = gameIdToCourtMap[gameId] else {
-            print("[SignalR] UPDATE_GAME for unknown gameId \(gameId)")
+            runtimeLog.log(.warning, subsystem: "signalr", message: "received UPDATE_GAME for unknown gameId \(gameId)")
             return
         }
 
@@ -2093,7 +2115,11 @@ extension AppViewModel: SignalRDelegate {
             )
         }
 
-        print("[SignalR] Court \(courtId) updated: Set \(gameNumber + 1) → \(homeScore)-\(awayScore)\(isFinal ? " (Final)" : "")")
+        runtimeLog.log(
+            .info,
+            subsystem: "signalr",
+            message: "court \(courtId) updated from SignalR: set \(gameNumber + 1) -> \(homeScore)-\(awayScore)\(isFinal ? " (final)" : "")"
+        )
     }
 
     /// Shared downstream logic for applying a score snapshot update.
@@ -2148,7 +2174,7 @@ extension AppViewModel: SignalRDelegate {
 
         if matchConcluded || isStale {
             if isStale && !matchConcluded {
-                print("🚨 Court \(courtId) match is stale (no score change for 15m). Auto-advancing.")
+                runtimeLog.log(.warning, subsystem: "queue", message: "court \(courtId) match is stale, auto-advancing")
             }
 
             courts[idx].status = .finished
@@ -2236,9 +2262,13 @@ extension AppViewModel: SignalRDelegate {
 
         let skippedCompleted = max(0, targetIndex - nextIndex)
         if skippedCompleted > 0 {
-            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1), skipped \(skippedCompleted) completed match(es)")
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "auto-advanced court \(courtId) to match \(targetIndex + 1), skipped \(skippedCompleted) completed match(es)"
+            )
         } else {
-            print("⏭️ Auto-advanced court \(courtId) to match \(targetIndex + 1)")
+            runtimeLog.log(.info, subsystem: "queue", message: "auto-advanced court \(courtId) to match \(targetIndex + 1)")
         }
 
         rebuildGameIdMap()

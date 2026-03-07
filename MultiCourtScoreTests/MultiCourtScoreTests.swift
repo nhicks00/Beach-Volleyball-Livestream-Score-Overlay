@@ -2267,6 +2267,32 @@ struct OverlayServerLifecycleTests {
         try? await Task.sleep(nanoseconds: 100_000_000)
         #expect(!WebSocketHub.shared.isRunning)
     }
+
+    @Test func debugLogs_returnsRecentRuntimeEntries() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let freePort = try reserveFreePort()
+        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+
+        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/debug/logs"))
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        #expect(httpResponse.statusCode == 200)
+
+        let body = String(decoding: data, as: UTF8.self)
+        #expect(body.contains("Path:"))
+        #expect(body.contains("[overlay-server]"))
+        #expect(body.contains("running at http://localhost"))
+
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
 }
 
 // MARK: - Test Helpers
