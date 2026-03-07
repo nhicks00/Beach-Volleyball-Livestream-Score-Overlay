@@ -522,6 +522,11 @@ struct SettingsView: View {
                                 exportRuntimeLog()
                             }
                             .accessibilityIdentifier("settings.logs.exportRuntime")
+
+                            Button("Export Diagnostics Bundle...") {
+                                exportDiagnosticsBundle()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportDiagnostics")
                         }
                         .buttonStyle(.bordered)
                         .font(.system(size: 11))
@@ -661,6 +666,28 @@ struct SettingsView: View {
 
     // MARK: - Actions
 
+    private struct DiagnosticsManifest: Codable {
+        let generatedAt: String
+        let appVersion: String
+        let osVersion: String
+        let runtimeLogPath: String
+        let serverRunning: Bool
+        let signalRStatus: String
+        let courtCount: Int
+    }
+
+    private struct CourtDiagnosticsSnapshot: Codable {
+        let id: Int
+        let name: String
+        let status: String
+        let currentMatch: String?
+        let queueCount: Int
+        let activeIndex: Int?
+        let overlayURL: String
+        let errorMessage: String?
+        let lastPollSecondsAgo: Int?
+    }
+
     private func saveSettings() {
         configStore.saveSettings(settings)
         appViewModel.appSettings = settings
@@ -736,10 +763,94 @@ struct SettingsView: View {
         }
     }
 
+    private func exportDiagnosticsBundle() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.nameFieldStringValue = suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+            let manifest = DiagnosticsManifest(
+                generatedAt: ISO8601DateFormatter().string(from: Date()),
+                appVersion: AppConfig.version,
+                osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                runtimeLogPath: runtimeLog.logFilePath,
+                serverRunning: appViewModel.serverRunning,
+                signalRStatus: appViewModel.signalRStatus.displayLabel,
+                courtCount: appViewModel.courts.count
+            )
+
+            let courtSnapshots = appViewModel.courts.map { court in
+                CourtDiagnosticsSnapshot(
+                    id: court.id,
+                    name: court.displayName,
+                    status: court.status.rawValue,
+                    currentMatch: court.currentMatch?.matchNumber,
+                    queueCount: court.queue.count,
+                    activeIndex: court.activeIndex,
+                    overlayURL: appViewModel.overlayURL(for: court.id),
+                    errorMessage: court.errorMessage,
+                    lastPollSecondsAgo: court.lastPollTime.map { Int(Date().timeIntervalSince($0)) }
+                )
+            }
+
+            let attachments = [
+                RuntimeLogStore.Attachment(
+                    fileName: "settings.json",
+                    data: try encoder.encode(settings)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "court-state.json",
+                    data: try encoder.encode(courtSnapshots)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "scanner-logs.txt",
+                    data: Data(scannerLogExportText().utf8)
+                )
+            ]
+
+            try runtimeLog.exportDiagnosticsBundle(
+                to: destinationURL,
+                manifest: manifest,
+                attachments: attachments
+            )
+            runtimeLogStatusMessage = "Exported diagnostics bundle to \(destinationURL.lastPathComponent)"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
     private func suggestedRuntimeLogFilename() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return "MultiCourtScore-runtime-\(formatter.string(from: Date())).log"
+    }
+
+    private func suggestedDiagnosticsBundleFilename() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "MultiCourtScore-diagnostics-\(formatter.string(from: Date())).zip"
+    }
+
+    private func scannerLogExportText() -> String {
+        guard !appViewModel.scannerViewModel.scanLogs.isEmpty else {
+            return "No scanner log entries\n"
+        }
+
+        return appViewModel.scannerViewModel.scanLogs.map { entry in
+            "[\(entry.timeDisplay)] \(entry.type.icon) \(entry.message)"
+        }
+        .joined(separator: "\n") + "\n"
     }
 }
 

@@ -2237,6 +2237,75 @@ struct RuntimeLogStoreTests {
         let exportedText = try String(contentsOf: exportURL, encoding: .utf8)
         #expect(exportedText == sourceText)
     }
+
+    @Test func exportDiagnosticsBundle_includesManifestRuntimeLogAndAttachments() async throws {
+        struct Manifest: Codable {
+            let generatedAt: String
+            let appVersion: String
+        }
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+        let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
+        let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+        let store = RuntimeLogStore(fileURL: sourceURL)
+
+        let sourceText = "2026-03-07T00:00:00.000Z [INFO] [operator] opened settings modal\n"
+        try sourceText.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        try store.exportDiagnosticsBundle(
+            to: archiveURL,
+            manifest: Manifest(generatedAt: "2026-03-07T00:00:00Z", appVersion: "2.0.0"),
+            attachments: [
+                .init(fileName: "settings.json", data: Data("{\"serverPort\":8787}\n".utf8)),
+                .init(fileName: "scanner-logs.txt", data: Data("No scanner log entries\n".utf8))
+            ]
+        )
+
+        #expect(FileManager.default.fileExists(atPath: archiveURL.path))
+
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+        #expect(unzip.terminationStatus == 0)
+
+        let extractedItems = try FileManager.default.contentsOfDirectory(
+            at: extractedURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        let bundleDirectory = try #require(extractedItems.first)
+
+        let exportedRuntimeLog = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("runtime.log"),
+            encoding: .utf8
+        )
+        #expect(exportedRuntimeLog == sourceText)
+
+        let manifestJSON = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("manifest.json"),
+            encoding: .utf8
+        )
+        #expect(manifestJSON.contains("\"appVersion\" : \"2.0.0\""))
+
+        let settingsJSON = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("settings.json"),
+            encoding: .utf8
+        )
+        #expect(settingsJSON.contains("\"serverPort\":8787"))
+
+        let scannerLogs = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("scanner-logs.txt"),
+            encoding: .utf8
+        )
+        #expect(scannerLogs == "No scanner log entries\n")
+    }
 }
 
 @MainActor
