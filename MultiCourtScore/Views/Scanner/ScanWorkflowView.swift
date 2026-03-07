@@ -40,7 +40,7 @@ enum ScanWorkflowStep: Int, CaseIterable {
 struct ScanWorkflowView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
-    let onClose: (() -> Void)?
+    let onClose: ((String) -> Void)?
 
     @State private var currentStep: ScanWorkflowStep = .scanSources
     @State private var matchAssignments: [UUID: Int] = [:]
@@ -52,7 +52,7 @@ struct ScanWorkflowView: View {
     private var scanResults: [ScannerViewModel.VBLMatch] { viewModel.scanResults }
     private var groupedByCourt: [String: [ScannerViewModel.VBLMatch]] { viewModel.groupedByCourt }
 
-    init(onClose: (() -> Void)? = nil) {
+    init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
     }
 
@@ -77,10 +77,10 @@ struct ScanWorkflowView: View {
             maxHeight: .infinity
         )
         .background(AppColors.background)
-        .onExitCommand { closeWorkflow() }
+        .onExitCommand { closeWorkflow(reason: "escape") }
         .background(
             EscapeKeyMonitor {
-                closeWorkflow()
+                closeWorkflow(reason: "escape")
             }
         )
         .onAppear {
@@ -101,7 +101,7 @@ struct ScanWorkflowView: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
-                Button { closeWorkflow() } label: {
+                Button { closeWorkflow(reason: "close-button") } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(AppColors.textMuted)
@@ -198,7 +198,7 @@ struct ScanWorkflowView: View {
             }
             Spacer()
 
-            Button { closeWorkflow() } label: {
+            Button { closeWorkflow(reason: "close-button") } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -207,7 +207,6 @@ struct ScanWorkflowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("scan.close")
-            .keyboardShortcut(.escape, modifiers: [])
             .help("Close (Esc)")
         }
         .padding(AppLayout.contentPadding)
@@ -357,9 +356,9 @@ struct ScanWorkflowView: View {
         mappingStore.updateUnmappedCourts(from: selectedCourtNames)
     }
 
-    private func closeWorkflow() {
+    private func closeWorkflow(reason: String) {
         if let onClose {
-            onClose()
+            onClose(reason)
         } else {
             dismiss()
         }
@@ -404,7 +403,7 @@ struct ScanWorkflowView: View {
             }
         }
 
-        closeWorkflow()
+        closeWorkflow(reason: "import-complete")
     }
 }
 
