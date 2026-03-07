@@ -18,6 +18,8 @@ struct QueueEditorView: View {
     @State private var selectedRowId: UUID?
     @State private var showDiscardAlert = false
 
+    private let runtimeLog = RuntimeLogStore.shared
+
     private var court: Court? {
         appViewModel.court(for: courtId)
     }
@@ -31,8 +33,10 @@ struct QueueEditorView: View {
 
     private func dismissSafely() {
         if hasUnsavedChanges {
+            runtimeLog.log(.warning, subsystem: "operator", message: "attempted to close queue editor for court \(courtId) with unsaved changes")
             showDiscardAlert = true
         } else {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed queue editor for court \(courtId) without changes")
             onDismiss()
         }
     }
@@ -64,7 +68,10 @@ struct QueueEditorView: View {
         }
         .alert("Discard Changes?", isPresented: $showDiscardAlert) {
             Button("Cancel", role: .cancel) {}
-            Button("Discard", role: .destructive) { onDismiss() }
+            Button("Discard", role: .destructive) {
+                runtimeLog.log(.warning, subsystem: "operator", message: "discarded queue editor changes for court \(courtId)")
+                onDismiss()
+            }
         } message: {
             Text("You have unsaved changes to this queue. Discard them?")
         }
@@ -436,11 +443,13 @@ struct QueueEditorView: View {
 
         if items.count != rows.filter({ !$0.urlString.isEmpty }).count {
             errorMessage = "One or more URLs are invalid"
+            runtimeLog.log(.warning, subsystem: "operator", message: "queue editor save failed validation for court \(courtId)")
             return
         }
 
         errorMessage = nil
         appViewModel.replaceQueuePreservingState(courtId, with: items)
+        runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor for court \(courtId) with \(items.count) matches")
         onDismiss()
     }
 

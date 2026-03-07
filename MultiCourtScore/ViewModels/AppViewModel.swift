@@ -171,14 +171,17 @@ final class AppViewModel: ObservableObject {
     
     func renameCourt(_ courtId: Int, to newName: String) {
         guard let idx = courtIndex(for: courtId) else { return }
+        let previousName = courts[idx].displayName
         courts[idx].name = newName
         saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "renamed court \(courtId) from '\(previousName)' to '\(courts[idx].displayName)'")
     }
 
     func setScoreboardLayout(_ courtId: Int, layout: String?) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].scoreboardLayout = layout
         saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "set scoreboard layout for court \(courtId) to \(layout ?? "default")")
     }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
@@ -191,6 +194,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].finishedAt = nil
         observedActiveScoring[courtId] = false
         saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
     }
 
     /// Replace a queue after manual editing while preserving the active match when possible.
@@ -223,6 +227,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].errorMessage = nil
             observedActiveScoring[courtId] = false
             saveConfigurationNow()
+            runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor changes for court \(courtId); queue emptied")
             return
         }
 
@@ -250,6 +255,11 @@ final class AppViewModel: ObservableObject {
         }
 
         saveConfigurationNow()
+        runtimeLog.log(
+            .info,
+            subsystem: "operator",
+            message: "saved queue editor changes for court \(courtId); \(normalizedItems.count) matches, active index \(courts[idx].activeIndex ?? -1)"
+        )
     }
 
     func appendToQueue(_ courtId: Int, items: [MatchItem]) {
@@ -259,6 +269,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].activeIndex = 0
         }
         saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "appended \(items.count) matches to court \(courtId)")
     }
 
     /// Merge new scan results into an existing queue without disrupting active state.
@@ -331,6 +342,7 @@ final class AppViewModel: ObservableObject {
     func clearQueue(_ courtId: Int) {
         replaceQueue(courtId, with: [])
         stopPolling(for: courtId)
+        runtimeLog.log(.warning, subsystem: "operator", message: "cleared queue for court \(courtId)")
     }
 
     func clearAllQueues() {
@@ -419,6 +431,7 @@ final class AppViewModel: ObservableObject {
         rebuildGameIdMap()
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "polling", message: "started polling for court \(courtId)")
+        runtimeLog.log(.info, subsystem: "operator", message: "started polling for court \(courtId)")
     }
     
     func stopPolling(for courtId: Int) {
@@ -435,6 +448,7 @@ final class AppViewModel: ObservableObject {
         }
         scheduleSave()
         runtimeLog.log(.info, subsystem: "polling", message: "stopped polling for court \(courtId)")
+        runtimeLog.log(.info, subsystem: "operator", message: "stopped polling for court \(courtId)")
     }
     
     func startAllPolling() {
@@ -443,15 +457,18 @@ final class AppViewModel: ObservableObject {
              startServices()
         }
 
+        let eligibleCourts = courts.filter { !$0.queue.isEmpty && pollingTimers[$0.id] == nil }.map(\.id)
         for court in courts where !court.queue.isEmpty {
             if pollingTimers[court.id] == nil {
                 startPolling(for: court.id)
             }
         }
+        runtimeLog.log(.info, subsystem: "operator", message: "started all polling for courts \(eligibleCourts)")
     }
     
     func stopAllPolling() {
         // Stop all active timers
+        let activeCourts = Array(pollingTimers.keys).sorted()
         for courtId in Array(pollingTimers.keys) {
             stopPolling(for: courtId)
         }
@@ -464,6 +481,7 @@ final class AppViewModel: ObservableObject {
             }
         }
         saveConfigurationNow()
+        runtimeLog.log(.warning, subsystem: "operator", message: "stopped all polling for courts \(activeCourts)")
     }
 
     /// Deterministic single poll-cycle hook used by tests.
@@ -549,6 +567,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].lastSnapshot = nil
             observedActiveScoring[courtId] = false
             saveConfigurationNow()
+            runtimeLog.log(.info, subsystem: "operator", message: "advanced court \(courtId) from queue index \(activeIdx) to \(nextIndex)")
         }
     }
 
@@ -569,6 +588,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].lastSnapshot = nil
         observedActiveScoring[courtId] = false
         saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "moved court \(courtId) back from queue index \(activeIdx) to \(activeIdx - 1)")
     }
 
     // MARK: - Overlay URL
