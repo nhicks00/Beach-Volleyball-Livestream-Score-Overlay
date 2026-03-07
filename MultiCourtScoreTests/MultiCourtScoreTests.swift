@@ -2016,6 +2016,57 @@ struct PollingFailureModeTests {
         #expect(!errorMessage.isEmpty)
         #expect(court.lastSnapshot == nil)
     }
+
+    @Test func runImmediatePollCycle_suppressesSyntheticPoolPlaceholderHttp500() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == nil)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_keepsRealMatchHttp500Visible() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/325750/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "5"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let errorMessage = try #require(court.errorMessage)
+        #expect(errorMessage == "HTTP error: 500")
+        #expect(court.lastSnapshot == nil)
+    }
 }
 
 @MainActor

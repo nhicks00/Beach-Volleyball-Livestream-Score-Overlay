@@ -143,6 +143,11 @@ struct MatchItem: Codable, Hashable, Identifiable {
             return "Match"
         }
     }
+
+    var isUnresolvedPoolPlaceholder: Bool {
+        apiURL.path.contains("/matches/pool-")
+            && !(gameIds?.contains(where: { $0 > 0 }) ?? false)
+    }
     
     // MARK: Codable Conformance
     enum CodingKeys: String, CodingKey {
