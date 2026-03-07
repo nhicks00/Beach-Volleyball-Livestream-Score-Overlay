@@ -13,8 +13,24 @@ enum RuntimeLogLevel: String {
     case error = "ERROR"
 }
 
+enum DiagnosticsBundleError: LocalizedError {
+    case archiveFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .archiveFailed(let message):
+            return message
+        }
+    }
+}
+
 final class RuntimeLogStore: @unchecked Sendable {
     static let shared = RuntimeLogStore(fileURL: RuntimeLogStore.defaultFileURL())
+
+    struct Attachment {
+        let fileName: String
+        let data: Data
+    }
 
     private static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -79,6 +95,45 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
     }
 
+    func exportDiagnosticsBundle<Manifest: Encodable>(
+        to destinationURL: URL,
+        manifest: Manifest,
+        attachments: [Attachment]
+    ) throws {
+        let bundleName = destinationURL.deletingPathExtension().lastPathComponent
+        let stagingRoot = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let bundleDirectory = stagingRoot.appendingPathComponent(bundleName, isDirectory: true)
+
+        try fileManager.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: stagingRoot) }
+
+        let logData = queue.sync { () -> Data in
+            ensureDirectoryExists()
+            return (try? Data(contentsOf: fileURL)) ?? Data()
+        }
+
+        try logData.write(to: bundleDirectory.appendingPathComponent("runtime.log"), options: .atomic)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let manifestData = try encoder.encode(manifest)
+        try manifestData.write(to: bundleDirectory.appendingPathComponent("manifest.json"), options: .atomic)
+
+        for attachment in attachments {
+            try attachment.data.write(
+                to: bundleDirectory.appendingPathComponent(attachment.fileName),
+                options: .atomic
+            )
+        }
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try archiveDirectory(bundleDirectory, to: destinationURL)
+    }
+
     private func appendLine(_ line: String, to url: URL) {
         let data = Data((line + "\n").utf8)
 
@@ -108,6 +163,30 @@ final class RuntimeLogStore: @unchecked Sendable {
         let directory = fileURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directory.path) {
             try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+    }
+
+    private func archiveDirectory(_ sourceDirectory: URL, to destinationURL: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = [
+            "-c",
+            "-k",
+            "--keepParent",
+            sourceDirectory.path,
+            destinationURL.path
+        ]
+
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw DiagnosticsBundleError.archiveFailed(message?.isEmpty == false ? message! : "Failed to create diagnostics bundle")
         }
     }
 
