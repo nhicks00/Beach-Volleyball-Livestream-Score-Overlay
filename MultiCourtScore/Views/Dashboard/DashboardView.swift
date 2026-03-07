@@ -36,6 +36,7 @@ struct EditorConfig: Identifiable {
 
 struct DashboardView: View {
     @EnvironmentObject var appViewModel: AppViewModel
+    private let runtimeLog = RuntimeLogStore.shared
 
     // State
     @State private var renamingCourtId: Int?
@@ -104,7 +105,7 @@ struct DashboardView: View {
                                             onStop: { appViewModel.stopPolling(for: court.id) },
                                             onSkipNext: { appViewModel.skipToNext(court.id) },
                                             onSkipPrevious: { appViewModel.skipToPrevious(court.id) },
-                                            onEditQueue: { editorConfig = EditorConfig(id: court.id) },
+                                            onEditQueue: { openQueueEditor(for: court.id) },
                                             onRename: {
                                                 renamingCourtId = court.id
                                                 newCourtName = court.name
@@ -138,9 +139,7 @@ struct DashboardView: View {
                 
                 GeometryReader { geo in
                     QueueEditorView(courtId: config.id, onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                editorConfig = nil
-                            }
+                            closeQueueEditor(reason: "dismissed")
                         })
                         .environmentObject(appViewModel)
                         .frame(
@@ -159,16 +158,12 @@ struct DashboardView: View {
                 Color.black.opacity(0.45)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                        }
+                        closeScannerModal(reason: "backdrop")
                     }
 
                 GeometryReader { geo in
                     ScanWorkflowView(onClose: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                        }
+                        closeScannerModal(reason: "close-button")
                     })
                     .environmentObject(appViewModel)
                     .frame(
@@ -187,16 +182,12 @@ struct DashboardView: View {
                 Color.black.opacity(0.45)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                        }
+                        closeSettingsModal(reason: "backdrop")
                     }
 
                 GeometryReader { geo in
                     SettingsView(onClose: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                        }
+                        closeSettingsModal(reason: "close-button")
                     })
                     .environmentObject(appViewModel)
                     .frame(
@@ -304,10 +295,7 @@ struct DashboardView: View {
                     .frame(height: 24)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showSettingsModal = false
-                        showScannerModal = true
-                    }
+                    openScannerModal()
                 } label: {
                     Label("Scan VBL", systemImage: "magnifyingglass")
                         .font(.system(size: 14, weight: .semibold))
@@ -318,6 +306,7 @@ struct DashboardView: View {
                 .tint(AppColors.primary)
 
                 Button(role: .destructive) {
+                    runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
                     showClearAllConfirmation = true
                 } label: {
                     Label("Clear All", systemImage: "trash")
@@ -328,10 +317,7 @@ struct DashboardView: View {
                 .controlSize(.regular)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showScannerModal = false
-                        showSettingsModal = true
-                    }
+                    openSettingsModal()
                 } label: {
                     Image(systemName: "gear")
                         .font(.system(size: 16))
@@ -384,10 +370,7 @@ struct DashboardView: View {
                     .help("Stop All")
 
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                            showScannerModal = true
-                        }
+                        openScannerModal()
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 16, weight: .bold))
@@ -399,6 +382,7 @@ struct DashboardView: View {
                     .help("Scan VBL")
 
                     Button(role: .destructive) {
+                        runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
                         showClearAllConfirmation = true
                     } label: {
                         Image(systemName: "trash")
@@ -410,10 +394,7 @@ struct DashboardView: View {
                     .help("Clear All")
 
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                            showSettingsModal = true
-                        }
+                        openSettingsModal()
                     } label: {
                         Image(systemName: "gear")
                             .font(.system(size: 16, weight: .bold))
@@ -571,11 +552,64 @@ struct DashboardView: View {
 
     // MARK: - Helpers
 
+    private func openQueueEditor(for courtId: Int) {
+        runtimeLog.log(.info, subsystem: "operator", message: "opened queue editor for court \(courtId)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            editorConfig = EditorConfig(id: courtId)
+        }
+    }
+
+    private func closeQueueEditor(reason: String) {
+        if let courtId = editorConfig?.id {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed queue editor for court \(courtId) via \(reason)")
+        }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            editorConfig = nil
+        }
+    }
+
+    private func openScannerModal() {
+        if showSettingsModal {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed settings modal via switch-to-scanner")
+        }
+        runtimeLog.log(.info, subsystem: "operator", message: "opened scanner modal")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSettingsModal = false
+            showScannerModal = true
+        }
+    }
+
+    private func closeScannerModal(reason: String) {
+        runtimeLog.log(.info, subsystem: "operator", message: "closed scanner modal via \(reason)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showScannerModal = false
+        }
+    }
+
+    private func openSettingsModal() {
+        if showScannerModal {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed scanner modal via switch-to-settings")
+        }
+        runtimeLog.log(.info, subsystem: "operator", message: "opened settings modal")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showScannerModal = false
+            showSettingsModal = true
+        }
+    }
+
+    private func closeSettingsModal(reason: String) {
+        runtimeLog.log(.info, subsystem: "operator", message: "closed settings modal via \(reason)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSettingsModal = false
+        }
+    }
+
     private func copyOverlayURL(for courtId: Int) {
         #if os(macOS)
         let url = appViewModel.overlayURL(for: courtId)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied overlay url for court \(courtId): \(url)")
         urlCopiedCourtId = courtId
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if urlCopiedCourtId == courtId {
