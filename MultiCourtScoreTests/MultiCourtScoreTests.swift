@@ -955,6 +955,89 @@ struct QueueMergeTests {
 
 @MainActor
 @Suite(.serialized)
+struct QueueEditorSaveStateTests {
+
+    @Test func replaceQueuePreservingState_keepsActiveIndexAndStatusWhenQueueIsUnchanged() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-editor-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-editor-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: activeMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, activeMatch], startIndex: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.replaceQueuePreservingState(1, with: [firstMatch, activeMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.currentMatch?.id == activeMatch.id)
+        #expect(court.lastSnapshot?.status == "Pre-Match")
+    }
+
+    @Test func replaceQueuePreservingState_tracksActiveMatchAcrossReorder() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let thirdMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-third",
+            team1: "Ivy North / June South",
+            team2: "Kirk East / Lane West",
+            matchNumber: "3"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: activeMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, activeMatch, thirdMatch], startIndex: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.replaceQueuePreservingState(1, with: [activeMatch, firstMatch, thirdMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.currentMatch?.id == activeMatch.id)
+        #expect(court.lastSnapshot?.status == "Pre-Match")
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct QueuePollingEdgeCaseTests {
 
     @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {

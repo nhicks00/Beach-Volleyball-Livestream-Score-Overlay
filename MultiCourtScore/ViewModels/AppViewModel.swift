@@ -192,6 +192,65 @@ final class AppViewModel: ObservableObject {
         saveConfigurationNow()
     }
 
+    /// Replace a queue after manual editing while preserving the active match when possible.
+    ///
+    /// If the currently active match still exists in the edited queue, keep focus on that match.
+    /// Runtime state is preserved only when the active match keeps the same API URL; otherwise
+    /// snapshot/live timing is cleared and polling falls back to waiting.
+    func replaceQueuePreservingState(_ courtId: Int, with items: [MatchItem]) {
+        guard let idx = courtIndex(for: courtId) else { return }
+
+        let normalizedItems = items.map(normalizeLegacyPoolFormat)
+        let previousCourt = courts[idx]
+        let previousActiveMatch: MatchItem? = {
+            guard let activeIdx = previousCourt.activeIndex,
+                  previousCourt.queue.indices.contains(activeIdx) else {
+                return nil
+            }
+            return previousCourt.queue[activeIdx]
+        }()
+        let previousWasPolling = previousCourt.status.isPolling
+
+        courts[idx].queue = normalizedItems
+
+        guard !normalizedItems.isEmpty else {
+            courts[idx].activeIndex = nil
+            courts[idx].status = .idle
+            courts[idx].lastSnapshot = nil
+            courts[idx].liveSince = nil
+            courts[idx].finishedAt = nil
+            courts[idx].errorMessage = nil
+            observedActiveScoring[courtId] = false
+            saveConfigurationNow()
+            return
+        }
+
+        if let previousActiveMatch,
+           let preservedIndex = normalizedItems.firstIndex(where: { $0.id == previousActiveMatch.id }) {
+            courts[idx].activeIndex = preservedIndex
+
+            if normalizedItems[preservedIndex].apiURL != previousActiveMatch.apiURL {
+                courts[idx].status = previousWasPolling ? .waiting : .idle
+                courts[idx].lastSnapshot = nil
+                courts[idx].liveSince = nil
+                courts[idx].finishedAt = nil
+                courts[idx].errorMessage = nil
+                observedActiveScoring[courtId] = false
+            }
+        } else {
+            let fallbackIndex = min(previousCourt.activeIndex ?? 0, normalizedItems.count - 1)
+            courts[idx].activeIndex = max(0, fallbackIndex)
+            courts[idx].status = previousWasPolling ? .waiting : .idle
+            courts[idx].lastSnapshot = nil
+            courts[idx].liveSince = nil
+            courts[idx].finishedAt = nil
+            courts[idx].errorMessage = nil
+            observedActiveScoring[courtId] = false
+        }
+
+        saveConfigurationNow()
+    }
+
     func appendToQueue(_ courtId: Int, items: [MatchItem]) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].queue.append(contentsOf: items.map(normalizeLegacyPoolFormat))

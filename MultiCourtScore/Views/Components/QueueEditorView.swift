@@ -380,6 +380,7 @@ struct QueueEditorView: View {
         guard let court = court else { return }
         rows = court.queue.map { match in
             QueueRow(
+                id: match.id,
                 label: match.label ?? "",
                 urlString: match.apiURL.absoluteString,
                 team1: match.team1Name ?? "",
@@ -411,6 +412,7 @@ struct QueueEditorView: View {
             }
 
             return MatchItem(
+                id: row.id,
                 apiURL: url,
                 label: row.label.isEmpty ? nil : row.label,
                 team1Name: row.team1.isEmpty ? nil : row.team1,
@@ -438,7 +440,7 @@ struct QueueEditorView: View {
         }
 
         errorMessage = nil
-        appViewModel.replaceQueue(courtId, with: items)
+        appViewModel.replaceQueuePreservingState(courtId, with: items)
         onDismiss()
     }
 
@@ -455,6 +457,7 @@ struct QueueEditorView: View {
               url.scheme?.hasPrefix("http") == true else { return }
 
         let item = MatchItem(
+            id: row.id,
             apiURL: url,
             label: row.label.isEmpty ? nil : row.label,
             team1Name: row.team1.isEmpty ? nil : row.team1,
@@ -864,7 +867,7 @@ struct LabeledField: View {
 // MARK: - Queue Row Model
 
 struct QueueRow: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     var label: String = ""
     var urlString: String = ""
     var team1: String = ""

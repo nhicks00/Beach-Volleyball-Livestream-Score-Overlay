@@ -64,6 +64,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
     var gameIds: [Int]?          // VBL game IDs from hydrate (for SignalR mutation mapping)
 
     init(
+        id: UUID = UUID(),
         apiURL: URL,
         label: String? = nil,
         team1Name: String? = nil,
@@ -88,6 +89,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         tournamentId: Int? = nil,
         gameIds: [Int]? = nil
     ) {
+        self.id = id
         self.apiURL = apiURL
         self.label = label
         self.team1Name = team1Name
