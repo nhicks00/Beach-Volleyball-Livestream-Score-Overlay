@@ -37,6 +37,10 @@ final class RuntimeLogStore: @unchecked Sendable {
         fileURL.path
     }
 
+    var logFileURL: URL {
+        fileURL
+    }
+
     func log(_ level: RuntimeLogLevel = .info, subsystem: String, message: String) {
         let timestamp = Self.formatter.string(from: Date())
         let line = "\(timestamp) [\(level.rawValue)] [\(subsystem)] \(message)"
@@ -64,6 +68,14 @@ final class RuntimeLogStore: @unchecked Sendable {
         queue.sync {
             ensureDirectoryExists()
             try? Data().write(to: fileURL, options: .atomic)
+        }
+    }
+
+    func exportSnapshot(to destinationURL: URL) throws {
+        try queue.sync {
+            ensureDirectoryExists()
+            let data = (try? Data(contentsOf: fileURL)) ?? Data()
+            try data.write(to: destinationURL, options: .atomic)
         }
     }
 
