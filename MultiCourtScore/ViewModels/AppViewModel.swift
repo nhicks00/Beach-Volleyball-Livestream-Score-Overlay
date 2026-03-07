@@ -616,13 +616,31 @@ final class AppViewModel: ObservableObject {
             // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
+            let shouldSuppressError = shouldSuppressPollError(error, for: matchItem)
             if let writeIdx = courtIndex(for: courtId) {
-                courts[writeIdx].errorMessage = error.localizedDescription
                 courts[writeIdx].lastPollTime = Date()
+                if shouldSuppressError {
+                    courts[writeIdx].errorMessage = nil
+                    if courts[writeIdx].status.isPolling {
+                        courts[writeIdx].status = .waiting
+                    }
+                } else {
+                    courts[writeIdx].errorMessage = error.localizedDescription
+                }
             }
             // Don't change to error status on single failure
-            print("⚠️ Poll error for court \(courtId): \(error.localizedDescription)")
+            if shouldSuppressError {
+                print("ℹ️ Suppressing placeholder poll error for court \(courtId): \(matchItem.apiURL.absoluteString)")
+            } else {
+                print("⚠️ Poll error for court \(courtId): \(error.localizedDescription)")
+            }
         }
+    }
+
+    private func shouldSuppressPollError(_ error: Error, for match: MatchItem) -> Bool {
+        guard match.isUnresolvedPoolPlaceholder else { return false }
+        guard case APIError.httpError(let statusCode) = error else { return false }
+        return statusCode == 500 || statusCode == 404
     }
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {
