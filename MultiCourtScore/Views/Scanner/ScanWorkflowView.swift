@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 // MARK: - Workflow Steps
 
@@ -77,6 +78,11 @@ struct ScanWorkflowView: View {
         )
         .background(AppColors.background)
         .onExitCommand { closeWorkflow() }
+        .background(
+            EscapeKeyMonitor {
+                closeWorkflow()
+            }
+        )
         .onAppear {
             if !viewModel.scanResults.isEmpty {
                 currentStep = .selectLiveCourts
@@ -399,6 +405,56 @@ struct ScanWorkflowView: View {
         }
 
         closeWorkflow()
+    }
+}
+
+private struct EscapeKeyMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEscape: onEscape)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onEscape = onEscape
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator {
+        var onEscape: () -> Void
+        private var monitor: Any?
+
+        init(onEscape: @escaping () -> Void) {
+            self.onEscape = onEscape
+        }
+
+        func start() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                guard let self else { return event }
+                if event.keyCode == 53 {
+                    self.onEscape()
+                    return nil
+                }
+                return event
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
     }
 }
 
