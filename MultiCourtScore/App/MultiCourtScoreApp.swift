@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct MultiCourtScoreApp: App {
@@ -64,11 +65,40 @@ struct MultiCourtScoreApp: App {
                     appViewModel.clearAllQueues()
                 }
             }
+            CommandMenu("Support") {
+                Button("Export Diagnostics Bundle...") {
+                    exportDiagnosticsBundle()
+                }
+                .keyboardShortcut("e", modifiers: [.command, .option])
+            }
         }
     }
 
     private func applyTheme(_ theme: String) {
         NSApp.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+    }
+
+    private func exportDiagnosticsBundle() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try appViewModel.exportDiagnosticsBundle(to: destinationURL)
+            NSWorkspace.shared.activateFileViewerSelecting([destinationURL])
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Diagnostics export failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 }
 

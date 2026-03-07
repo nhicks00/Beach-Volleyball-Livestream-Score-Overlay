@@ -10,6 +10,28 @@ import SwiftUI
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    struct DiagnosticsManifest: Codable {
+        let generatedAt: String
+        let appVersion: String
+        let osVersion: String
+        let runtimeLogPath: String
+        let serverRunning: Bool
+        let signalRStatus: String
+        let courtCount: Int
+    }
+
+    struct CourtDiagnosticsSnapshot: Codable {
+        let id: Int
+        let name: String
+        let status: String
+        let currentMatch: String?
+        let queueCount: Int
+        let activeIndex: Int?
+        let overlayURL: String
+        let errorMessage: String?
+        let lastPollSecondsAgo: Int?
+    }
+
     enum RuntimeMode {
         case live
         case uiTest
@@ -612,6 +634,76 @@ final class AppViewModel: ObservableObject {
     func overlayURL(for courtId: Int) -> String {
         return "http://localhost:\(appSettings.serverPort)/overlay/court/\(courtId)/"
     }
+
+    func suggestedDiagnosticsBundleFilename(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "MultiCourtScore-diagnostics-\(formatter.string(from: date)).zip"
+    }
+
+    func exportDiagnosticsBundle(
+        to destinationURL: URL,
+        runtimeLog: RuntimeLogStore = .shared
+    ) throws {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let healthSnapshot = webSocketHub.currentHealthSnapshot(port: appSettings.serverPort)
+
+            let manifest = DiagnosticsManifest(
+                generatedAt: ISO8601DateFormatter().string(from: Date()),
+                appVersion: AppConfig.version,
+                osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+                runtimeLogPath: runtimeLog.logFilePath,
+                serverRunning: serverRunning,
+                signalRStatus: signalRStatus.displayLabel,
+                courtCount: courts.count
+            )
+
+            let courtSnapshots = courts.map { court in
+                CourtDiagnosticsSnapshot(
+                    id: court.id,
+                    name: court.displayName,
+                    status: court.status.rawValue,
+                    currentMatch: court.currentMatch?.matchNumber,
+                    queueCount: court.queue.count,
+                    activeIndex: court.activeIndex,
+                    overlayURL: overlayURL(for: court.id),
+                    errorMessage: court.errorMessage,
+                    lastPollSecondsAgo: court.lastPollTime.map { Int(Date().timeIntervalSince($0)) }
+                )
+            }
+
+            let attachments = [
+                RuntimeLogStore.Attachment(
+                    fileName: "settings.json",
+                    data: try encoder.encode(appSettings)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "court-state.json",
+                    data: try encoder.encode(courtSnapshots)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "health.json",
+                    data: try encoder.encode(healthSnapshot)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "scanner-logs.txt",
+                    data: Data(scannerLogExportText().utf8)
+                )
+            ]
+
+            try runtimeLog.exportDiagnosticsBundle(
+                to: destinationURL,
+                manifest: manifest,
+                attachments: attachments
+            )
+            runtimeLog.log(.info, subsystem: "operator", message: "exported diagnostics bundle to \(destinationURL.lastPathComponent)")
+        } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "diagnostics export failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
     
     // MARK: - Watchdog
 
@@ -760,6 +852,17 @@ final class AppViewModel: ObservableObject {
                 runtimeLog.log(.warning, subsystem: "polling", message: "poll error for court \(courtId): \(error.localizedDescription)")
             }
         }
+    }
+
+    private func scannerLogExportText() -> String {
+        guard !scannerViewModel.scanLogs.isEmpty else {
+            return "No scanner log entries\n"
+        }
+
+        return scannerViewModel.scanLogs.map { entry in
+            "[\(entry.timeDisplay)] \(entry.type.icon) \(entry.message)"
+        }
+        .joined(separator: "\n") + "\n"
     }
 
     private func shouldSuppressPollError(_ error: Error, for match: MatchItem) -> Bool {

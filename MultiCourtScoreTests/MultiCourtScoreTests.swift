@@ -2468,6 +2468,75 @@ struct RuntimeLogStoreTests {
         )
         #expect(scannerLogs == "No scanner log entries\n")
     }
+
+    @Test func appViewModelExportDiagnosticsBundle_includesHealthSnapshotAndCourtState() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            WebSocketHub.shared.stop()
+            cleanup()
+        }
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+        let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
+        let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+        let store = RuntimeLogStore(fileURL: sourceURL)
+        try "2026-03-07T00:00:00.000Z [INFO] [operator] exported diagnostics bundle\n"
+            .write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let freePort = try reserveFreePort()
+        viewModel.appSettings.serverPort = freePort
+        viewModel.replaceQueue(1, with: [
+            makeMatchItem(
+                url: "https://example.com/match/1",
+                team1: "Nathan Hicks",
+                team2: "Reid Malone",
+                matchNumber: "1"
+            )
+        ])
+
+        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+        try viewModel.exportDiagnosticsBundle(to: archiveURL, runtimeLog: store)
+
+        let listing = try shellOutput(
+            executable: "/usr/bin/unzip",
+            arguments: ["-Z1", archiveURL.path]
+        )
+        #expect(listing.contains("/health.json"))
+        #expect(listing.contains("/court-state.json"))
+
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+        #expect(unzip.terminationStatus == 0)
+
+        let extractedItems = try FileManager.default.contentsOfDirectory(
+            at: extractedURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        let bundleDirectory = try #require(extractedItems.first)
+
+        let healthData = try Data(contentsOf: bundleDirectory.appendingPathComponent("health.json"))
+        let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
+        #expect(healthSnapshot.port == freePort)
+        #expect(healthSnapshot.courtCount == 10)
+
+        let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
+        let courtSnapshots = try JSONDecoder().decode([AppViewModel.CourtDiagnosticsSnapshot].self, from: courtStateData)
+        let firstCourt = try #require(courtSnapshots.first)
+        #expect(firstCourt.queueCount == 1)
+        #expect(firstCourt.overlayURL == "http://localhost:\(freePort)/overlay/court/1/")
+    }
 }
 
 @MainActor
