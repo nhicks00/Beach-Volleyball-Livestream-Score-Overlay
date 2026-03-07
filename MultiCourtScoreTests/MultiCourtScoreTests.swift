@@ -2255,6 +2255,92 @@ struct PollingFailureModeTests {
         #expect(occurrences == 2)
     }
 
+    @Test func runImmediatePollCycle_suppressesPlaceholderQueueMetadataRefreshWarning() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/1217131/vmix?bracket=false",
+            team1: "William Mota / Derek Strause",
+            team2: "Nathan Hicks / Reid Malone",
+            matchNumber: "1"
+        )
+        let queuedPlaceholder = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Marvin Pacheco / Derek Toliver",
+            team2: "George Black / Daniel Wenger",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: activeMatch.team1Name ?? "Team 1",
+                team2Name: activeMatch.team2Name ?? "Team 2",
+                game1: (0, 0)
+            ),
+            for: activeMatch.apiURL
+        )
+        StubURLProtocol.registerData(Data(), for: queuedPlaceholder.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [activeMatch, queuedPlaceholder], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let suppressedLine = "suppressed placeholder queue metadata refresh for court 1: \(queuedPlaceholder.apiURL.absoluteString)"
+
+        #expect(recentEntries.contains(suppressedLine))
+        #expect(!recentEntries.contains("failed to refresh queued metadata for court 1"))
+    }
+
+    @Test func runImmediatePollCycle_logsPlaceholderQueueMetadataRefreshOnlyOnceWithinThrottleWindow() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/1217131/vmix?bracket=false",
+            team1: "William Mota / Derek Strause",
+            team2: "Nathan Hicks / Reid Malone",
+            matchNumber: "1"
+        )
+        let queuedPlaceholder = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Marvin Pacheco / Derek Toliver",
+            team2: "George Black / Daniel Wenger",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: activeMatch.team1Name ?? "Team 1",
+                team2Name: activeMatch.team2Name ?? "Team 2",
+                game1: (0, 0)
+            ),
+            for: activeMatch.apiURL
+        )
+        StubURLProtocol.registerData(Data(), for: queuedPlaceholder.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [activeMatch, queuedPlaceholder], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        viewModel.resetQueueMetadataRefreshForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder queue metadata refresh for court 1: \(queuedPlaceholder.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 1)
+    }
+
     @Test func runImmediatePollCycle_keepsRealMatchHttp500Visible() async throws {
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
