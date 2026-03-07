@@ -75,6 +75,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.close")
+                    .keyboardShortcut(.escape, modifiers: [])
                     .help("Close (Esc)")
                 }
                 .padding(.horizontal, 24)
