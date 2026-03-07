@@ -330,12 +330,25 @@ final class AppViewModel: ObservableObject {
 
     func clearAllQueues() {
         stopAllPolling()
+        pollsInFlight.removeAll()
+        gameIdToCourtMap.removeAll()
+        lastQueueRefreshTimes.removeAll()
+        lastHydrateRefresh.removeAll()
+        lastSmartSwitchCheck.removeAll()
         for i in courts.indices {
+            let courtId = courts[i].id
             courts[i].queue = []
             courts[i].activeIndex = nil
             courts[i].status = .idle
             courts[i].lastSnapshot = nil
             courts[i].liveSince = nil
+            courts[i].finishedAt = nil
+            courts[i].lastPollTime = nil
+            courts[i].errorMessage = nil
+            observedActiveScoring.removeValue(forKey: courtId)
+            lastScoreChangeTime.removeValue(forKey: courtId)
+            lastScoreSnapshot.removeValue(forKey: courtId)
+            lastServeTeam.removeValue(forKey: courtId)
         }
         saveConfigurationNow()
     }
