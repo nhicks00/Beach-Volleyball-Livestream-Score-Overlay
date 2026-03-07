@@ -159,6 +159,7 @@ struct QueueEditorView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("queueEditor.close")
+            .keyboardShortcut(.escape, modifiers: [])
             .help("Close (Esc)")
         }
         .padding(.horizontal, 20)

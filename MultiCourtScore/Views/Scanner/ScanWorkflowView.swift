@@ -201,6 +201,7 @@ struct ScanWorkflowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("scan.close")
+            .keyboardShortcut(.escape, modifiers: [])
             .help("Close (Esc)")
         }
         .padding(AppLayout.contentPadding)
