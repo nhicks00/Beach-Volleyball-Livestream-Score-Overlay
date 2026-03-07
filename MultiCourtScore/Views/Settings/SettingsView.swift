@@ -5,7 +5,9 @@
 //  App settings with sidebar navigation and dark theme
 //
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Settings Navigation
 
@@ -46,8 +48,12 @@ struct SettingsView: View {
     @State private var showSettingsSaved = false
     @State private var searchText = ""
     @State private var credentialsLoadRequested = false
+    @State private var runtimeLogPreview = ""
+    @State private var runtimeLogStatusMessage: String?
+    @State private var runtimeLogStatusIsError = false
 
     private let configStore = ConfigStore()
+    private let runtimeLog = RuntimeLogStore.shared
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
@@ -95,6 +101,12 @@ struct SettingsView: View {
         .onExitCommand { closeSettings() }
         .onAppear {
             loadCredentialsIfNeeded()
+            refreshRuntimeDiagnostics()
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == .logs {
+                refreshRuntimeDiagnostics()
+            }
         }
     }
 
@@ -476,67 +488,135 @@ struct SettingsView: View {
     // MARK: - Logs Pane (NEW)
 
     private var logsPane: some View {
-        VStack(spacing: 0) {
-            // Log viewer
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(appViewModel.scannerViewModel.scanLogs) { entry in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(entry.timeDisplay)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(AppColors.textMuted)
-                                    .frame(width: 60, alignment: .leading)
-
-                                Text(entry.type.icon)
-                                    .font(.system(size: 11))
-
-                                Text(entry.message)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(entry.type.color)
-                                    .lineLimit(nil)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 3)
-                            .id(entry.id)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                DetailSection(title: "Runtime Diagnostics") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Log File")
+                                .font(.system(size: 11))
+                                .foregroundColor(AppColors.textMuted)
+                            Text(runtimeLog.logFilePath)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textSecondary)
+                                .textSelection(.enabled)
                         }
 
-                        if appViewModel.scannerViewModel.scanLogs.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "terminal")
-                                    .font(.system(size: 32))
-                                    .foregroundColor(AppColors.textMuted)
-                                Text("No log entries yet")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(AppColors.textMuted)
+                        HStack(spacing: 8) {
+                            Button("Refresh") {
+                                refreshRuntimeDiagnostics()
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
+                            .accessibilityIdentifier("settings.logs.refreshRuntime")
+
+                            Button("Reveal in Finder") {
+                                revealRuntimeLogInFinder()
+                            }
+                            .accessibilityIdentifier("settings.logs.revealRuntime")
+
+                            Button("Copy Path") {
+                                copyRuntimeLogPath()
+                            }
+                            .accessibilityIdentifier("settings.logs.copyRuntimePath")
+
+                            Button("Export Runtime Log...") {
+                                exportRuntimeLog()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportRuntime")
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.system(size: 11))
+
+                        if let runtimeLogStatusMessage {
+                            Text(runtimeLogStatusMessage)
+                                .font(.system(size: 11))
+                                .foregroundColor(runtimeLogStatusIsError ? AppColors.error : AppColors.success)
+                        }
+
+                        ScrollView {
+                            Group {
+                                if runtimeLogPreview.isEmpty {
+                                    Text("No runtime diagnostics entries yet")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(AppColors.textMuted)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                } else {
+                                    Text(runtimeLogPreview)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(AppColors.textSecondary)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                }
+                            }
+                        }
+                        .frame(minHeight: 180, maxHeight: 240)
+                        .background(Color(hex: "#1A1A1A"))
+                        .cornerRadius(8)
+                    }
+                }
+
+                DetailSection(title: "Scanner Logs") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(appViewModel.scannerViewModel.scanLogs) { entry in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(entry.timeDisplay)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(AppColors.textMuted)
+                                            .frame(width: 60, alignment: .leading)
+
+                                        Text(entry.type.icon)
+                                            .font(.system(size: 11))
+
+                                        Text(entry.message)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(entry.type.color)
+                                            .lineLimit(nil)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 3)
+                                    .id(entry.id)
+                                }
+
+                                if appViewModel.scannerViewModel.scanLogs.isEmpty {
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "terminal")
+                                            .font(.system(size: 32))
+                                            .foregroundColor(AppColors.textMuted)
+                                        Text("No scanner log entries yet")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(AppColors.textMuted)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 40)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .frame(minHeight: 180, maxHeight: 260)
+                        .background(Color(hex: "#1A1A1A"))
+                        .cornerRadius(8)
+
+                        HStack {
+                            Text("\(appViewModel.scannerViewModel.scanLogs.count) entries")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textMuted)
+
+                            Spacer()
+
+                            Button("Clear Scanner Logs") {
+                                appViewModel.scannerViewModel.scanLogs.removeAll()
+                            }
+                            .buttonStyle(.bordered)
+                            .font(.system(size: 11))
+                            .accessibilityIdentifier("settings.logs.clearScanner")
                         }
                     }
-                    .padding(.vertical, 8)
                 }
-                .background(Color(hex: "#1A1A1A"))
-                .cornerRadius(8)
-                .padding(16)
             }
-
-            // Log toolbar
-            HStack {
-                Text("\(appViewModel.scannerViewModel.scanLogs.count) entries")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(AppColors.textMuted)
-
-                Spacer()
-
-                Button("Clear Logs") {
-                    appViewModel.scannerViewModel.scanLogs.removeAll()
-                }
-                .buttonStyle(.bordered)
-                .font(.system(size: 11))
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(24)
         }
     }
 
@@ -616,6 +696,50 @@ struct SettingsView: View {
                 password = creds.password
             }
         }
+    }
+
+    private func refreshRuntimeDiagnostics() {
+        runtimeLogPreview = runtimeLog.recentEntries(maxBytes: 24_000)
+    }
+
+    private func revealRuntimeLogInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([runtimeLog.logFileURL])
+        runtimeLogStatusMessage = "Revealed runtime log in Finder"
+        runtimeLogStatusIsError = false
+    }
+
+    private func copyRuntimeLogPath() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(runtimeLog.logFilePath, forType: .string)
+        runtimeLogStatusMessage = "Copied runtime log path"
+        runtimeLogStatusIsError = false
+    }
+
+    private func exportRuntimeLog() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.nameFieldStringValue = suggestedRuntimeLogFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "log") ?? .plainText]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try runtimeLog.exportSnapshot(to: destinationURL)
+            runtimeLogStatusMessage = "Exported runtime log to \(destinationURL.lastPathComponent)"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLogStatusMessage = "Export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
+    private func suggestedRuntimeLogFilename() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "MultiCourtScore-runtime-\(formatter.string(from: Date())).log"
     }
 }
 

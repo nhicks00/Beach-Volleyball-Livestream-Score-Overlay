@@ -2214,6 +2214,33 @@ struct PollingFailureModeTests {
 
 @MainActor
 @Suite(.serialized)
+struct RuntimeLogStoreTests {
+
+    @Test func exportSnapshot_copiesCurrentRuntimeLogContents() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+        let exportURL = tempDirectory.appendingPathComponent("runtime-export.log")
+        let store = RuntimeLogStore(fileURL: sourceURL)
+
+        let sourceText = """
+        2026-03-07T00:00:00.000Z [INFO] [polling] started polling for court 1
+        2026-03-07T00:00:05.000Z [WARN] [polling] suppressed placeholder poll error
+        """
+        try sourceText.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        try store.exportSnapshot(to: exportURL)
+
+        let exportedText = try String(contentsOf: exportURL, encoding: .utf8)
+        #expect(exportedText == sourceText)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
