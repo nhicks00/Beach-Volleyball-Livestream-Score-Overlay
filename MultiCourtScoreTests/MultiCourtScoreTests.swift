@@ -1038,6 +1038,66 @@ struct QueueEditorSaveStateTests {
 
 @MainActor
 @Suite(.serialized)
+struct ClearAllQueuesTests {
+
+    @Test func clearAllQueues_resetsTransientRuntimeStateAcrossCourts() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let erroredMatch = makeMatchItem(
+            url: "https://example.com/matches/clear-all-error",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let finishedMatch = makeMatchItem(
+            url: "https://example.com/matches/clear-all-finished",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 18),
+            for: finishedMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [erroredMatch])
+        viewModel.replaceQueue(2, with: [finishedMatch])
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 2)
+
+        let beforeErrored = try #require(viewModel.court(for: 1))
+        let beforeFinished = try #require(viewModel.court(for: 2))
+        #expect(beforeErrored.errorMessage != nil)
+        #expect(beforeErrored.lastPollTime != nil)
+        #expect(beforeFinished.finishedAt != nil)
+        #expect(beforeFinished.lastSnapshot?.status == "Final")
+        #expect(beforeFinished.lastPollTime != nil)
+
+        viewModel.clearAllQueues()
+
+        for courtId in [1, 2] {
+            let court = try #require(viewModel.court(for: courtId))
+            #expect(court.queue.isEmpty)
+            #expect(court.activeIndex == nil)
+            #expect(court.status == .idle)
+            #expect(court.lastSnapshot == nil)
+            #expect(court.liveSince == nil)
+            #expect(court.finishedAt == nil)
+            #expect(court.lastPollTime == nil)
+            #expect(court.errorMessage == nil)
+        }
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct QueuePollingEdgeCaseTests {
 
     @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {
