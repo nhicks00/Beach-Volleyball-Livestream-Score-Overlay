@@ -81,7 +81,7 @@ struct MultiCourtScoreApp: App {
     private func exportDiagnosticsBundle() {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
         panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
         panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
 

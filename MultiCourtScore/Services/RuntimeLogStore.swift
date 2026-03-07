@@ -194,11 +194,32 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
     }
 
-    private static func defaultFileURL() -> URL {
+    static func defaultExportsDirectory(appSupportOverride: URL? = nil) -> URL {
         let fileManager = FileManager.default
+        let exportsURL = baseDirectory(fileManager: fileManager, appSupportOverride: appSupportOverride)
+            .appendingPathComponent("Archives", isDirectory: true)
+        try? fileManager.createDirectory(at: exportsURL, withIntermediateDirectories: true)
+        return exportsURL
+    }
+
+    static func defaultFileURL(appSupportOverride: URL? = nil) -> URL {
+        let fileManager = FileManager.default
+        let baseURL = baseDirectory(fileManager: fileManager, appSupportOverride: appSupportOverride)
+        let logsURL = baseURL.appendingPathComponent("Logs", isDirectory: true)
+        try? fileManager.createDirectory(at: logsURL, withIntermediateDirectories: true)
+        migrateLegacyLogIfNeeded(baseURL: baseURL, logsURL: logsURL, fileManager: fileManager)
+        return logsURL.appendingPathComponent("runtime.log")
+    }
+
+    private static func baseDirectory(
+        fileManager: FileManager = .default,
+        appSupportOverride: URL? = nil
+    ) -> URL {
         let baseURL: URL
 
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+        if let appSupportOverride {
+            baseURL = appSupportOverride
+        } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             baseURL = fileManager.temporaryDirectory
                 .appendingPathComponent("MultiCourtScoreTests-Logs", isDirectory: true)
         } else if let overridePath = ProcessInfo.processInfo.environment["MULTICOURTSCORE_APP_SUPPORT_DIR"],
@@ -210,7 +231,24 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
 
         try? fileManager.createDirectory(at: baseURL, withIntermediateDirectories: true)
-        return baseURL.appendingPathComponent("runtime.log")
+        return baseURL
+    }
+
+    private static func migrateLegacyLogIfNeeded(
+        baseURL: URL,
+        logsURL: URL,
+        fileManager: FileManager
+    ) {
+        let legacyURL = baseURL.appendingPathComponent("runtime.log")
+        let currentURL = logsURL.appendingPathComponent("runtime.log")
+
+        guard legacyURL.path != currentURL.path,
+              fileManager.fileExists(atPath: legacyURL.path),
+              !fileManager.fileExists(atPath: currentURL.path) else {
+            return
+        }
+
+        try? fileManager.moveItem(at: legacyURL, to: currentURL)
     }
 
     private static func decodeAlignedText(from data: Data) -> String {

@@ -2394,6 +2394,34 @@ struct RuntimeLogStoreTests {
         #expect(exportedText == sourceText)
     }
 
+    @Test func defaultExportsDirectory_usesArchivesFolderInsideAppSupportRoot() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let exportsURL = RuntimeLogStore.defaultExportsDirectory(appSupportOverride: tempDirectory)
+
+        #expect(exportsURL == tempDirectory.appendingPathComponent("Archives", isDirectory: true))
+        #expect(FileManager.default.fileExists(atPath: exportsURL.path))
+    }
+
+    @Test func defaultFileURL_migratesLegacyRootRuntimeLogIntoLogsFolder() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let legacyURL = tempDirectory.appendingPathComponent("runtime.log")
+        try "legacy runtime log\n".write(to: legacyURL, atomically: true, encoding: .utf8)
+
+        let migratedURL = RuntimeLogStore.defaultFileURL(appSupportOverride: tempDirectory)
+
+        #expect(migratedURL == tempDirectory.appendingPathComponent("Logs/runtime.log"))
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+        let migratedText = try String(contentsOf: migratedURL, encoding: .utf8)
+        #expect(migratedText == "legacy runtime log\n")
+    }
+
     @Test func exportDiagnosticsBundle_includesManifestRuntimeLogAndAttachments() async throws {
         struct Manifest: Codable {
             let generatedAt: String
