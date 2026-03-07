@@ -59,6 +59,10 @@ final class AppViewModel: ObservableObject {
     // Periodic hydrate re-fetch for resolving TBD bracket teams
     private var lastHydrateRefresh: [Int: Date] = [:]  // divisionId → last fetch time
     private static let hydrateRefreshInterval: TimeInterval = 60  // seconds
+    // Placeholder pool endpoints can return repeated upstream 500s while a match
+    // is still synthetic. Keep the first log line and then rate-limit reminders.
+    private var placeholderSuppressionLogTimes: [Int: [String: Date]] = [:]
+    private static let placeholderSuppressionLogInterval: TimeInterval = 300
 
     var isUITestMode: Bool {
         runtimeMode == .uiTest
@@ -715,6 +719,7 @@ final class AppViewModel: ObservableObject {
                 courts[writeIdx].lastPollTime = Date()
                 courts[writeIdx].errorMessage = nil
             }
+            clearPlaceholderSuppressionLogState(for: courtId)
             // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
@@ -732,11 +737,13 @@ final class AppViewModel: ObservableObject {
             }
             // Don't change to error status on single failure
             if shouldSuppressError {
-                runtimeLog.log(
-                    .info,
-                    subsystem: "polling",
-                    message: "suppressed placeholder poll error for court \(courtId): \(matchItem.apiURL.absoluteString)"
-                )
+                if shouldLogSuppressedPollError(for: courtId, matchItem: matchItem) {
+                    runtimeLog.log(
+                        .info,
+                        subsystem: "polling",
+                        message: "suppressed placeholder poll error for court \(courtId): \(matchItem.apiURL.absoluteString)"
+                    )
+                }
             } else {
                 runtimeLog.log(.warning, subsystem: "polling", message: "poll error for court \(courtId): \(error.localizedDescription)")
             }
@@ -747,6 +754,23 @@ final class AppViewModel: ObservableObject {
         guard match.isUnresolvedPoolPlaceholder else { return false }
         guard case APIError.httpError(let statusCode) = error else { return false }
         return statusCode == 500 || statusCode == 404
+    }
+
+    private func shouldLogSuppressedPollError(for courtId: Int, matchItem: MatchItem, now: Date = Date()) -> Bool {
+        let url = matchItem.apiURL.absoluteString
+        if let lastLoggedAt = placeholderSuppressionLogTimes[courtId]?[url],
+           now.timeIntervalSince(lastLoggedAt) < Self.placeholderSuppressionLogInterval {
+            return false
+        }
+
+        var logTimes = placeholderSuppressionLogTimes[courtId] ?? [:]
+        logTimes[url] = now
+        placeholderSuppressionLogTimes[courtId] = logTimes
+        return true
+    }
+
+    private func clearPlaceholderSuppressionLogState(for courtId: Int) {
+        placeholderSuppressionLogTimes[courtId] = nil
     }
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {

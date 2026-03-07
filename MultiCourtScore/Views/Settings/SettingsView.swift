@@ -36,7 +36,7 @@ enum SettingsTab: String, CaseIterable {
 struct SettingsView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
-    let onClose: (() -> Void)?
+    let onClose: ((String) -> Void)?
 
     @State private var selectedTab: SettingsTab = .general
     @State private var settings = ConfigStore().loadSettings()
@@ -55,7 +55,7 @@ struct SettingsView: View {
     private let configStore = ConfigStore()
     private let runtimeLog = RuntimeLogStore.shared
 
-    init(onClose: (() -> Void)? = nil) {
+    init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
     }
 
@@ -72,7 +72,9 @@ struct SettingsView: View {
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(AppColors.textPrimary)
                     Spacer()
-                    Button(action: closeSettings) {
+                    Button {
+                        closeSettings(reason: "close-button")
+                    } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(AppColors.textSecondary)
@@ -81,7 +83,6 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("settings.close")
-                    .keyboardShortcut(.escape, modifiers: [])
                     .help("Close (Esc)")
                 }
                 .padding(.horizontal, 24)
@@ -98,7 +99,12 @@ struct SettingsView: View {
         }
         .frame(minWidth: 650, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .background(AppColors.background)
-        .onExitCommand { closeSettings() }
+        .onExitCommand { closeSettings(reason: "escape") }
+        .background(
+            EscapeKeyMonitor {
+                closeSettings(reason: "escape")
+            }
+        )
         .onAppear {
             loadCredentialsIfNeeded()
             refreshRuntimeDiagnostics()
@@ -110,9 +116,9 @@ struct SettingsView: View {
         }
     }
 
-    private func closeSettings() {
+    private func closeSettings(reason: String) {
         if let onClose {
-            onClose()
+            onClose(reason)
         } else {
             dismiss()
         }
@@ -851,6 +857,56 @@ struct SettingsView: View {
             "[\(entry.timeDisplay)] \(entry.type.icon) \(entry.message)"
         }
         .joined(separator: "\n") + "\n"
+    }
+}
+
+private struct EscapeKeyMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEscape: onEscape)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onEscape = onEscape
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator {
+        var onEscape: () -> Void
+        private var monitor: Any?
+
+        init(onEscape: @escaping () -> Void) {
+            self.onEscape = onEscape
+        }
+
+        func start() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                guard let self else { return event }
+                if event.keyCode == 53 {
+                    self.onEscape()
+                    return nil
+                }
+                return event
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
     }
 }
 

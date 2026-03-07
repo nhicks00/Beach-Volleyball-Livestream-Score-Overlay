@@ -2185,6 +2185,76 @@ struct PollingFailureModeTests {
         #expect(court.lastSnapshot == nil)
     }
 
+    @Test func runImmediatePollCycle_logsSyntheticPoolPlaceholderSuppressionOnlyOnceWithinThrottleWindow() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder poll error for court 1: \(match.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 1)
+    }
+
+    @Test func runImmediatePollCycle_logsSyntheticPoolPlaceholderSuppressionAgainAfterSuccessfulPoll() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: "Placeholder Team One",
+                team2Name: "Placeholder Team Two",
+                game1: (0, 0)
+            ),
+            for: match.apiURL
+        )
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder poll error for court 1: \(match.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 2)
+    }
+
     @Test func runImmediatePollCycle_keepsRealMatchHttp500Visible() async throws {
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)

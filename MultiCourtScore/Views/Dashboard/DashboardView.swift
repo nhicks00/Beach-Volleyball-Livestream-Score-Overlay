@@ -162,8 +162,8 @@ struct DashboardView: View {
                     }
 
                 GeometryReader { geo in
-                    ScanWorkflowView(onClose: {
-                        closeScannerModal(reason: "close-button")
+                    ScanWorkflowView(onClose: { reason in
+                        closeScannerModal(reason: reason)
                     })
                     .environmentObject(appViewModel)
                     .frame(
@@ -186,8 +186,8 @@ struct DashboardView: View {
                     }
 
                 GeometryReader { geo in
-                    SettingsView(onClose: {
-                        closeSettingsModal(reason: "close-button")
+                    SettingsView(onClose: { reason in
+                        closeSettingsModal(reason: reason)
                     })
                     .environmentObject(appViewModel)
                     .frame(
