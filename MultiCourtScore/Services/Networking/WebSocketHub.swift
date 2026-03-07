@@ -9,6 +9,34 @@ import Foundation
 import Vapor
 import Logging
 
+struct OverlayHealthCourtSnapshot: Codable {
+    let id: Int
+    let name: String
+    let status: String
+    let currentMatch: String?
+    let overlayURL: String
+    let queueCount: Int
+    let activeIndex: Int?
+    let lastPollSecondsAgo: Int?
+    let errorMessage: String?
+    let isPolling: Bool
+    let isStale: Bool
+}
+
+struct OverlayHealthSnapshot: Codable {
+    let generatedAt: String
+    let status: String
+    let uptime: Int
+    let serverStatus: String
+    let startupError: String?
+    let signalRStatus: String
+    let signalREnabled: Bool
+    let port: Int
+    let courtCount: Int
+    let stalePollingCourtIds: [Int]
+    let courts: [OverlayHealthCourtSnapshot]
+}
+
 @MainActor
 final class WebSocketHub {
     static let shared = WebSocketHub()
@@ -102,73 +130,75 @@ final class WebSocketHub {
         }
     }
 
+    func currentHealthSnapshot(port fallbackPort: Int = NetworkConstants.webSocketPort) -> OverlayHealthSnapshot {
+        let now = Date()
+        let uptimeSeconds: Int
+        if let started = startedAt {
+            uptimeSeconds = Int(now.timeIntervalSince(started))
+        } else {
+            uptimeSeconds = 0
+        }
+
+        let resolvedPort = appViewModel?.appSettings.serverPort ?? fallbackPort
+        let resolvedSignalRStatus = appViewModel?.signalRStatus.displayLabel ?? SignalRStatus.disabled.displayLabel
+        let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
+
+        var stalePollingCourtIds: [Int] = []
+        let courts = (appViewModel?.courts ?? []).map { court -> OverlayHealthCourtSnapshot in
+            let lastPollSecondsAgo = court.lastPollTime.map { Int(now.timeIntervalSince($0)) }
+            let isPolling = court.status.isPolling
+            let isStale = isPolling && (lastPollSecondsAgo ?? 0) > 30
+            if isStale {
+                stalePollingCourtIds.append(court.id)
+            }
+
+            let currentMatch: String?
+            if let idx = court.activeIndex, idx < court.queue.count {
+                currentMatch = court.queue[idx].label ?? "Match \(idx + 1)"
+            } else {
+                currentMatch = nil
+            }
+
+            return OverlayHealthCourtSnapshot(
+                id: court.id,
+                name: court.name,
+                status: court.status.rawValue,
+                currentMatch: currentMatch,
+                overlayURL: "http://localhost:\(resolvedPort)/overlay/court/\(court.id)/",
+                queueCount: court.queue.count,
+                activeIndex: court.activeIndex,
+                lastPollSecondsAgo: lastPollSecondsAgo,
+                errorMessage: court.errorMessage,
+                isPolling: isPolling,
+                isStale: isStale
+            )
+        }
+
+        let isDegraded = !isRunning || startupError != nil || !stalePollingCourtIds.isEmpty
+
+        return OverlayHealthSnapshot(
+            generatedAt: ISO8601DateFormatter().string(from: now),
+            status: isDegraded ? "degraded" : "ok",
+            uptime: uptimeSeconds,
+            serverStatus: isRunning ? "running" : "stopped",
+            startupError: startupError,
+            signalRStatus: resolvedSignalRStatus,
+            signalREnabled: signalREnabled,
+            port: resolvedPort,
+            courtCount: courts.count,
+            stalePollingCourtIds: stalePollingCourtIds,
+            courts: courts
+        )
+    }
+
     // MARK: - Routes
 
     private func installRoutes(_ app: Application) {
         // Health check — JSON with per-court status
         app.get("health") { req async throws -> Response in
             return try await MainActor.run {
-                let hub = WebSocketHub.shared
-                let now = Date()
-
-                let uptimeSeconds: Int
-                if let started = hub.startedAt {
-                    uptimeSeconds = Int(now.timeIntervalSince(started))
-                } else {
-                    uptimeSeconds = 0
-                }
-
-                var courtEntries: [[String: Any]] = []
-                var isDegraded = false
-
-                if let vm = hub.appViewModel {
-                    for court in vm.courts {
-                        let lastPollAgo: Double?
-                        if let lp = court.lastPollTime {
-                            lastPollAgo = now.timeIntervalSince(lp)
-                        } else {
-                            lastPollAgo = nil
-                        }
-
-                        // Flag degraded if a polling court hasn't been polled in 30s
-                        if court.status.isPolling, let ago = lastPollAgo, ago > 30 {
-                            isDegraded = true
-                        }
-
-                        let currentMatch: String
-                        if let idx = court.activeIndex, idx < court.queue.count {
-                            currentMatch = court.queue[idx].label ?? "Match \(idx + 1)"
-                        } else {
-                            currentMatch = ""
-                        }
-
-                        var entry: [String: Any] = [
-                            "id": court.id,
-                            "name": court.name,
-                            "status": court.status.rawValue,
-                            "currentMatch": currentMatch,
-                            "overlayURL": "http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(court.id)/"
-                        ]
-
-                        if let ago = lastPollAgo {
-                            entry["lastPollSecondsAgo"] = Int(ago)
-                        }
-
-                        if let err = court.errorMessage, !err.isEmpty {
-                            entry["errorMessage"] = err
-                        }
-
-                        courtEntries.append(entry)
-                    }
-                }
-
-                let result: [String: Any] = [
-                    "status": isDegraded ? "degraded" : "ok",
-                    "uptime": uptimeSeconds,
-                    "courts": courtEntries
-                ]
-
-                return try Self.json(result)
+                let snapshot = WebSocketHub.shared.currentHealthSnapshot()
+                return try Self.jsonEncodable(snapshot)
             }
         }
 
@@ -489,6 +519,17 @@ final class WebSocketHub {
     
     private nonisolated static func json(_ dict: [String: Any]) throws -> Response {
         let data = try JSONSerialization.data(withJSONObject: dict)
+        let response = Response(status: .ok)
+        response.headers.contentType = .json
+        response.headers.cacheControl = .init(noStore: true)
+        response.body = .init(data: data)
+        return response
+    }
+
+    private nonisolated static func jsonEncodable<T: Encodable>(_ value: T) throws -> Response {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
         let response = Response(status: .ok)
         response.headers.contentType = .json
         response.headers.cacheControl = .init(noStore: true)
