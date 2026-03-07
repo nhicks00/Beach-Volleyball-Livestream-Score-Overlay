@@ -34,7 +34,7 @@ struct MultiCourtScoreApp: App {
                 .onChange(of: appViewModel.appSettings.overlayTheme) { _, newTheme in
                     applyTheme(newTheme)
                 }
-                .frame(minWidth: 1100, minHeight: 760)
+                .frame(minWidth: 900, minHeight: 720)
         }
         .defaultLaunchBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .presented : .automatic)
         .restorationBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .disabled : .automatic)
