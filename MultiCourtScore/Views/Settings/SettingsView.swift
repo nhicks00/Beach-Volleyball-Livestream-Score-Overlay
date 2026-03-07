@@ -619,6 +619,7 @@ struct SettingsView: View {
 
                             Button("Clear Scanner Logs") {
                                 appViewModel.scannerViewModel.scanLogs.removeAll()
+                                runtimeLog.log(.warning, subsystem: "operator", message: "cleared scanner logs from settings")
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 11))
@@ -737,6 +738,7 @@ struct SettingsView: View {
 
     private func revealRuntimeLogInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([runtimeLog.logFileURL])
+        runtimeLog.log(.info, subsystem: "operator", message: "revealed runtime log in Finder")
         runtimeLogStatusMessage = "Revealed runtime log in Finder"
         runtimeLogStatusIsError = false
     }
@@ -744,6 +746,7 @@ struct SettingsView: View {
     private func copyRuntimeLogPath() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(runtimeLog.logFilePath, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied runtime log path")
         runtimeLogStatusMessage = "Copied runtime log path"
         runtimeLogStatusIsError = false
     }
@@ -761,9 +764,11 @@ struct SettingsView: View {
 
         do {
             try runtimeLog.exportSnapshot(to: destinationURL)
+            runtimeLog.log(.info, subsystem: "operator", message: "exported runtime log to \(destinationURL.lastPathComponent)")
             runtimeLogStatusMessage = "Exported runtime log to \(destinationURL.lastPathComponent)"
             runtimeLogStatusIsError = false
         } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "runtime log export failed: \(error.localizedDescription)")
             runtimeLogStatusMessage = "Export failed: \(error.localizedDescription)"
             runtimeLogStatusIsError = true
         }
@@ -828,9 +833,11 @@ struct SettingsView: View {
                 manifest: manifest,
                 attachments: attachments
             )
+            runtimeLog.log(.info, subsystem: "operator", message: "exported diagnostics bundle to \(destinationURL.lastPathComponent)")
             runtimeLogStatusMessage = "Exported diagnostics bundle to \(destinationURL.lastPathComponent)"
             runtimeLogStatusIsError = false
         } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "diagnostics export failed: \(error.localizedDescription)")
             runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
             runtimeLogStatusIsError = true
         }

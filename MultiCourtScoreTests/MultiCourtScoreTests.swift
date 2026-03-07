@@ -2424,6 +2424,12 @@ struct RuntimeLogStoreTests {
 
         #expect(FileManager.default.fileExists(atPath: archiveURL.path))
 
+        let listing = try shellOutput(
+            executable: "/usr/bin/unzip",
+            arguments: ["-Z1", archiveURL.path]
+        )
+        #expect(!listing.split(separator: "\n").contains(where: { $0.contains("/._") }))
+
         let unzip = Process()
         unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
@@ -2759,6 +2765,33 @@ private func makeVMixArrayData(
     ]
 
     return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+}
+
+private func shellOutput(executable: String, arguments: [String]) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    try process.run()
+    process.waitUntilExit()
+
+    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+    guard process.terminationStatus == 0 else {
+        let errorText = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        throw DiagnosticsBundleError.archiveFailed(
+            errorText?.isEmpty == false ? errorText! : "Command failed: \(executable)"
+        )
+    }
+
+    return String(data: outputData, encoding: .utf8) ?? ""
 }
 
 private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
