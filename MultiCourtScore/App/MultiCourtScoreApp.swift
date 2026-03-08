@@ -48,6 +48,7 @@ enum SingleInstanceGuard {
 
 @main
 struct MultiCourtScoreApp: App {
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var appViewModel: AppViewModel
     @State private var didBootstrap = false
 
@@ -57,7 +58,7 @@ struct MultiCourtScoreApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("Dashboard", id: "dashboard") {
             DashboardView()
                 .environmentObject(appViewModel)
                 .background(WindowBehaviorConfigurator())
@@ -78,11 +79,16 @@ struct MultiCourtScoreApp: App {
                 }
                 .frame(minWidth: 900, minHeight: 720)
         }
-        .defaultLaunchBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .presented : .automatic)
-        .restorationBehavior(ProcessInfo.processInfo.arguments.contains("--uitest-mode") ? .disabled : .automatic)
+        .defaultLaunchBehavior(.presented)
+        .restorationBehavior(.disabled)
         .windowStyle(.hiddenTitleBar)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("Show Dashboard") {
+                    openDashboardWindow()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+            }
             CommandGroup(after: .windowSize) {
                 Button("Toggle Full Screen") {
                     NSApp.keyWindow?.toggleFullScreen(nil)
@@ -126,6 +132,11 @@ struct MultiCourtScoreApp: App {
 
     private func applyTheme(_ theme: String) {
         NSApp.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+    }
+
+    private func openDashboardWindow() {
+        openWindow(id: "dashboard")
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func handleDuplicateLaunchIfNeeded() -> Bool {
