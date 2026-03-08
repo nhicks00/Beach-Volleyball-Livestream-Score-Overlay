@@ -107,6 +107,12 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private struct PollFailureLogState {
+        let fingerprint: String
+        var lastLoggedAt: Date
+        var suppressedCount: Int
+    }
+
     enum RuntimeMode {
         case live
         case uiTest
@@ -164,7 +170,9 @@ final class AppViewModel: ObservableObject {
     // is still synthetic. Keep the first log line and then rate-limit reminders.
     private var placeholderSuppressionLogTimes: [Int: [String: Date]] = [:]
     private var queueMetadataSuppressionLogTimes: [Int: [String: Date]] = [:]
+    private var pollFailureLogStates: [Int: PollFailureLogState] = [:]
     private static let placeholderSuppressionLogInterval: TimeInterval = 300
+    private static let pollFailureLogInterval: TimeInterval = 120
 
     var isUITestMode: Bool {
         runtimeMode == .uiTest
@@ -798,6 +806,19 @@ final class AppViewModel: ObservableObject {
         )
     }
 
+    func registerPollFailureForTesting(
+        courtId: Int,
+        fingerprint: String,
+        at date: Date = Date()
+    ) -> Int? {
+        preparePollFailureLog(for: courtId, fingerprint: fingerprint, now: date)
+    }
+
+    func currentPollFailureLogStateForTesting(courtId: Int) -> (fingerprint: String, suppressedCount: Int)? {
+        guard let state = pollFailureLogStates[courtId] else { return nil }
+        return (state.fingerprint, state.suppressedCount)
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
@@ -1275,6 +1296,7 @@ final class AppViewModel: ObservableObject {
                 courts[writeIdx].errorMessage = nil
             }
             clearPlaceholderSuppressionLogState(for: courtId)
+            clearPollFailureLogState(for: courtId)
             // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
@@ -1292,6 +1314,7 @@ final class AppViewModel: ObservableObject {
             }
             // Don't change to error status on single failure
             if case .suppressedPlaceholder = failure {
+                clearPollFailureLogState(for: courtId)
                 if shouldLogSuppressedPollError(for: courtId, matchItem: matchItem) {
                     runtimeLog.log(
                         .info,
@@ -1300,11 +1323,17 @@ final class AppViewModel: ObservableObject {
                     )
                 }
             } else {
-                runtimeLog.log(
-                    .warning,
-                    subsystem: "polling",
-                    message: "poll error for court \(courtId): \(failure.logDetail) [\(endpointSummary(for: matchItem.apiURL))]"
-                )
+                let fingerprint = "\(failure.logDetail) [\(endpointSummary(for: matchItem.apiURL))]"
+                if let suppressedCount = preparePollFailureLog(for: courtId, fingerprint: fingerprint) {
+                    let repeatSuffix = suppressedCount > 0
+                        ? " (suppressed \(suppressedCount) duplicate log\(suppressedCount == 1 ? "" : "s"))"
+                        : ""
+                    runtimeLog.log(
+                        .warning,
+                        subsystem: "polling",
+                        message: "poll error for court \(courtId): \(fingerprint)\(repeatSuffix)"
+                    )
+                }
             }
         }
     }
@@ -1392,6 +1421,51 @@ final class AppViewModel: ObservableObject {
         placeholderSuppressionLogTimes[courtId] = nil
     }
 
+    private func preparePollFailureLog(
+        for courtId: Int,
+        fingerprint: String,
+        now: Date = Date()
+    ) -> Int? {
+        guard var state = pollFailureLogStates[courtId] else {
+            pollFailureLogStates[courtId] = PollFailureLogState(
+                fingerprint: fingerprint,
+                lastLoggedAt: now,
+                suppressedCount: 0
+            )
+            return 0
+        }
+
+        guard state.fingerprint == fingerprint else {
+            pollFailureLogStates[courtId] = PollFailureLogState(
+                fingerprint: fingerprint,
+                lastLoggedAt: now,
+                suppressedCount: 0
+            )
+            return 0
+        }
+
+        if now.timeIntervalSince(state.lastLoggedAt) < Self.pollFailureLogInterval {
+            state.suppressedCount += 1
+            pollFailureLogStates[courtId] = state
+            return nil
+        }
+
+        let suppressedCount = state.suppressedCount
+        state.lastLoggedAt = now
+        state.suppressedCount = 0
+        pollFailureLogStates[courtId] = state
+        return suppressedCount
+    }
+
+    private func clearPollFailureLogState(for courtId: Int) {
+        guard let state = pollFailureLogStates.removeValue(forKey: courtId) else { return }
+        runtimeLog.log(
+            .info,
+            subsystem: "polling",
+            message: "court \(courtId) polling recovered from \(state.fingerprint)"
+        )
+    }
+
     private func clearQueueMetadataSuppressionLogState(for courtId: Int, matchItem: MatchItem? = nil) {
         guard let matchItem else {
             queueMetadataSuppressionLogTimes[courtId] = nil
@@ -1407,6 +1481,7 @@ final class AppViewModel: ObservableObject {
     private func clearSuppressionLogState(for courtId: Int) {
         clearPlaceholderSuppressionLogState(for: courtId)
         clearQueueMetadataSuppressionLogState(for: courtId)
+        pollFailureLogStates[courtId] = nil
     }
     
     private func nextMatchHasStarted(_ match: MatchItem) async -> Bool {

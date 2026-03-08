@@ -74,6 +74,51 @@ struct DashboardHealthBannerModel: Equatable {
     }
 }
 
+func formatOverlayHealthUptime(_ seconds: Int) -> String {
+    guard seconds > 0 else { return "0m" }
+
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+
+    if hours > 0 {
+        return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+    }
+
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+
+    return "\(max(1, seconds))s"
+}
+
+func dashboardHealthStatusText(for health: OverlayHealthSnapshot) -> String {
+    if let startupError = health.startupError, !startupError.isEmpty {
+        return startupError
+    }
+    if !health.errorCourtIds.isEmpty {
+        return "Degraded: error courts \(health.errorCourtIds.map(String.init).joined(separator: ", "))"
+    }
+    if !health.stalePollingCourtIds.isEmpty {
+        return "Degraded: stale courts \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))"
+    }
+    return "localhost:\(String(health.port))"
+}
+
+func dashboardHealthRuntimeSummary(for health: OverlayHealthSnapshot) -> String? {
+    var parts: [String] = []
+
+    if health.uptime > 0 {
+        parts.append("up \(formatOverlayHealthUptime(health.uptime))")
+    }
+
+    if health.watchdogRestartCount > 0 {
+        parts.append("watchdog \(health.watchdogRestartCount)x")
+    }
+
+    guard !parts.isEmpty else { return nil }
+    return parts.joined(separator: "  |  ")
+}
+
 func makeDashboardHealthBannerModel(
     health: OverlayHealthSnapshot,
     signalREnabled: Bool,
@@ -179,7 +224,7 @@ struct DashboardView: View {
                     toolbar(for: rootGeo.size.width)
 
                     if let banner = dashboardHealthBannerModel {
-                        dashboardHealthBanner(banner)
+                        dashboardHealthBanner(banner, health: overlayHealthSnapshot)
                     }
 
                     // Courts grid
@@ -587,16 +632,25 @@ struct DashboardView: View {
 
     // MARK: - Status Bar
 
-    private func dashboardHealthBanner(_ banner: DashboardHealthBannerModel) -> some View {
+    private func dashboardHealthBanner(_ banner: DashboardHealthBannerModel, health: OverlayHealthSnapshot) -> some View {
         HStack(spacing: 10) {
             Image(systemName: banner.systemImageName)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(banner.color)
 
-            Text(banner.message)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(AppColors.textPrimary)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(banner.message)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(2)
+
+                if let runtimeSummary = dashboardHealthRuntimeSummary(for: health) {
+                    Text(runtimeSummary)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer(minLength: 8)
 
@@ -677,18 +731,8 @@ struct DashboardView: View {
             }
             return health.serverStatus == "running" ? AppColors.warning : AppColors.error
         }()
-        let healthText: String = {
-            if let startupError = health.startupError, !startupError.isEmpty {
-                return startupError
-            }
-            if !health.errorCourtIds.isEmpty {
-                return "Degraded: error courts \(health.errorCourtIds.map(String.init).joined(separator: ", "))"
-            }
-            if !health.stalePollingCourtIds.isEmpty {
-                return "Degraded: stale courts \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))"
-            }
-            return "localhost:\(String(health.port))"
-        }()
+        let healthText = dashboardHealthStatusText(for: health)
+        let healthRuntimeSummary = dashboardHealthRuntimeSummary(for: health)
 
         return HStack(spacing: 16) {
             Text("v\(AppConfig.version)")
@@ -761,6 +805,16 @@ struct DashboardView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(health.status == "ok" ? AppColors.textMuted : healthColor)
                     .lineLimit(1)
+
+                if let healthRuntimeSummary {
+                    Text("•")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                    Text(healthRuntimeSummary)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)

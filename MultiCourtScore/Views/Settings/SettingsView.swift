@@ -681,6 +681,33 @@ struct SettingsView: View {
                     value: "\(health.courtCount) courts in snapshot",
                     color: AppColors.textSecondary
                 )
+                healthRow(
+                    label: "Uptime",
+                    value: formatOverlayHealthUptime(health.uptime),
+                    color: AppColors.textSecondary
+                )
+                healthRow(
+                    label: "Watchdog",
+                    value: health.watchdogRestartCount == 0
+                        ? "No recoveries"
+                        : "\(health.watchdogRestartCount)x recoveries",
+                    color: health.watchdogRestartCount == 0 ? AppColors.success : AppColors.warning
+                )
+
+                if let lastRecoveryAt = health.lastWatchdogRecoveryAt, !lastRecoveryAt.isEmpty {
+                    healthRow(
+                        label: "Last Recovery",
+                        value: lastRecoveryAt,
+                        color: AppColors.textSecondary
+                    )
+                }
+
+                if let lastRecoveryReason = health.lastWatchdogRecoveryReason, !lastRecoveryReason.isEmpty {
+                    Text(lastRecoveryReason)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textSecondary)
+                        .textSelection(.enabled)
+                }
 
                 if let startupError = health.startupError, !startupError.isEmpty {
                     Text(startupError)

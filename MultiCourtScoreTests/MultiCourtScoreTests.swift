@@ -3272,6 +3272,82 @@ struct ScannerViewModelTests {
 
 @MainActor
 @Suite(.serialized)
+struct PollFailureLoggingTests {
+
+    @Test func repeatedPollFailureLogging_suppressesDuplicatesUntilReminderWindow() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let fingerprint = "authentication failed (401) [/matches/1217131/vmix?bracket=false]"
+        let start = ISO8601DateFormatter().date(from: "2026-03-08T18:00:00Z")!
+
+        let firstDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start
+        )
+        #expect(firstDecision == 0)
+
+        let duplicateDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start.addingTimeInterval(30)
+        )
+        #expect(duplicateDecision == nil)
+
+        let stateAfterDuplicate = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(stateAfterDuplicate.fingerprint == fingerprint)
+        #expect(stateAfterDuplicate.suppressedCount == 1)
+
+        let reminderDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start.addingTimeInterval(121)
+        )
+        #expect(reminderDecision == 1)
+
+        let stateAfterReminder = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(stateAfterReminder.suppressedCount == 0)
+    }
+
+    @Test func repeatedPollFailureLogging_resetsImmediatelyWhenFailureChanges() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let start = ISO8601DateFormatter().date(from: "2026-03-08T18:30:00Z")!
+
+        _ = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "upstream unavailable (500) [/matches/one/vmix?bracket=false]",
+            at: start
+        )
+        _ = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "upstream unavailable (500) [/matches/one/vmix?bracket=false]",
+            at: start.addingTimeInterval(20)
+        )
+
+        let changedDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "network unavailable [/matches/one/vmix?bracket=false]",
+            at: start.addingTimeInterval(40)
+        )
+        #expect(changedDecision == 0)
+
+        let changedState = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(changedState.fingerprint == "network unavailable [/matches/one/vmix?bracket=false]")
+        #expect(changedState.suppressedCount == 0)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct DashboardViewLogicTests {
 
     @Test func dashboardCourtStatusCounts_onlyCountsExactFilterStatuses() {
@@ -3499,6 +3575,57 @@ struct DashboardViewLogicTests {
         )
 
         #expect(banner == nil)
+    }
+
+    @Test func formatOverlayHealthUptime_formatsReadableDurations() {
+        #expect(formatOverlayHealthUptime(0) == "0m")
+        #expect(formatOverlayHealthUptime(42) == "42s")
+        #expect(formatOverlayHealthUptime(180) == "3m")
+        #expect(formatOverlayHealthUptime(7_560) == "2h 6m")
+    }
+
+    @Test func dashboardHealthRuntimeSummary_includesUptimeAndWatchdogRecoveries() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 7_560,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 2,
+            lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
+            lastWatchdogRecoveryReason: "court 1 polling stale",
+            stalePollingCourtIds: [],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        #expect(dashboardHealthRuntimeSummary(for: health) == "up 2h 6m  |  watchdog 2x")
+    }
+
+    @Test func dashboardHealthStatusText_prefersCurrentDegradedCondition() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 600,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 1,
+            lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
+            lastWatchdogRecoveryReason: "court 1 polling stale",
+            stalePollingCourtIds: [],
+            errorCourtIds: [2, 4],
+            courts: []
+        )
+
+        #expect(dashboardHealthStatusText(for: health) == "Degraded: error courts 2, 4")
     }
 }
 
