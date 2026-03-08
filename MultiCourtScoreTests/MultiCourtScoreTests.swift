@@ -3109,6 +3109,21 @@ struct ScannerViewModelTests {
         #expect(viewModel.allURLs.count == 1)
         #expect(viewModel.canScan)
     }
+
+    @Test func duplicateURLCount_reportsCollapsedDuplicatesAcrossBracketAndPoolInputs() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+            " volleyballlife.com/event/34785/division/127872/round/261836/brackets "
+        ]
+        viewModel.poolURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools",
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+        ]
+
+        #expect(viewModel.allURLs.count == 2)
+        #expect(viewModel.duplicateURLCount == 2)
+    }
 }
 
 @MainActor

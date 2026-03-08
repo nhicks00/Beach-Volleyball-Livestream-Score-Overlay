@@ -277,6 +277,7 @@ struct ScanWorkflowView: View {
                     .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("scanner.footer.back")
             }
 
             Spacer()
@@ -292,6 +293,7 @@ struct ScanWorkflowView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(AppColors.success)
                 .disabled(matchAssignments.values.filter { $0 > 0 }.isEmpty)
+                .accessibilityIdentifier("scanner.footer.import")
             } else if currentStep != .scanSources {
                 Button {
                     if let next = ScanWorkflowStep(rawValue: currentStep.rawValue + 1) {
@@ -315,6 +317,7 @@ struct ScanWorkflowView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppColors.primary)
+                .accessibilityIdentifier("scanner.footer.next")
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)
@@ -473,6 +476,7 @@ struct URLEntryStep: View {
                         subtitle: "\(viewModel.bracketURLs.filter { !$0.isEmpty }.count) entered",
                         urls: $viewModel.bracketURLs,
                         placeholder: "https://volleyballlife.com/.../brackets",
+                        identifierPrefix: "scanner.bracket",
                         onAddURL: { viewModel.bracketURLs.append("") }
                     )
 
@@ -482,6 +486,7 @@ struct URLEntryStep: View {
                         subtitle: "\(viewModel.poolURLs.filter { !$0.isEmpty }.count) entered",
                         urls: $viewModel.poolURLs,
                         placeholder: "https://volleyballlife.com/.../pools",
+                        identifierPrefix: "scanner.pool",
                         onAddURL: { viewModel.poolURLs.append("") }
                     )
                 }
@@ -499,6 +504,7 @@ struct URLInputCard: View {
     let subtitle: String
     @Binding var urls: [String]
     let placeholder: String
+    let identifierPrefix: String
     let onAddURL: () -> Void
 
     var body: some View {
@@ -513,18 +519,21 @@ struct URLInputCard: View {
                 Text(subtitle)
                     .font(AppTypography.caption)
                     .foregroundColor(AppColors.textMuted)
+                    .accessibilityIdentifier("\(identifierPrefix).count")
 
                 Button(action: onAddURL) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(AppColors.primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("\(identifierPrefix).add")
             }
 
             ForEach(urls.indices, id: \.self) { index in
                 HStack(spacing: 8) {
                     TextField(placeholder, text: $urls[index])
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("\(identifierPrefix).url.\(index)")
 
                     if !urls[index].isEmpty {
                         Button {
@@ -534,6 +543,7 @@ struct URLInputCard: View {
                                 .foregroundColor(AppColors.error)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("\(identifierPrefix).clear.\(index)")
                     }
                 }
             }
@@ -629,6 +639,33 @@ struct ScanActionCard: View {
                 scanButton
             }
 
+            if viewModel.duplicateURLCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(AppColors.warning)
+
+                    Text("Ignoring \(viewModel.duplicateURLCount) duplicate URL\(viewModel.duplicateURLCount == 1 ? "" : "s")")
+                        .font(AppTypography.caption)
+                        .foregroundColor(AppColors.warning)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppLayout.smallCornerRadius)
+                        .fill(AppColors.warning.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppLayout.smallCornerRadius)
+                        .stroke(AppColors.warning.opacity(0.35), lineWidth: 1)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Duplicate URL warning")
+                .accessibilityValue("\(viewModel.duplicateURLCount) duplicate URL\(viewModel.duplicateURLCount == 1 ? "" : "s") ignored")
+                .accessibilityIdentifier("scanner.duplicateWarning")
+            }
+
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(AppTypography.caption)
@@ -676,6 +713,7 @@ struct ScanActionCard: View {
         }
         .buttonStyle(.plain)
         .disabled(!viewModel.canScan)
+        .accessibilityIdentifier("scanner.startScan")
     }
 }
 

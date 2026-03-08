@@ -180,6 +180,10 @@ class ScannerViewModel: ObservableObject {
     var allURLs: [String] {
         Self.deduplicatedURLs(from: normalizedInputURLs)
     }
+
+    var duplicateURLCount: Int {
+        max(normalizedInputURLs.count - allURLs.count, 0)
+    }
     
     var canScan: Bool {
         !allURLs.isEmpty && !isScanning
@@ -307,7 +311,6 @@ class ScannerViewModel: ObservableObject {
         guard canScan else { return }
 
         let urlsToScan = allURLs
-        let duplicateURLCount = max(normalizedInputURLs.count - urlsToScan.count, 0)
         
         isScanning = true
         scanLogs.removeAll()
