@@ -2663,6 +2663,41 @@ struct RuntimeLogStoreTests {
         #expect(firstCourt.queueCount == 1)
         #expect(firstCourt.overlayURL == "http://localhost:\(freePort)/overlay/court/1/")
     }
+
+    @Test func appViewModelExportDiagnosticsBundleToDefaultLocation_usesArchivesBesideRuntimeLog() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer {
+            WebSocketHub.shared.stop()
+            try? FileManager.default.removeItem(at: tempRoot)
+        }
+
+        let configStore = ConfigStore(appSupportOverride: tempRoot)
+        let viewModel = AppViewModel(
+            runtimeMode: .live,
+            webSocketHub: .shared,
+            configStore: configStore,
+            apiClient: APIClient(),
+            notificationService: RecordingNotificationService()
+        )
+
+        let runtimeLogURL = RuntimeLogStore.defaultFileURL(appSupportOverride: tempRoot)
+        let store = RuntimeLogStore(fileURL: runtimeLogURL)
+        try "2026-03-08T00:00:00.000Z [INFO] [operator] diagnostics export\n"
+            .write(to: runtimeLogURL, atomically: true, encoding: .utf8)
+
+        let fixedDate = Date(timeIntervalSince1970: 1_762_395_507)
+        let exportedURL = try viewModel.exportDiagnosticsBundleToDefaultLocation(runtimeLog: store, date: fixedDate)
+
+        let expectedDirectory = tempRoot.appendingPathComponent("Archives", isDirectory: true)
+        #expect(exportedURL.deletingLastPathComponent() == expectedDirectory)
+        #expect(FileManager.default.fileExists(atPath: exportedURL.path))
+        #expect(exportedURL.lastPathComponent == viewModel.suggestedDiagnosticsBundleFilename(date: fixedDate))
+    }
 }
 
 @MainActor

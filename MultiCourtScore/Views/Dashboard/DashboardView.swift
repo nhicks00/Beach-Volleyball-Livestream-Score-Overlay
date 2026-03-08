@@ -603,6 +603,14 @@ struct DashboardView: View {
                 .accessibilityIdentifier("dashboard.healthBanner.retry")
             }
 
+            Button("Export") {
+                exportDiagnosticsBundleAndCopySummaryFromBanner()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(banner.color)
+            .accessibilityIdentifier("dashboard.healthBanner.export")
+
             Button("Details") {
                 openSettingsModal()
             }
@@ -631,6 +639,27 @@ struct DashboardView: View {
         }
 
         return overlayHealthSnapshot.serverStatus != "running"
+    }
+
+    private func exportDiagnosticsBundleAndCopySummaryFromBanner() {
+        #if os(macOS)
+        do {
+            let destinationURL = try appViewModel.exportDiagnosticsBundleToDefaultLocation(runtimeLog: runtimeLog)
+            let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(summary, forType: .string)
+            runtimeLog.log(.info, subsystem: "operator", message: "exported diagnostics bundle from dashboard health banner to \(destinationURL.lastPathComponent)")
+            runtimeLog.log(.info, subsystem: "operator", message: "copied support summary from dashboard health banner")
+            NSWorkspace.shared.activateFileViewerSelecting([destinationURL])
+        } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "dashboard health banner diagnostics export failed: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Diagnostics export failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        #endif
     }
 
     private var statusBar: some View {

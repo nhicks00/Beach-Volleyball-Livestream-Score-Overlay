@@ -838,6 +838,26 @@ final class AppViewModel: ObservableObject {
             throw error
         }
     }
+
+    func exportDiagnosticsBundleToDefaultLocation(
+        runtimeLog: RuntimeLogStore = .shared,
+        date: Date = Date()
+    ) throws -> URL {
+        let exportsDirectory: URL = {
+            let logsDirectory = runtimeLog.logFileURL.deletingLastPathComponent()
+            if logsDirectory.lastPathComponent == "Logs" {
+                let appSupportRoot = logsDirectory.deletingLastPathComponent()
+                let exportsURL = appSupportRoot.appendingPathComponent("Archives", isDirectory: true)
+                try? FileManager.default.createDirectory(at: exportsURL, withIntermediateDirectories: true)
+                return exportsURL
+            }
+            return RuntimeLogStore.defaultExportsDirectory()
+        }()
+
+        let destinationURL = exportsDirectory.appendingPathComponent(suggestedDiagnosticsBundleFilename(date: date))
+        try exportDiagnosticsBundle(to: destinationURL, runtimeLog: runtimeLog)
+        return destinationURL
+    }
     
     // MARK: - Watchdog
 
