@@ -877,6 +877,54 @@ struct QueueMergeTests {
         #expect(court.queue[1].apiURL == rematch.apiURL)
     }
 
+    @Test func mergeQueue_prefersURLIdentityWhenRescanResolvesPlaceholderTeams() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        var placeholder = makeMatchItem(
+            url: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Match 1 Winner",
+            team2: "Match 2 Winner",
+            matchNumber: "2",
+            courtNumber: "1",
+            scheduledTime: "9:40AM"
+        )
+        placeholder.team1Seed = "TBD"
+        placeholder.team2Seed = "TBD"
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/match/active",
+            team1: "A. Team / B. Team",
+            team2: "C. Team / D. Team",
+            matchNumber: "1",
+            courtNumber: "1"
+        )
+
+        viewModel.replaceQueue(1, with: [activeMatch, placeholder], startIndex: 0)
+
+        var resolved = makeMatchItem(
+            url: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-2/vmix?bracket=false",
+            team1: "M. Pacheco / D. Toliver",
+            team2: "G. Black / D. Wenger",
+            matchNumber: "2",
+            courtNumber: "1",
+            scheduledTime: "9:40AM"
+        )
+        resolved.team1Seed = "2"
+        resolved.team2Seed = "4"
+
+        viewModel.mergeQueue(1, with: [resolved])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue.count == 2)
+        #expect(court.activeIndex == 0)
+        #expect(court.queue[1].apiURL == resolved.apiURL)
+        #expect(court.queue[1].team1Name == "M. Pacheco / D. Toliver")
+        #expect(court.queue[1].team2Name == "G. Black / D. Wenger")
+        #expect(court.queue[1].team1Seed == "2")
+        #expect(court.queue[1].team2Seed == "4")
+    }
+
     @Test func saveConfigurationNow_writesCourtsIntoInjectedConfigStoreDirectory() async throws {
         let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel()
         defer { cleanup() }

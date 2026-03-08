@@ -432,7 +432,9 @@ final class AppViewModel: ObservableObject {
 
     /// Merge new scan results into an existing queue without disrupting active state.
     ///
-    /// Matches are correlated by team names (since API URLs change when matches go live).
+    /// Matches are correlated by exact endpoint URL first, then by stable team-name/match-number key.
+    /// This lets a re-scan refresh placeholders into resolved team names without duplicating the
+    /// queued item, while still handling live URL changes once a match begins scoring.
     /// - Existing items get their URL and metadata updated in-place.
     /// - New items (not in current queue) are appended.
     /// - Active index, status, snapshot, polling — all preserved.
@@ -447,12 +449,17 @@ final class AppViewModel: ObservableObject {
 
         // Pass 1: Update existing items in-place
         for qi in queue.indices {
-            let existingKey = matchKey(for: queue[qi])
-            // Find first unconsumed new item with the same key
-            if let ni = normalizedNew.indices.first(where: {
-                !consumedNewIndices.contains($0) && matchKey(for: normalizedNew[$0]) == existingKey
-            }) {
+            if let ni = matchingMergeCandidateIndex(
+                for: queue[qi],
+                in: normalizedNew,
+                consumedNewIndices: consumedNewIndices
+            ) {
                 let updated = normalizedNew[ni]
+                queue[qi].label = updated.label ?? queue[qi].label
+                queue[qi].team1Name = updated.team1Name ?? queue[qi].team1Name
+                queue[qi].team2Name = updated.team2Name ?? queue[qi].team2Name
+                queue[qi].team1Seed = updated.team1Seed ?? queue[qi].team1Seed
+                queue[qi].team2Seed = updated.team2Seed ?? queue[qi].team2Seed
                 queue[qi].apiURL = updated.apiURL
                 queue[qi].matchType = updated.matchType ?? queue[qi].matchType
                 queue[qi].typeDetail = updated.typeDetail ?? queue[qi].typeDetail
@@ -488,8 +495,24 @@ final class AppViewModel: ObservableObject {
         )
     }
 
-    /// Generate a stable key for matching queue items across scans.
-    /// Uses team names since API URLs change when unstarted matches begin scoring.
+    private func matchingMergeCandidateIndex(
+        for existing: MatchItem,
+        in normalizedNew: [MatchItem],
+        consumedNewIndices: Set<Int>
+    ) -> Int? {
+        if let exactURLMatch = normalizedNew.indices.first(where: {
+            !consumedNewIndices.contains($0) && normalizedNew[$0].apiURL == existing.apiURL
+        }) {
+            return exactURLMatch
+        }
+
+        let existingKey = matchKey(for: existing)
+        return normalizedNew.indices.first(where: {
+            !consumedNewIndices.contains($0) && matchKey(for: normalizedNew[$0]) == existingKey
+        })
+    }
+
+    /// Generate a stable fallback key for matching queue items across scans when endpoint URLs differ.
     private func matchKey(for item: MatchItem) -> String {
         let t1 = (item.team1Name ?? "").lowercased().trimmingCharacters(in: .whitespaces)
         let t2 = (item.team2Name ?? "").lowercased().trimmingCharacters(in: .whitespaces)
