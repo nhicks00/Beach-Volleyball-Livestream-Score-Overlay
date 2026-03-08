@@ -59,6 +59,7 @@ final class AppViewModel: ObservableObject {
     private var signalRClient: (any SignalRClienting)?
     
     // MARK: - Private State
+    private var servicesStartupTask: Task<Bool, Never>?
     private var pollingTimers: [Int: Timer] = [:]
     private var lastQueueRefreshTimes: [Int: Date] = [:]
     private var lastCourtChangeCheck: Date = .distantPast
@@ -141,25 +142,68 @@ final class AppViewModel: ObservableObject {
     // MARK: - Services Lifecycle
 
     func startServices() {
+        Task { @MainActor in
+            _ = await ensureServicesRunning()
+        }
+    }
+
+    @discardableResult
+    func ensureServicesRunning() async -> Bool {
         guard !isUITestMode else {
             serverRunning = true
-            return
+            error = nil
+            return true
         }
 
-        Task {
-            await webSocketHub.start(with: self, port: appSettings.serverPort)
-            serverRunning = webSocketHub.isRunning
-            if let startupError = webSocketHub.startupError {
-                error = .configError(startupError)
-            } else if serverRunning {
+        if webSocketHub.isRunning {
+            serverRunning = true
+            if webSocketHub.startupError == nil {
                 error = nil
             }
-            runtimeLog.log(.info, subsystem: "app-lifecycle", message: "services started on port \(appSettings.serverPort)")
+            return true
         }
-        startWatchdog()
-        if appSettings.signalREnabled {
-            startSignalR()
+
+        if let startupTask = servicesStartupTask {
+            return await startupTask.value
         }
+
+        let port = appSettings.serverPort
+        let shouldEnableSignalR = appSettings.signalREnabled
+
+        let startupTask = Task<Bool, Never> { @MainActor [weak self] in
+            guard let self else { return false }
+
+            await self.webSocketHub.start(with: self, port: port)
+
+            let didStart = self.webSocketHub.isRunning
+            self.serverRunning = didStart
+
+            if let startupError = self.webSocketHub.startupError {
+                self.error = .configError(startupError)
+                self.stopWatchdog()
+                self.stopSignalR()
+                self.runtimeLog.log(
+                    .error,
+                    subsystem: "app-lifecycle",
+                    message: "services failed to start on port \(port): \(startupError)"
+                )
+            } else {
+                self.error = nil
+                self.startWatchdog()
+                if shouldEnableSignalR {
+                    self.startSignalR()
+                } else {
+                    self.stopSignalR()
+                }
+                self.runtimeLog.log(.info, subsystem: "app-lifecycle", message: "services started on port \(port)")
+            }
+
+            self.servicesStartupTask = nil
+            return didStart
+        }
+
+        servicesStartupTask = startupTask
+        return await startupTask.value
     }
 
     func stopServices() {
@@ -168,6 +212,8 @@ final class AppViewModel: ObservableObject {
             return
         }
 
+        servicesStartupTask?.cancel()
+        servicesStartupTask = nil
         stopAllPolling()
         stopWatchdog()
         stopSignalR()
@@ -407,11 +453,20 @@ final class AppViewModel: ObservableObject {
     // MARK: - Polling Control
     
     func startPolling(for courtId: Int) {
-        // Ensure services are running
-        if !webSocketHub.isRunning {
-             startServices()
+        Task { @MainActor in
+            guard await ensureServicesRunning() else {
+                runtimeLog.log(
+                    .warning,
+                    subsystem: "operator",
+                    message: "blocked polling start for court \(courtId) because overlay server is unavailable"
+                )
+                return
+            }
+            startPollingAfterServices(for: courtId)
         }
-        
+    }
+
+    private func startPollingAfterServices(for courtId: Int) {
         guard let idx = courtIndex(for: courtId) else { return }
         guard !courts[idx].queue.isEmpty else { return }
 
@@ -485,18 +540,24 @@ final class AppViewModel: ObservableObject {
     }
     
     func startAllPolling() {
-        // Ensure services are running
-        if !webSocketHub.isRunning {
-             startServices()
-        }
-
-        let eligibleCourts = courts.filter { !$0.queue.isEmpty && pollingTimers[$0.id] == nil }.map(\.id)
-        for court in courts where !court.queue.isEmpty {
-            if pollingTimers[court.id] == nil {
-                startPolling(for: court.id)
+        Task { @MainActor in
+            guard await ensureServicesRunning() else {
+                runtimeLog.log(
+                    .warning,
+                    subsystem: "operator",
+                    message: "blocked start-all because overlay server is unavailable"
+                )
+                return
             }
+
+            let eligibleCourts = courts.filter { !$0.queue.isEmpty && pollingTimers[$0.id] == nil }.map(\.id)
+            for court in courts where !court.queue.isEmpty {
+                if pollingTimers[court.id] == nil {
+                    startPollingAfterServices(for: court.id)
+                }
+            }
+            runtimeLog.log(.info, subsystem: "operator", message: "started all polling for courts \(eligibleCourts)")
         }
-        runtimeLog.log(.info, subsystem: "operator", message: "started all polling for courts \(eligibleCourts)")
     }
     
     func stopAllPolling() {

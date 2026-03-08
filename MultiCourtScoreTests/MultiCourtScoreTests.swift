@@ -2569,6 +2569,92 @@ struct RuntimeLogStoreTests {
 
 @MainActor
 @Suite(.serialized)
+struct SingleInstanceGuardTests {
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForUITestMode() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore", "--uitest-mode"],
+            environment: [:]
+        )
+
+        #expect(shouldBypass)
+    }
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForXCTestEnvironment() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [
+                "XCTestConfigurationFilePath": "/tmp/Test.xctestconfiguration"
+            ]
+        )
+
+        #expect(shouldBypass)
+    }
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsFalseForNormalLaunch() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [:]
+        )
+
+        #expect(!shouldBypass)
+    }
+
+    @Test func duplicateProcessID_returnsMatchingLiveSiblingProcess() {
+        let duplicatePID = SingleInstanceGuard.duplicateProcessID(
+            bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+            currentProcessID: 100,
+            runningApplications: [
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 100,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 200,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.example.OtherApp",
+                    processIdentifier: 300,
+                    isTerminated: false
+                )
+            ]
+        )
+
+        #expect(duplicatePID == 200)
+    }
+
+    @Test func duplicateProcessID_ignores_terminated_or_mismatched_processes() {
+        let duplicatePID = SingleInstanceGuard.duplicateProcessID(
+            bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+            currentProcessID: 100,
+            runningApplications: [
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 100,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 200,
+                    isTerminated: true
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.example.OtherApp",
+                    processIdentifier: 300,
+                    isTerminated: false
+                )
+            ]
+        )
+
+        #expect(duplicatePID == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
@@ -2592,9 +2678,45 @@ struct OverlayServerLifecycleTests {
         #expect(!viewModel.serverRunning)
         let configError = try #require(configErrorMessage(from: viewModel.error))
         #expect(configError.contains("Port \(occupiedPort) unavailable"))
+        #expect(configError.contains("Another app or MultiCourtScore instance"))
 
         viewModel.stopServices()
         try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    @Test func startAllPolling_doesNotStartQueuesWhenOverlayServerFailsToStart() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+        defer { close(lockedSocket) }
+
+        viewModel.appSettings.serverPort = occupiedPort
+        viewModel.replaceQueue(1, with: [
+            makeMatchItem(
+                url: "https://example.com/match/occupied-port",
+                team1: "Team A",
+                team2: "Team B",
+                matchNumber: "1"
+            )
+        ])
+
+        viewModel.startAllPolling()
+
+        let didSurfaceError = await waitUntil {
+            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+        }
+
+        #expect(didSurfaceError)
+        #expect(!viewModel.serverRunning)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .idle)
+        #expect(court.lastPollTime == nil)
+        #expect(court.errorMessage == nil)
     }
 
     @Test func start_servesHealthEndpointOnFreePort() async throws {

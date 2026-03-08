@@ -8,6 +8,43 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct RunningAppDescriptor: Equatable {
+    let bundleIdentifier: String?
+    let processIdentifier: pid_t
+    let isTerminated: Bool
+}
+
+enum SingleInstanceGuard {
+    static func shouldBypassDuplicateLaunchGuard(
+        arguments: [String],
+        environment: [String: String]
+    ) -> Bool {
+        if arguments.contains("--uitest-mode") {
+            return true
+        }
+
+        // XCTest launches the app host with these environment keys set.
+        return environment["XCTestConfigurationFilePath"] != nil ||
+            environment["XCInjectBundleInto"] != nil
+    }
+
+    static func duplicateProcessID(
+        bundleIdentifier: String?,
+        currentProcessID: pid_t,
+        runningApplications: [RunningAppDescriptor]
+    ) -> pid_t? {
+        guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
+            return nil
+        }
+
+        return runningApplications.first {
+            $0.bundleIdentifier == bundleIdentifier &&
+            $0.processIdentifier != currentProcessID &&
+            !$0.isTerminated
+        }?.processIdentifier
+    }
+}
+
 @main
 struct MultiCourtScoreApp: App {
     @StateObject private var appViewModel: AppViewModel
@@ -26,10 +63,13 @@ struct MultiCourtScoreApp: App {
                 .onAppear {
                     guard !didBootstrap else { return }
                     didBootstrap = true
-                    appViewModel.startServices()
+                    guard !handleDuplicateLaunchIfNeeded() else { return }
                     applyTheme(appViewModel.appSettings.overlayTheme)
-                    if appViewModel.appSettings.autoStartPolling {
-                        appViewModel.startAllPolling()
+                    Task { @MainActor in
+                        let didStart = await appViewModel.ensureServicesRunning()
+                        if didStart && appViewModel.appSettings.autoStartPolling {
+                            appViewModel.startAllPolling()
+                        }
                     }
                 }
                 .onChange(of: appViewModel.appSettings.overlayTheme) { _, newTheme in
@@ -76,6 +116,48 @@ struct MultiCourtScoreApp: App {
 
     private func applyTheme(_ theme: String) {
         NSApp.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+    }
+
+    private func handleDuplicateLaunchIfNeeded() -> Bool {
+        guard !SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ProcessInfo.processInfo.arguments,
+            environment: ProcessInfo.processInfo.environment
+        ) else {
+            return false
+        }
+
+        let runningApplications = NSWorkspace.shared.runningApplications
+        let descriptors = runningApplications.map {
+            RunningAppDescriptor(
+                bundleIdentifier: $0.bundleIdentifier,
+                processIdentifier: $0.processIdentifier,
+                isTerminated: $0.isTerminated
+            )
+        }
+        let duplicateProcessID = SingleInstanceGuard.duplicateProcessID(
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            currentProcessID: ProcessInfo.processInfo.processIdentifier,
+            runningApplications: descriptors
+        )
+        let duplicateRunningApp = runningApplications.first {
+            $0.processIdentifier == duplicateProcessID
+        }
+
+        guard let duplicateRunningApp else {
+            return false
+        }
+
+        RuntimeLogStore.shared.log(
+            .warning,
+            subsystem: "app-lifecycle",
+            message: "duplicate launch detected; activating existing process \(duplicateRunningApp.processIdentifier) and terminating new instance"
+        )
+        duplicateRunningApp.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        DispatchQueue.main.async {
+            NSApp.hide(nil)
+            NSApp.terminate(nil)
+        }
+        return true
     }
 
     private func exportDiagnosticsBundle() {

@@ -75,6 +75,10 @@ struct DashboardView: View {
         return counts
     }
 
+    private var overlayHealthSnapshot: OverlayHealthSnapshot {
+        WebSocketHub.shared.currentHealthSnapshot(port: appViewModel.appSettings.serverPort)
+    }
+
     var body: some View {
         ZStack {
             AppColors.background
@@ -484,7 +488,24 @@ struct DashboardView: View {
     // MARK: - Status Bar
 
     private var statusBar: some View {
-        HStack(spacing: 16) {
+        let health = overlayHealthSnapshot
+        let healthColor: Color = {
+            if health.status == "ok" {
+                return AppColors.success
+            }
+            return health.serverStatus == "running" ? AppColors.warning : AppColors.error
+        }()
+        let healthText: String = {
+            if let startupError = health.startupError, !startupError.isEmpty {
+                return startupError
+            }
+            if !health.stalePollingCourtIds.isEmpty {
+                return "Degraded: stale courts \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))"
+            }
+            return "localhost:\(String(health.port))"
+        }()
+
+        return HStack(spacing: 16) {
             Text("v\(AppConfig.version)")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(AppColors.textMuted)
@@ -527,18 +548,12 @@ struct DashboardView: View {
 
             HStack(spacing: 4) {
                 Circle()
-                    .fill(appViewModel.serverRunning ? AppColors.success : AppColors.error)
+                    .fill(healthColor)
                     .frame(width: 6, height: 6)
-                if !appViewModel.serverRunning, let serverError = appViewModel.error {
-                    Text(serverError.localizedDescription)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppColors.error)
-                        .lineLimit(1)
-                } else {
-                    Text("localhost:\(String(appViewModel.appSettings.serverPort))")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(AppColors.textMuted)
-                }
+                Text(healthText)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(health.status == "ok" ? AppColors.textMuted : healthColor)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)

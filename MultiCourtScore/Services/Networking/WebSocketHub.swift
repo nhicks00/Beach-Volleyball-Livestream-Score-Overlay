@@ -49,6 +49,7 @@ final class WebSocketHub {
     public private(set) var isRunning = false
     private var isStarting = false
     private var startedAt: Date?
+    private var runningPort: Int?
     public private(set) var startupError: String?
     private let runtimeLog = RuntimeLogStore.shared
 
@@ -100,15 +101,18 @@ final class WebSocketHub {
             isRunning = true
             isStarting = false
             startedAt = Date()
+            runningPort = port
             startupError = nil
             runtimeLog.log(.info, subsystem: "overlay-server", message: "running at http://localhost:\(port)/overlay/court/X")
         } catch {
+            let startupMessage = Self.describeStartupError(error, port: port)
             runtimeLog.log(.error, subsystem: "overlay-server", message: "failed to start on port \(port): \(error.localizedDescription)")
             self.isRunning = false
             self.isStarting = false
             self.startedAt = nil
+            self.runningPort = nil
             self.app = nil
-            self.startupError = "Port \(port) unavailable: \(error.localizedDescription)"
+            self.startupError = startupMessage
         }
     }
     
@@ -119,6 +123,7 @@ final class WebSocketHub {
         isRunning = false
         isStarting = false
         startedAt = nil
+        runningPort = nil
         Task.detached {
             RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopping")
             do {
@@ -139,7 +144,7 @@ final class WebSocketHub {
             uptimeSeconds = 0
         }
 
-        let resolvedPort = appViewModel?.appSettings.serverPort ?? fallbackPort
+        let resolvedPort = runningPort ?? appViewModel?.appSettings.serverPort ?? fallbackPort
         let resolvedSignalRStatus = appViewModel?.signalRStatus.displayLabel ?? SignalRStatus.disabled.displayLabel
         let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
 
@@ -535,6 +540,10 @@ final class WebSocketHub {
         response.headers.cacheControl = .init(noStore: true)
         response.body = .init(data: data)
         return response
+    }
+
+    private static func describeStartupError(_ error: Error, port: Int) -> String {
+        "Port \(port) unavailable: \(error.localizedDescription). Another app or MultiCourtScore instance may already be using it."
     }
 
     /// Replace "Match N" with "this match" in the next-match display string
@@ -2385,8 +2394,8 @@ function updateTradBoardHeight() {
     }
     if (w > 0) {
       document.documentElement.style.setProperty('--trad-board-width', w + 'px');
+        }
     }
-  }
 }
 
 function applyLayoutTransition(newLayout) {
