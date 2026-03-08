@@ -34,6 +34,12 @@ struct EditorConfig: Identifiable {
     let id: Int
 }
 
+private struct DashboardHealthBannerModel {
+    let message: String
+    let color: Color
+    let systemImageName: String
+}
+
 struct DashboardView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     private let runtimeLog = RuntimeLogStore.shared
@@ -79,6 +85,47 @@ struct DashboardView: View {
         WebSocketHub.shared.currentHealthSnapshot(port: appViewModel.appSettings.serverPort)
     }
 
+    private var dashboardHealthBannerModel: DashboardHealthBannerModel? {
+        let health = overlayHealthSnapshot
+
+        if let startupError = health.startupError, !startupError.isEmpty {
+            return DashboardHealthBannerModel(
+                message: "Overlay server unavailable. \(startupError)",
+                color: AppColors.error,
+                systemImageName: "exclamationmark.octagon.fill"
+            )
+        }
+
+        if !health.stalePollingCourtIds.isEmpty {
+            return DashboardHealthBannerModel(
+                message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
+                color: AppColors.warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        }
+
+        if appViewModel.appSettings.signalREnabled {
+            switch appViewModel.signalRStatus {
+            case .failed(let reason):
+                return DashboardHealthBannerModel(
+                    message: "SignalR disconnected. Polling continues. \(reason)",
+                    color: AppColors.warning,
+                    systemImageName: "exclamationmark.triangle.fill"
+                )
+            case .noCredentials:
+                return DashboardHealthBannerModel(
+                    message: "SignalR is enabled but credentials are missing. Polling continues.",
+                    color: AppColors.warning,
+                    systemImageName: "exclamationmark.triangle.fill"
+                )
+            default:
+                break
+            }
+        }
+
+        return nil
+    }
+
     var body: some View {
         ZStack {
             AppColors.background
@@ -88,6 +135,10 @@ struct DashboardView: View {
                 VStack(spacing: 0) {
                     // Toolbar header
                     toolbar(for: rootGeo.size.width)
+
+                    if let banner = dashboardHealthBannerModel {
+                        dashboardHealthBanner(banner)
+                    }
 
                     // Courts grid
                     if selectedTab == .courts {
@@ -486,6 +537,41 @@ struct DashboardView: View {
     }
 
     // MARK: - Status Bar
+
+    private func dashboardHealthBanner(_ banner: DashboardHealthBannerModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: banner.systemImageName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(banner.color)
+
+            Text(banner.message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(AppColors.textPrimary)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button("Details") {
+                openSettingsModal()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(banner.color)
+        }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 0)
+                .fill(banner.color.opacity(0.10))
+        )
+        .overlay(
+            Rectangle()
+                .fill(banner.color.opacity(0.35))
+                .frame(height: 1),
+            alignment: .bottom
+        )
+        .accessibilityIdentifier("dashboard.healthBanner")
+    }
 
     private var statusBar: some View {
         let health = overlayHealthSnapshot
