@@ -34,6 +34,7 @@ struct OverlayHealthSnapshot: Codable {
     let port: Int
     let courtCount: Int
     let stalePollingCourtIds: [Int]
+    let errorCourtIds: [Int]
     let courts: [OverlayHealthCourtSnapshot]
 }
 
@@ -145,16 +146,21 @@ final class WebSocketHub {
         }
 
         let resolvedPort = runningPort ?? appViewModel?.appSettings.serverPort ?? fallbackPort
-        let resolvedSignalRStatus = appViewModel?.signalRStatus.displayLabel ?? SignalRStatus.disabled.displayLabel
+        let resolvedSignalRState = appViewModel?.signalRStatus ?? .disabled
+        let resolvedSignalRStatus = resolvedSignalRState.displayLabel
         let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
 
         var stalePollingCourtIds: [Int] = []
+        var errorCourtIds: [Int] = []
         let courts = (appViewModel?.courts ?? []).map { court -> OverlayHealthCourtSnapshot in
             let lastPollSecondsAgo = court.lastPollTime.map { Int(now.timeIntervalSince($0)) }
             let isPolling = court.status.isPolling
             let isStale = isPolling && (lastPollSecondsAgo ?? 0) > 30
             if isStale {
                 stalePollingCourtIds.append(court.id)
+            }
+            if court.status == .error {
+                errorCourtIds.append(court.id)
             }
 
             let currentMatch: String?
@@ -179,7 +185,8 @@ final class WebSocketHub {
             )
         }
 
-        let isDegraded = !isRunning || startupError != nil || !stalePollingCourtIds.isEmpty
+        let signalRHealthIssue = signalREnabled && resolvedSignalRState.degradesHealthWhenEnabled
+        let isDegraded = !isRunning || startupError != nil || !stalePollingCourtIds.isEmpty || !errorCourtIds.isEmpty || signalRHealthIssue
 
         return OverlayHealthSnapshot(
             generatedAt: ISO8601DateFormatter().string(from: now),
@@ -192,6 +199,7 @@ final class WebSocketHub {
             port: resolvedPort,
             courtCount: courts.count,
             stalePollingCourtIds: stalePollingCourtIds,
+            errorCourtIds: errorCourtIds,
             courts: courts
         )
     }

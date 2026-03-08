@@ -87,6 +87,14 @@ func makeDashboardHealthBannerModel(
         )
     }
 
+    if !health.errorCourtIds.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Polling failed on court\(health.errorCourtIds.count == 1 ? "" : "s") \(health.errorCourtIds.map(String.init).joined(separator: ", ")).",
+            tone: .error,
+            systemImageName: "exclamationmark.octagon.fill"
+        )
+    }
+
     if !health.stalePollingCourtIds.isEmpty {
         return DashboardHealthBannerModel(
             message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
@@ -618,6 +626,9 @@ struct DashboardView: View {
         let healthText: String = {
             if let startupError = health.startupError, !startupError.isEmpty {
                 return startupError
+            }
+            if !health.errorCourtIds.isEmpty {
+                return "Degraded: error courts \(health.errorCourtIds.map(String.init).joined(separator: ", "))"
             }
             if !health.stalePollingCourtIds.isEmpty {
                 return "Degraded: stale courts \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))"

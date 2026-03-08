@@ -2646,6 +2646,7 @@ struct RuntimeLogStoreTests {
         let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
         #expect(healthSnapshot.port == freePort)
         #expect(healthSnapshot.courtCount == 10)
+        #expect(healthSnapshot.errorCourtIds.isEmpty)
 
         let supportSummary = try String(
             contentsOf: bundleDirectory.appendingPathComponent("support-summary.txt"),
@@ -2795,6 +2796,7 @@ struct DashboardViewLogicTests {
             port: 8787,
             courtCount: 4,
             stalePollingCourtIds: [2],
+            errorCourtIds: [],
             courts: []
         )
 
@@ -2825,6 +2827,7 @@ struct DashboardViewLogicTests {
             port: 8787,
             courtCount: 4,
             stalePollingCourtIds: [2, 4],
+            errorCourtIds: [],
             courts: []
         )
 
@@ -2843,6 +2846,37 @@ struct DashboardViewLogicTests {
         )
     }
 
+    @Test func makeDashboardHealthBannerModel_returnsCourtErrorWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: false,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [],
+            errorCourtIds: [3],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: false,
+            signalRStatus: .disabled
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Polling failed on court 3.",
+                tone: .error,
+                systemImageName: "exclamationmark.octagon.fill"
+            )
+        )
+    }
+
     @Test func makeDashboardHealthBannerModel_returnsSignalRFailureWarning() {
         let health = OverlayHealthSnapshot(
             generatedAt: "2026-03-07T00:00:00Z",
@@ -2855,6 +2889,7 @@ struct DashboardViewLogicTests {
             port: 8787,
             courtCount: 4,
             stalePollingCourtIds: [],
+            errorCourtIds: [],
             courts: []
         )
 
@@ -2885,6 +2920,7 @@ struct DashboardViewLogicTests {
             port: 8787,
             courtCount: 4,
             stalePollingCourtIds: [],
+            errorCourtIds: [],
             courts: []
         )
 
@@ -2915,6 +2951,7 @@ struct DashboardViewLogicTests {
             port: 8787,
             courtCount: 4,
             stalePollingCourtIds: [],
+            errorCourtIds: [],
             courts: []
         )
 
@@ -2925,6 +2962,20 @@ struct DashboardViewLogicTests {
         )
 
         #expect(banner == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct SignalRStatusHealthTests {
+
+    @Test func degradesHealthWhenEnabled_onlyForOperatorActionableFailures() {
+        #expect(!SignalRStatus.disabled.degradesHealthWhenEnabled)
+        #expect(SignalRStatus.noCredentials.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.connecting.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.connected.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.reconnecting(attempt: 2).degradesHealthWhenEnabled)
+        #expect(SignalRStatus.failed(reason: "Authentication failed").degradesHealthWhenEnabled)
     }
 }
 

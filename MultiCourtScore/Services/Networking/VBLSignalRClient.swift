@@ -41,6 +41,15 @@ enum SignalRStatus: Equatable {
         case .failed: return AppColors.error
         }
     }
+
+    var degradesHealthWhenEnabled: Bool {
+        switch self {
+        case .noCredentials, .failed:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 // MARK: - Delegate Protocol

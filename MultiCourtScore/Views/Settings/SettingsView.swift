@@ -670,6 +670,13 @@ struct SettingsView: View {
                     color: health.stalePollingCourtIds.isEmpty ? AppColors.success : AppColors.warning
                 )
                 healthRow(
+                    label: "Poll Errors",
+                    value: health.errorCourtIds.isEmpty
+                        ? "No court errors"
+                        : "Error courts: \(health.errorCourtIds.map(String.init).joined(separator: ", "))",
+                    color: health.errorCourtIds.isEmpty ? AppColors.success : AppColors.error
+                )
+                healthRow(
                     label: "Court Coverage",
                     value: "\(health.courtCount) courts in snapshot",
                     color: AppColors.textSecondary

@@ -718,6 +718,9 @@ final class AppViewModel: ObservableObject {
         let staleCourtsText = healthSnapshot.stalePollingCourtIds.isEmpty
             ? "none"
             : healthSnapshot.stalePollingCourtIds.map(String.init).joined(separator: ", ")
+        let errorCourtsText = healthSnapshot.errorCourtIds.isEmpty
+            ? "none"
+            : healthSnapshot.errorCourtIds.map(String.init).joined(separator: ", ")
 
         let notableCourts = courtSnapshots.filter {
             $0.queueCount > 0 || $0.errorMessage != nil || $0.status != CourtStatus.idle.rawValue
@@ -733,7 +736,8 @@ final class AppViewModel: ObservableObject {
             "SignalR: \(healthSnapshot.signalREnabled ? healthSnapshot.signalRStatus : "Disabled")",
             "Runtime Log: \(runtimeLog.logFilePath)",
             "Courts: \(courts.count) total | polling \(pollingCount) | live \(liveCount) | waiting \(waitingCount) | idle \(idleCount) | error \(errorCount)",
-            "Stale Courts: \(staleCourtsText)"
+            "Stale Courts: \(staleCourtsText)",
+            "Error Courts: \(errorCourtsText)"
         ]
 
         if let startupError = healthSnapshot.startupError, !startupError.isEmpty {
