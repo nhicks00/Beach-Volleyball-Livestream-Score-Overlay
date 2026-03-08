@@ -116,6 +116,10 @@ struct MultiCourtScoreApp: App {
                     exportDiagnosticsBundle()
                 }
                 .keyboardShortcut("e", modifiers: [.command, .option])
+
+                Button("Export Diagnostics + Copy Summary...") {
+                    exportDiagnosticsBundleAndCopySummary()
+                }
             }
         }
     }
@@ -194,6 +198,30 @@ struct MultiCourtScoreApp: App {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(summary, forType: .string)
         RuntimeLogStore.shared.log(.info, subsystem: "operator", message: "copied support summary")
+    }
+
+    private func exportDiagnosticsBundleAndCopySummary() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
+        panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try appViewModel.exportDiagnosticsBundle(to: destinationURL)
+            copySupportSummary()
+            NSWorkspace.shared.activateFileViewerSelecting([destinationURL])
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Diagnostics export failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 }
 

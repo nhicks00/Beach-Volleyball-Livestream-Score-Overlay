@@ -540,6 +540,11 @@ struct SettingsView: View {
                                 exportDiagnosticsBundle()
                             }
                             .accessibilityIdentifier("settings.logs.exportDiagnostics")
+
+                            Button("Export + Copy Summary...") {
+                                exportDiagnosticsBundleAndCopySummary()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportDiagnosticsAndCopySummary")
                         }
                         .buttonStyle(.bordered)
                         .font(.system(size: 11))
@@ -845,6 +850,31 @@ struct SettingsView: View {
         do {
             try appViewModel.exportDiagnosticsBundle(to: destinationURL, runtimeLog: runtimeLog)
             runtimeLogStatusMessage = "Exported diagnostics bundle to \(destinationURL.lastPathComponent)"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
+    private func exportDiagnosticsBundleAndCopySummary() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
+        panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try appViewModel.exportDiagnosticsBundle(to: destinationURL, runtimeLog: runtimeLog)
+            let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(summary, forType: .string)
+            runtimeLog.log(.info, subsystem: "operator", message: "copied support summary")
+            runtimeLogStatusMessage = "Exported diagnostics bundle and copied support summary"
             runtimeLogStatusIsError = false
         } catch {
             runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
