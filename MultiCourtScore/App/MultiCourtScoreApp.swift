@@ -5,6 +5,7 @@
 //  Refactored for improved maintainability and performance
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -106,6 +107,11 @@ struct MultiCourtScoreApp: App {
                 }
             }
             CommandMenu("Support") {
+                Button("Copy Support Summary") {
+                    copySupportSummary()
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+
                 Button("Export Diagnostics Bundle...") {
                     exportDiagnosticsBundle()
                 }
@@ -181,6 +187,13 @@ struct MultiCourtScoreApp: App {
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }
+    }
+
+    private func copySupportSummary() {
+        let summary = appViewModel.supportSummaryText()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(summary, forType: .string)
+        RuntimeLogStore.shared.log(.info, subsystem: "operator", message: "copied support summary")
     }
 }
 

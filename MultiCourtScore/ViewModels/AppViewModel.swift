@@ -702,6 +702,73 @@ final class AppViewModel: ObservableObject {
         return "MultiCourtScore-diagnostics-\(formatter.string(from: date)).zip"
     }
 
+    func supportSummaryText(
+        runtimeLog: RuntimeLogStore = .shared,
+        date: Date = Date()
+    ) -> String {
+        let timestamp = ISO8601DateFormatter().string(from: date)
+        let healthSnapshot = webSocketHub.currentHealthSnapshot(port: appSettings.serverPort)
+        let courtSnapshots = currentCourtDiagnosticsSnapshots(referenceDate: date)
+
+        let pollingCount = courts.filter { $0.status.isPolling }.count
+        let liveCount = courts.filter { $0.status == .live }.count
+        let waitingCount = courts.filter { $0.status == .waiting }.count
+        let idleCount = courts.filter { $0.status == .idle }.count
+        let errorCount = courts.filter { $0.status == .error }.count
+        let staleCourtsText = healthSnapshot.stalePollingCourtIds.isEmpty
+            ? "none"
+            : healthSnapshot.stalePollingCourtIds.map(String.init).joined(separator: ", ")
+
+        let notableCourts = courtSnapshots.filter {
+            $0.queueCount > 0 || $0.errorMessage != nil || $0.status != CourtStatus.idle.rawValue
+        }
+
+        var lines: [String] = [
+            "MultiCourtScore Support Summary",
+            "Generated: \(timestamp)",
+            "App Version: \(AppConfig.version)",
+            "OS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "Health: \(healthSnapshot.status.uppercased())",
+            "Overlay Server: \(healthSnapshot.serverStatus) on localhost:\(healthSnapshot.port)",
+            "SignalR: \(healthSnapshot.signalREnabled ? healthSnapshot.signalRStatus : "Disabled")",
+            "Runtime Log: \(runtimeLog.logFilePath)",
+            "Courts: \(courts.count) total | polling \(pollingCount) | live \(liveCount) | waiting \(waitingCount) | idle \(idleCount) | error \(errorCount)",
+            "Stale Courts: \(staleCourtsText)"
+        ]
+
+        if let startupError = healthSnapshot.startupError, !startupError.isEmpty {
+            lines.append("Startup Error: \(startupError)")
+        }
+
+        if notableCourts.isEmpty {
+            lines.append("Notable Courts: none")
+        } else {
+            lines.append("Notable Courts:")
+            for court in notableCourts.prefix(5) {
+                var details: [String] = [
+                    court.status,
+                    "queue \(court.queueCount)"
+                ]
+                if let activeIndex = court.activeIndex {
+                    details.append("active \(activeIndex + 1)")
+                }
+                if let currentMatch = court.currentMatch {
+                    details.append("match \(currentMatch)")
+                }
+                if let lastPollSecondsAgo = court.lastPollSecondsAgo {
+                    details.append("last poll \(lastPollSecondsAgo)s ago")
+                }
+                if let errorMessage = court.errorMessage, !errorMessage.isEmpty {
+                    details.append("error \(errorMessage)")
+                }
+
+                lines.append("- Court \(court.id) (\(court.name)): \(details.joined(separator: ", "))")
+            }
+        }
+
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     func exportDiagnosticsBundle(
         to destinationURL: URL,
         runtimeLog: RuntimeLogStore = .shared
@@ -721,19 +788,7 @@ final class AppViewModel: ObservableObject {
                 courtCount: courts.count
             )
 
-            let courtSnapshots = courts.map { court in
-                CourtDiagnosticsSnapshot(
-                    id: court.id,
-                    name: court.displayName,
-                    status: court.status.rawValue,
-                    currentMatch: court.currentMatch?.matchNumber,
-                    queueCount: court.queue.count,
-                    activeIndex: court.activeIndex,
-                    overlayURL: overlayURL(for: court.id),
-                    errorMessage: court.errorMessage,
-                    lastPollSecondsAgo: court.lastPollTime.map { Int(Date().timeIntervalSince($0)) }
-                )
-            }
+            let courtSnapshots = currentCourtDiagnosticsSnapshots()
 
             let attachments = [
                 RuntimeLogStore.Attachment(
@@ -747,6 +802,10 @@ final class AppViewModel: ObservableObject {
                 RuntimeLogStore.Attachment(
                     fileName: "health.json",
                     data: try encoder.encode(healthSnapshot)
+                ),
+                RuntimeLogStore.Attachment(
+                    fileName: "support-summary.txt",
+                    data: Data(supportSummaryText(runtimeLog: runtimeLog).utf8)
                 ),
                 RuntimeLogStore.Attachment(
                     fileName: "scanner-logs.txt",
@@ -779,6 +838,22 @@ final class AppViewModel: ObservableObject {
     private func stopWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = nil
+    }
+
+    private func currentCourtDiagnosticsSnapshots(referenceDate: Date = Date()) -> [CourtDiagnosticsSnapshot] {
+        courts.map { court in
+            CourtDiagnosticsSnapshot(
+                id: court.id,
+                name: court.displayName,
+                status: court.status.rawValue,
+                currentMatch: court.currentMatch?.matchNumber,
+                queueCount: court.queue.count,
+                activeIndex: court.activeIndex,
+                overlayURL: overlayURL(for: court.id),
+                errorMessage: court.errorMessage,
+                lastPollSecondsAgo: court.lastPollTime.map { Int(referenceDate.timeIntervalSince($0)) }
+            )
+        }
     }
 
     private func checkPollingHealth() {

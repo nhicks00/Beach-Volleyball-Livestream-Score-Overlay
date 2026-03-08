@@ -2539,6 +2539,7 @@ struct RuntimeLogStoreTests {
         )
         #expect(listing.contains("/health.json"))
         #expect(listing.contains("/court-state.json"))
+        #expect(listing.contains("/support-summary.txt"))
 
         let unzip = Process()
         unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
@@ -2558,6 +2559,15 @@ struct RuntimeLogStoreTests {
         let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
         #expect(healthSnapshot.port == freePort)
         #expect(healthSnapshot.courtCount == 10)
+
+        let supportSummary = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("support-summary.txt"),
+            encoding: .utf8
+        )
+        #expect(supportSummary.contains("Health: OK"))
+        #expect(supportSummary.contains("Overlay Server: running on localhost:\(freePort)"))
+        #expect(supportSummary.contains("Runtime Log: \(sourceURL.path)"))
+        #expect(supportSummary.contains("queue 1"))
 
         let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
         let courtSnapshots = try JSONDecoder().decode([AppViewModel.CourtDiagnosticsSnapshot].self, from: courtStateData)

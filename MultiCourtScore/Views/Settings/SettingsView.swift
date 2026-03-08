@@ -526,6 +526,11 @@ struct SettingsView: View {
                             }
                             .accessibilityIdentifier("settings.logs.copyRuntimePath")
 
+                            Button("Copy Support Summary") {
+                                copySupportSummary()
+                            }
+                            .accessibilityIdentifier("settings.logs.copySupportSummary")
+
                             Button("Export Runtime Log...") {
                                 exportRuntimeLog()
                             }
@@ -791,6 +796,15 @@ struct SettingsView: View {
         NSPasteboard.general.setString(runtimeLog.logFilePath, forType: .string)
         runtimeLog.log(.info, subsystem: "operator", message: "copied runtime log path")
         runtimeLogStatusMessage = "Copied runtime log path"
+        runtimeLogStatusIsError = false
+    }
+
+    private func copySupportSummary() {
+        let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(summary, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied support summary")
+        runtimeLogStatusMessage = "Copied support summary"
         runtimeLogStatusIsError = false
     }
 
