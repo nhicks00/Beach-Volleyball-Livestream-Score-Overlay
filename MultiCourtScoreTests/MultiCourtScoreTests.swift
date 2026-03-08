@@ -3162,6 +3162,37 @@ struct ScannerViewModelTests {
         ])
     }
 
+    @Test func finalizeScanResults_tracksCollapsedOverlappingMatchCount() throws {
+        let viewModel = ScannerViewModel()
+        let primary = try makeScannerMatch(
+            index: 0,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let overlapping = try makeScannerMatch(
+            index: 1,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let unique = try makeScannerMatch(
+            index: 2,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false",
+            matchNumber: "3",
+            team1: "E / F",
+            team2: "G / H"
+        )
+
+        viewModel.finalizeScanResults([primary, overlapping, unique])
+
+        #expect(viewModel.scanResults.count == 2)
+        #expect(viewModel.overlappingMatchCount == 1)
+        #expect(viewModel.scanProgress == "Found 2 matches total")
+    }
+
     private func makeScannerMatch(
         index: Int,
         apiURL: String,

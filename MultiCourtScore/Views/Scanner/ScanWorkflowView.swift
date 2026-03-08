@@ -51,6 +51,9 @@ struct ScanWorkflowView: View {
     private var viewModel: ScannerViewModel { appViewModel.scannerViewModel }
     private var scanResults: [ScannerViewModel.VBLMatch] { viewModel.scanResults }
     private var groupedByCourt: [String: [ScannerViewModel.VBLMatch]] { viewModel.groupedByCourt }
+    private var overlapWarningText: String {
+        "Collapsed \(viewModel.overlappingMatchCount) overlapping match result\(viewModel.overlappingMatchCount == 1 ? "" : "s") from overlapping scan sources"
+    }
 
     init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
@@ -64,6 +67,9 @@ struct ScanWorkflowView: View {
             // Main content
             VStack(spacing: 0) {
                 stepHeader
+                if viewModel.overlappingMatchCount > 0 {
+                    overlapWarningBanner
+                }
                 stepContent
                 stepFooter
             }
@@ -215,6 +221,30 @@ struct ScanWorkflowView: View {
             Divider().overlay(AppColors.border),
             alignment: .bottom
         )
+    }
+
+    private var overlapWarningBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(AppColors.warning)
+
+            Text(overlapWarningText)
+                .font(AppTypography.caption)
+                .foregroundColor(AppColors.warning)
+
+            Spacer()
+        }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 10)
+        .background(AppColors.warning.opacity(0.12))
+        .overlay(
+            Divider().overlay(AppColors.warning.opacity(0.35)),
+            alignment: .bottom
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Overlapping scan results warning")
+        .accessibilityValue(overlapWarningText)
+        .accessibilityIdentifier("scanner.overlapWarning")
     }
 
     private var stepSubtitle: String {

@@ -16,6 +16,7 @@ class ScannerViewModel: ObservableObject {
     @Published var scanLogs: [ScanLogEntry] = []
     @Published var scanResults: [VBLMatch] = []
     @Published var errorMessage: String?
+    @Published var overlappingMatchCount = 0
     
     // MARK: - Scan URLs (dynamic arrays)
     @Published var bracketURLs: [String] = [""]
@@ -321,6 +322,7 @@ class ScannerViewModel: ObservableObject {
         scanLogs.removeAll()
         scanResults = []
         errorMessage = nil
+        overlappingMatchCount = 0
         scanProgress = "Initializing scan..."
         
         print("🚀 START SCAN CALLED - URLs: \(urlsToScan)")
@@ -346,6 +348,7 @@ class ScannerViewModel: ObservableObject {
         scanResults = []
         scanLogs = []
         errorMessage = nil
+        overlappingMatchCount = 0
         scanProgress = ""
     }
     
@@ -458,14 +461,19 @@ class ScannerViewModel: ObservableObject {
             errorMessage = "No matches found in any of the \(urlsToScan.count) URLs"
             scanProgress = "Scan complete - no matches found"
         } else {
-            let deduplicated = Self.deduplicatedMatches(scanResults)
-            if deduplicated.removedCount > 0 {
-                scanResults = deduplicated.matches
-                addLog("Collapsed \(deduplicated.removedCount) overlapping match result(s) from overlapping scan sources", type: .warning)
-            }
-            scanProgress = "Found \(scanResults.count) matches total"
-            addLog("Scan complete: \(scanResults.count) total matches", type: .success)
+            finalizeScanResults(scanResults)
         }
+    }
+
+    func finalizeScanResults(_ matches: [VBLMatch]) {
+        let deduplicated = Self.deduplicatedMatches(matches)
+        scanResults = deduplicated.matches
+        overlappingMatchCount = deduplicated.removedCount
+        if deduplicated.removedCount > 0 {
+            addLog("Collapsed \(deduplicated.removedCount) overlapping match result(s) from overlapping scan sources", type: .warning)
+        }
+        scanProgress = "Found \(scanResults.count) matches total"
+        addLog("Scan complete: \(scanResults.count) total matches", type: .success)
     }
 
     private static func normalizedURLs(from rawURLs: [String]) -> [String] {
