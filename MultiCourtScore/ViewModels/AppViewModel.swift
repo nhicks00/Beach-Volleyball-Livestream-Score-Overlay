@@ -33,6 +33,12 @@ final class AppViewModel: ObservableObject {
         let lastPollSecondsAgo: Int?
     }
 
+    struct WatchdogRecoverySnapshot: Equatable {
+        let count: Int
+        let lastRecoveryAt: Date?
+        let lastRecoveryReason: String?
+    }
+
     private enum PollFailureClassification {
         case suppressedPlaceholder(statusCode: Int)
         case authenticationFailed(statusCode: Int)
@@ -136,6 +142,9 @@ final class AppViewModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var watchdogTimer: Timer?
     private var lastSmartSwitchCheck: [Int: Date] = [:]
+    private var watchdogRecoveryCount = 0
+    private var lastWatchdogRecoveryAt: Date?
+    private var lastWatchdogRecoveryReason: String?
 
     // SignalR game ID → court mapping
     private var gameIdToCourtMap: [Int: Int] = [:]       // gameId → courtId
@@ -754,6 +763,41 @@ final class AppViewModel: ObservableObject {
         await checkPollingHealth()
     }
 
+    /// Test-only hook to inject watchdog recovery metadata without booting shared services.
+    func recordWatchdogRecoveryForTesting(
+        reason: String,
+        at date: Date = Date()
+    ) {
+        recordWatchdogRecovery(reason: reason, at: date)
+    }
+
+    /// Test-only hook to mark a court as actively polling without going through timer setup.
+    func setPollingStateForTesting(
+        courtId: Int,
+        status: CourtStatus = .waiting,
+        lastPollTime: Date? = Date()
+    ) {
+        guard let idx = courtIndex(for: courtId),
+              !courts[idx].queue.isEmpty else {
+            return
+        }
+
+        if courts[idx].activeIndex == nil {
+            courts[idx].activeIndex = 0
+        }
+        courts[idx].status = status
+        courts[idx].lastPollTime = lastPollTime
+        courts[idx].errorMessage = nil
+    }
+
+    func currentWatchdogRecoverySnapshot() -> WatchdogRecoverySnapshot {
+        WatchdogRecoverySnapshot(
+            count: watchdogRecoveryCount,
+            lastRecoveryAt: lastWatchdogRecoveryAt,
+            lastRecoveryReason: lastWatchdogRecoveryReason
+        )
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
@@ -830,6 +874,16 @@ final class AppViewModel: ObservableObject {
         let errorCourtsText = healthSnapshot.errorCourtIds.isEmpty
             ? "none"
             : healthSnapshot.errorCourtIds.map(String.init).joined(separator: ", ")
+        let watchdogRecoveryText: String
+        if healthSnapshot.watchdogRestartCount > 0 {
+            if let lastRecoveryAt = healthSnapshot.lastWatchdogRecoveryAt {
+                watchdogRecoveryText = "\(healthSnapshot.watchdogRestartCount) (last: \(lastRecoveryAt), reason: \(healthSnapshot.lastWatchdogRecoveryReason ?? "unknown"))"
+            } else {
+                watchdogRecoveryText = "\(healthSnapshot.watchdogRestartCount)"
+            }
+        } else {
+            watchdogRecoveryText = "none"
+        }
 
         let notableCourts = courtSnapshots.filter {
             $0.queueCount > 0 || $0.errorMessage != nil || $0.status != CourtStatus.idle.rawValue
@@ -845,6 +899,7 @@ final class AppViewModel: ObservableObject {
             "SignalR: \(healthSnapshot.signalREnabled ? healthSnapshot.signalRStatus : "Disabled")",
             "Runtime Log: \(runtimeLog.logFilePath)",
             "Courts: \(courts.count) total | polling \(pollingCount) | live \(liveCount) | waiting \(waitingCount) | idle \(idleCount) | error \(errorCount)",
+            "Watchdog Recoveries: \(watchdogRecoveryText)",
             "Stale Courts: \(staleCourtsText)",
             "Error Courts: \(errorCourtsText)"
         ]
@@ -939,6 +994,17 @@ final class AppViewModel: ObservableObject {
             } else {
                 alerts.append("[court \(courtId)] polling stale")
             }
+        }
+
+        for court in courtSnapshots.sorted(by: { $0.id < $1.id }) {
+            guard let errorMessage = court.errorMessage, !errorMessage.isEmpty else { continue }
+            let prefixedMessage: String
+            if let endpoint = court.currentMatchEndpoint, !endpoint.isEmpty {
+                prefixedMessage = "[court \(court.id)] \(errorMessage) [\(endpoint)]"
+            } else {
+                prefixedMessage = "[court \(court.id)] \(errorMessage)"
+            }
+            alerts.append(prefixedMessage)
         }
 
         if healthSnapshot.signalREnabled && signalRStatus.degradesHealthWhenEnabled {
@@ -1080,10 +1146,11 @@ final class AppViewModel: ObservableObject {
             .map(\.id)
 
         if !activePollingCourtIds.isEmpty && (!webSocketHub.isRunning || webSocketHub.startupError != nil) {
+            let reason = "overlay server unavailable while polling active on courts \(activePollingCourtIds)"
             runtimeLog.log(
                 .warning,
                 subsystem: "polling-watchdog",
-                message: "overlay server unavailable while polling active on courts \(activePollingCourtIds), attempting restart"
+                message: "\(reason), attempting restart"
             )
             let didRestartServer = await ensureServicesRunning()
             if !didRestartServer {
@@ -1094,6 +1161,7 @@ final class AppViewModel: ObservableObject {
                 )
                 return
             }
+            recordWatchdogRecovery(reason: reason)
         }
 
         for court in courts where court.status.isPolling {
@@ -1103,8 +1171,16 @@ final class AppViewModel: ObservableObject {
                 pollingTimers[court.id] = nil
                 pollsInFlight.remove(court.id)
                 startPolling(for: court.id)
+                recordWatchdogRecovery(reason: "court \(court.id) polling stale")
             }
         }
+    }
+
+    private func recordWatchdogRecovery(reason: String, at date: Date = Date()) {
+        watchdogRecoveryCount += 1
+        lastWatchdogRecoveryAt = date
+        lastWatchdogRecoveryReason = reason
+        runtimeLog.log(.info, subsystem: "polling-watchdog", message: "watchdog recovery succeeded: \(reason)")
     }
 
     // MARK: - Private Methods

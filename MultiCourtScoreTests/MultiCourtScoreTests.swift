@@ -2680,89 +2680,89 @@ struct RuntimeLogStoreTests {
     }
 
     @Test func appViewModelExportDiagnosticsBundle_includesHealthSnapshotAndCourtState() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer {
-            WebSocketHub.shared.stop()
-            cleanup()
-        }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer {
+                WebSocketHub.shared.stop()
+                cleanup()
+            }
 
-        let tempDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+            let tempDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempDirectory) }
 
-        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
-        let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
-        let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
-        let store = RuntimeLogStore(fileURL: sourceURL)
-        try "2026-03-07T00:00:00.000Z [INFO] [operator] exported diagnostics bundle\n"
-            .write(to: sourceURL, atomically: true, encoding: .utf8)
+            let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+            let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
+            let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+            let store = RuntimeLogStore(fileURL: sourceURL)
+            try "2026-03-07T00:00:00.000Z [INFO] [operator] exported diagnostics bundle\n"
+                .write(to: sourceURL, atomically: true, encoding: .utf8)
 
-        let freePort = try reserveFreePort()
-        viewModel.appSettings.serverPort = freePort
-        viewModel.replaceQueue(1, with: [
-            makeMatchItem(
-                url: "https://example.com/match/1",
-                team1: "Nathan Hicks",
-                team2: "Reid Malone",
-                matchNumber: "1"
+            let freePort = try reserveFreePort()
+            viewModel.appSettings.serverPort = freePort
+            viewModel.replaceQueue(1, with: [
+                makeMatchItem(
+                    url: "https://example.com/match/1",
+                    team1: "Nathan Hicks",
+                    team2: "Reid Malone",
+                    matchNumber: "1"
+                )
+            ])
+
+            await WebSocketHub.shared.start(with: viewModel, port: freePort)
+            try viewModel.exportDiagnosticsBundle(to: archiveURL, runtimeLog: store)
+
+            let listing = try shellOutput(
+                executable: "/usr/bin/unzip",
+                arguments: ["-Z1", archiveURL.path]
             )
-        ])
+            #expect(listing.contains("/health.json"))
+            #expect(listing.contains("/court-state.json"))
+            #expect(listing.contains("/support-summary.txt"))
 
-        await WebSocketHub.shared.start(with: viewModel, port: freePort)
-        try viewModel.exportDiagnosticsBundle(to: archiveURL, runtimeLog: store)
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
+            try unzip.run()
+            unzip.waitUntilExit()
+            #expect(unzip.terminationStatus == 0)
 
-        let listing = try shellOutput(
-            executable: "/usr/bin/unzip",
-            arguments: ["-Z1", archiveURL.path]
-        )
-        #expect(listing.contains("/health.json"))
-        #expect(listing.contains("/court-state.json"))
-        #expect(listing.contains("/support-summary.txt"))
+            let extractedItems = try FileManager.default.contentsOfDirectory(
+                at: extractedURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            let bundleDirectory = try #require(extractedItems.first)
 
-        let unzip = Process()
-        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
-        try unzip.run()
-        unzip.waitUntilExit()
-        #expect(unzip.terminationStatus == 0)
+            let healthData = try Data(contentsOf: bundleDirectory.appendingPathComponent("health.json"))
+            let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
+            #expect(healthSnapshot.port == freePort)
+            #expect(healthSnapshot.courtCount == 10)
+            #expect(healthSnapshot.errorCourtIds.isEmpty)
 
-        let extractedItems = try FileManager.default.contentsOfDirectory(
-            at: extractedURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        let bundleDirectory = try #require(extractedItems.first)
+            let supportSummary = try String(
+                contentsOf: bundleDirectory.appendingPathComponent("support-summary.txt"),
+                encoding: .utf8
+            )
+            #expect(supportSummary.contains("Health: OK"))
+            #expect(supportSummary.contains("Overlay Server: running on localhost:\(freePort)"))
+            #expect(supportSummary.contains("Runtime Log: \(sourceURL.path)"))
+            #expect(supportSummary.contains("Recent Alerts: none"))
+            #expect(supportSummary.contains("queue 1"))
 
-        let healthData = try Data(contentsOf: bundleDirectory.appendingPathComponent("health.json"))
-        let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
-        #expect(healthSnapshot.port == freePort)
-        #expect(healthSnapshot.courtCount == 10)
-        #expect(healthSnapshot.errorCourtIds.isEmpty)
-
-        let supportSummary = try String(
-            contentsOf: bundleDirectory.appendingPathComponent("support-summary.txt"),
-            encoding: .utf8
-        )
-        #expect(supportSummary.contains("Health: OK"))
-        #expect(supportSummary.contains("Overlay Server: running on localhost:\(freePort)"))
-        #expect(supportSummary.contains("Runtime Log: \(sourceURL.path)"))
-        #expect(supportSummary.contains("Recent Alerts: none"))
-        #expect(supportSummary.contains("queue 1"))
-
-        let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
-        let courtSnapshots = try JSONDecoder().decode([AppViewModel.CourtDiagnosticsSnapshot].self, from: courtStateData)
-        let firstCourt = try #require(courtSnapshots.first)
-        #expect(firstCourt.queueCount == 1)
-        #expect(firstCourt.overlayURL == "http://localhost:\(freePort)/overlay/court/1/")
+            let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
+            let courtSnapshots = try JSONDecoder().decode([AppViewModel.CourtDiagnosticsSnapshot].self, from: courtStateData)
+            let firstCourt = try #require(courtSnapshots.first)
+            #expect(firstCourt.queueCount == 1)
+            #expect(firstCourt.overlayURL == "http://localhost:\(freePort)/overlay/court/1/")
+        }
     }
 
     @Test func appViewModelExportDiagnosticsBundleToDefaultLocation_usesArchivesBesideRuntimeLog() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -2871,8 +2871,7 @@ struct RuntimeLogStoreTests {
     }
 
     @Test func supportSummaryText_prioritizesActiveAlertsAboveDedupedRecentHistory() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
@@ -2917,33 +2916,56 @@ struct RuntimeLogStoreTests {
     }
 
     @Test func supportSummaryText_includesActivePollEndpointForCurrentFailures() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let session = makeStubSession()
-        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+            let session = makeStubSession()
+            let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+            defer {
+                viewModel.stopServices()
+                cleanup()
+            }
+
+            let match = makeMatchItem(
+                url: "https://example.com/matches/1217131/vmix?bracket=false",
+                team1: "Team One",
+                team2: "Team Two",
+                matchNumber: "1"
+            )
+
+            StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+
+            viewModel.replaceQueue(1, with: [match], startIndex: 0)
+            await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+            let supportSummary = viewModel.supportSummaryText(date: Date())
+
+            #expect(supportSummary.contains("Active Alerts:"))
+            #expect(supportSummary.contains("[court 1] VBL API authentication failed (401) [/matches/1217131/vmix?bracket=false]"))
+        }
+    }
+
+    @Test func supportSummaryText_includesWatchdogRecoveryDetailsAfterSelfHealing() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
         defer {
             viewModel.stopServices()
             cleanup()
         }
 
-        let match = makeMatchItem(
-            url: "https://example.com/matches/1217131/vmix?bracket=false",
-            team1: "Team One",
-            team2: "Team Two",
-            matchNumber: "1"
+        let recoveryDate = ISO8601DateFormatter().date(from: "2026-03-08T17:30:00Z")!
+        let recoveryReason = "overlay server unavailable while polling active on courts [1]"
+
+        viewModel.recordWatchdogRecoveryForTesting(
+            reason: recoveryReason,
+            at: recoveryDate
         )
 
-        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+        let supportSummary = viewModel.supportSummaryText(date: recoveryDate)
 
-        viewModel.replaceQueue(1, with: [match], startIndex: 0)
-        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
-
-        let supportSummary = viewModel.supportSummaryText(date: Date())
-
-        #expect(supportSummary.contains("Active Alerts:"))
-        #expect(supportSummary.contains("[court 1] VBL API authentication failed (401) [/matches/1217131/vmix?bracket=false]"))
+        #expect(supportSummary.contains("Watchdog Recoveries: 1"))
+        #expect(supportSummary.contains(recoveryReason))
+        #expect(supportSummary.contains("2026-03-08T17:30:00Z"))
     }
 }
 
@@ -3292,6 +3314,9 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [2],
             errorCourtIds: [],
             courts: []
@@ -3323,6 +3348,9 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [2, 4],
             errorCourtIds: [],
             courts: []
@@ -3354,6 +3382,9 @@ struct DashboardViewLogicTests {
             signalREnabled: false,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [],
             errorCourtIds: [3],
             courts: []
@@ -3385,6 +3416,9 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [],
             errorCourtIds: [],
             courts: []
@@ -3416,6 +3450,9 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [],
             errorCourtIds: [],
             courts: []
@@ -3447,6 +3484,9 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
             stalePollingCourtIds: [],
             errorCourtIds: [],
             courts: []
@@ -3481,8 +3521,7 @@ struct SignalRStatusHealthTests {
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
         defer { cleanup() }
@@ -3508,8 +3547,7 @@ struct OverlayServerLifecycleTests {
     }
 
     @Test func startAllPolling_doesNotStartQueuesWhenOverlayServerFailsToStart() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
         defer { cleanup() }
@@ -3543,8 +3581,7 @@ struct OverlayServerLifecycleTests {
     }
 
     @Test func start_servesHealthEndpointOnFreePort() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
         defer { cleanup() }
@@ -3579,53 +3616,53 @@ struct OverlayServerLifecycleTests {
         let courts = try #require(json["courts"] as? [[String: Any]])
         #expect(courts.count == viewModel.courts.count)
 
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
         #expect(!WebSocketHub.shared.isRunning)
     }
 
     @Test func watchdog_restartsOverlayServerWhenPollingIsActiveAndServerStops() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer { cleanup() }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
 
-        let freePort = try reserveFreePort()
-        viewModel.appSettings.serverPort = freePort
-        viewModel.replaceQueue(1, with: [
-            makeMatchItem(
-                url: "https://example.com/matches/watchdog-restart",
-                team1: "Team A",
-                team2: "Team B",
-                matchNumber: "1"
-            )
-        ])
+            let freePort = try reserveFreePort()
+            viewModel.appSettings.serverPort = freePort
+            viewModel.replaceQueue(1, with: [
+                makeMatchItem(
+                    url: "https://example.com/matches/watchdog-restart",
+                    team1: "Team A",
+                    team2: "Team B",
+                    matchNumber: "1"
+                )
+            ])
 
-        viewModel.startAllPolling()
-        let didStart = await waitUntil {
-            WebSocketHub.shared.isRunning && viewModel.serverRunning
+            let didStart = await viewModel.ensureServicesRunning()
+            #expect(didStart)
+            viewModel.setPollingStateForTesting(courtId: 1, status: .waiting)
+
+            await stopSharedOverlayServer()
+            #expect(!WebSocketHub.shared.isRunning)
+
+            await viewModel.runWatchdogCheckForTesting()
+
+            let didRecover = await waitUntil {
+                WebSocketHub.shared.isRunning && viewModel.serverRunning
+            }
+            #expect(didRecover)
+
+            let healthSnapshot = WebSocketHub.shared.currentHealthSnapshot(port: freePort)
+            #expect(healthSnapshot.watchdogRestartCount == 1)
+            #expect(healthSnapshot.lastWatchdogRecoveryReason == "overlay server unavailable while polling active on courts [1]")
+            #expect(healthSnapshot.lastWatchdogRecoveryAt != nil)
+
+            await stopSharedOverlayServer()
         }
-        #expect(didStart)
-
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 150_000_000)
-        #expect(!WebSocketHub.shared.isRunning)
-
-        await viewModel.runWatchdogCheckForTesting()
-
-        let didRecover = await waitUntil {
-            WebSocketHub.shared.isRunning && viewModel.serverRunning
-        }
-        #expect(didRecover)
-
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
     }
 
     @Test func debugLogs_returnsRecentRuntimeEntries() async throws {
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
 
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
         defer { cleanup() }
@@ -3645,8 +3682,7 @@ struct OverlayServerLifecycleTests {
         #expect(body.contains("[overlay-server]"))
         #expect(body.contains("running at http://localhost"))
 
-        WebSocketHub.shared.stop()
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await stopSharedOverlayServer()
     }
 }
 
@@ -3760,9 +3796,6 @@ private func makeIsolatedAppViewModel(
     try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
 
     let configStore = ConfigStore(appSupportOverride: tempRoot)
-    let cleanup: () -> Void = {
-        try? FileManager.default.removeItem(at: tempRoot)
-    }
     let resolvedNotificationService = notificationService ?? RecordingNotificationService()
     let viewModel = AppViewModel(
         runtimeMode: .live,
@@ -3773,6 +3806,10 @@ private func makeIsolatedAppViewModel(
         signalRCredentialsProvider: signalRCredentialsProvider,
         signalRClientFactory: signalRClientFactory
     )
+    let cleanup: () -> Void = {
+        viewModel.stopServices()
+        try? FileManager.default.removeItem(at: tempRoot)
+    }
     return (viewModel, configStore, cleanup)
 }
 
@@ -3809,6 +3846,54 @@ private func makeMatchItem(
 private func configErrorMessage(from error: AppError?) -> String? {
     guard case let .configError(message)? = error else { return nil }
     return message
+}
+
+@MainActor
+private func stopSharedOverlayServer() async {
+    WebSocketHub.shared.stop()
+    await WebSocketHub.shared.waitForShutdownIfNeeded()
+}
+
+private actor SharedOverlayServerTestLock {
+    static let shared = SharedOverlayServerTestLock()
+
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !isLocked {
+            isLocked = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isLocked = false
+            return
+        }
+
+        let nextWaiter = waiters.removeFirst()
+        nextWaiter.resume()
+    }
+}
+
+private func withSharedOverlayServerTestScope<T>(
+    _ operation: () async throws -> T
+) async rethrows -> T {
+    await SharedOverlayServerTestLock.shared.acquire()
+    do {
+        let result = try await operation()
+        await SharedOverlayServerTestLock.shared.release()
+        return result
+    } catch {
+        await SharedOverlayServerTestLock.shared.release()
+        throw error
+    }
 }
 
 private func reserveFreePort() throws -> Int {

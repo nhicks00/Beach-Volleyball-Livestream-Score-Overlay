@@ -33,6 +33,9 @@ struct OverlayHealthSnapshot: Codable {
     let signalREnabled: Bool
     let port: Int
     let courtCount: Int
+    let watchdogRestartCount: Int
+    let lastWatchdogRecoveryAt: String?
+    let lastWatchdogRecoveryReason: String?
     let stalePollingCourtIds: [Int]
     let errorCourtIds: [Int]
     let courts: [OverlayHealthCourtSnapshot]
@@ -53,6 +56,7 @@ final class WebSocketHub {
     private var runningPort: Int?
     public private(set) var startupError: String?
     private let runtimeLog = RuntimeLogStore.shared
+    private var shutdownTask: Task<Void, Never>?
 
     private init() {}
 
@@ -70,6 +74,12 @@ final class WebSocketHub {
         isStarting = true
         startupError = nil
         appViewModel = viewModel
+
+        if let shutdownTask {
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "waiting for pending shutdown before restart")
+            await shutdownTask.value
+            self.shutdownTask = nil
+        }
         
         // Ensure old app is cleaned up
         if let oldApp = app {
@@ -125,7 +135,7 @@ final class WebSocketHub {
         isStarting = false
         startedAt = nil
         runningPort = nil
-        Task.detached {
+        let shutdownTask = Task.detached {
             RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopping")
             do {
                 try await appToStop?.asyncShutdown()
@@ -133,6 +143,15 @@ final class WebSocketHub {
                 RuntimeLogStore.shared.log(.warning, subsystem: "overlay-server", message: "error during shutdown: \(error.localizedDescription)")
             }
             RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopped")
+        }
+        self.shutdownTask = shutdownTask
+    }
+
+    func waitForShutdownIfNeeded() async {
+        guard let shutdownTask else { return }
+        await shutdownTask.value
+        if self.shutdownTask == shutdownTask {
+            self.shutdownTask = nil
         }
     }
 
@@ -149,6 +168,7 @@ final class WebSocketHub {
         let resolvedSignalRState = appViewModel?.signalRStatus ?? .disabled
         let resolvedSignalRStatus = resolvedSignalRState.displayLabel
         let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
+        let watchdogRecoverySnapshot = appViewModel?.currentWatchdogRecoverySnapshot()
 
         var stalePollingCourtIds: [Int] = []
         var errorCourtIds: [Int] = []
@@ -198,6 +218,9 @@ final class WebSocketHub {
             signalREnabled: signalREnabled,
             port: resolvedPort,
             courtCount: courts.count,
+            watchdogRestartCount: watchdogRecoverySnapshot?.count ?? 0,
+            lastWatchdogRecoveryAt: watchdogRecoverySnapshot?.lastRecoveryAt.map { ISO8601DateFormatter().string(from: $0) },
+            lastWatchdogRecoveryReason: watchdogRecoverySnapshot?.lastRecoveryReason,
             stalePollingCourtIds: stalePollingCourtIds,
             errorCourtIds: errorCourtIds,
             courts: courts
