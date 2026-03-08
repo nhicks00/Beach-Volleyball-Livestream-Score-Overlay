@@ -2497,6 +2497,93 @@ struct RuntimeLogStoreTests {
         #expect(scannerLogs == "No scanner log entries\n")
     }
 
+    @Test func overlayHTML_isSelfContainedAndBundledResourceMatchesEmbeddedVersion() async throws {
+        struct OverlayHTMLTestFailure: Error, CustomStringConvertible {
+            let description: String
+        }
+
+        func firstDifferenceDescription(_ lhs: String, _ rhs: String) -> String {
+            let lhsBytes = Array(lhs.utf8)
+            let rhsBytes = Array(rhs.utf8)
+            let sharedCount = min(lhsBytes.count, rhsBytes.count)
+
+            for index in 0..<sharedCount where lhsBytes[index] != rhsBytes[index] {
+                let lowerBound = max(0, index - 32)
+                let upperBound = min(sharedCount, index + 32)
+                let lhsSnippet = String(decoding: lhsBytes[lowerBound..<upperBound], as: UTF8.self)
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                let rhsSnippet = String(decoding: rhsBytes[lowerBound..<upperBound], as: UTF8.self)
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                return "first diff at byte \(index); lhs[\(lowerBound)..<\(upperBound)]='\(lhsSnippet)'; rhs[\(lowerBound)..<\(upperBound)]='\(rhsSnippet)'"
+            }
+
+            if lhsBytes.count != rhsBytes.count {
+                return "shared prefix matched for \(sharedCount) bytes but lengths differ: lhs=\(lhsBytes.count), rhs=\(rhsBytes.count)"
+            }
+
+            return "no byte difference"
+        }
+
+        func ensureSelfContained(_ html: String, label: String) throws {
+            let forbiddenMarkers = [
+                "https://",
+                "fonts.googleapis.com",
+                "cdn.tailwindcss.com",
+                "cdnjs.cloudflare.com"
+            ]
+
+            let hits = forbiddenMarkers.filter { html.localizedCaseInsensitiveContains($0) }
+            if !hits.isEmpty {
+                throw OverlayHTMLTestFailure(description: "\(label) still references external resources: \(hits.joined(separator: ", "))")
+            }
+        }
+
+        func normalizedOverlayHTML(_ html: String) -> String {
+            var normalized = html.replacingOccurrences(of: "\r\n", with: "\n")
+            if normalized.hasSuffix("\n") {
+                normalized.removeLast()
+            }
+            return normalized
+        }
+
+        let embeddedHTML = WebSocketHub.embeddedOverlayHTMLForTesting
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceOverlayURL = projectRoot.appendingPathComponent("MultiCourtScore/Resources/overlay.html")
+        let sourceOverlayHTML = try String(contentsOf: sourceOverlayURL, encoding: .utf8)
+        let appBundle = try #require(
+            (Bundle.allBundles + Bundle.allFrameworks).first {
+                $0.bundleIdentifier == "com.NathanHicks.MultiCourtScore"
+                    || $0.bundleURL.lastPathComponent == "MultiCourtScore.app"
+            }
+        )
+        let bundledURL = try #require(
+            appBundle.url(forResource: "overlay", withExtension: "html")
+        )
+        let bundledHTML = try String(contentsOf: bundledURL, encoding: .utf8)
+
+        try ensureSelfContained(embeddedHTML, label: "embedded overlay")
+        try ensureSelfContained(sourceOverlayHTML, label: "source overlay")
+        try ensureSelfContained(bundledHTML, label: "bundled overlay")
+
+        let normalizedEmbeddedHTML = normalizedOverlayHTML(embeddedHTML)
+        let normalizedSourceOverlayHTML = normalizedOverlayHTML(sourceOverlayHTML)
+        let normalizedBundledHTML = normalizedOverlayHTML(bundledHTML)
+
+        if normalizedSourceOverlayHTML != normalizedEmbeddedHTML {
+            throw OverlayHTMLTestFailure(
+                description: "embedded overlay differs from source overlay; \(firstDifferenceDescription(normalizedSourceOverlayHTML, normalizedEmbeddedHTML))"
+            )
+        }
+
+        if normalizedSourceOverlayHTML != normalizedBundledHTML {
+            throw OverlayHTMLTestFailure(
+                description: "bundled overlay differs from source overlay at \(bundledURL.path); \(firstDifferenceDescription(normalizedSourceOverlayHTML, normalizedBundledHTML))"
+            )
+        }
+    }
+
     @Test func appViewModelExportDiagnosticsBundle_includesHealthSnapshotAndCourtState() async throws {
         WebSocketHub.shared.stop()
         try? await Task.sleep(nanoseconds: 100_000_000)

@@ -647,7 +647,6 @@ final class WebSocketHub {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>BVM Scoreboard Overlay</title>
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet"/>
 <style>
 /* Tailwind utility classes compiled inline for overlay */
 .carbon-bar {
@@ -857,7 +856,7 @@ body {
   background-color: #0a0a0a;
   margin: 0;
   padding: 0;
-  font-family: "Roboto Condensed", sans-serif;
+  font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   color: white;
   overflow: hidden;
 }
@@ -2868,4 +2867,8 @@ tick();
 </body>
 </html>
 """#
+
+    static var embeddedOverlayHTMLForTesting: String {
+        bvmOverlayHTML
+    }
 }
