@@ -278,6 +278,6 @@
   ],
   "match_type": "Bracket Play",
   "type_detail": "Main Bracket",
-  "login_performed": "VBL_PASSWORD",
+  "login_performed": true,
   "status": "success"
 }

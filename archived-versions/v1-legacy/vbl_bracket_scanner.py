@@ -36,6 +36,14 @@ except ImportError:
 # Session persistence
 COOKIES_FILE = "/Users/nathanhicks/Library/Containers/com.NathanHicks.MultiCourtScore/Data/Documents/vbl_session_cookies.json"
 
+
+def load_legacy_credentials():
+    email = os.environ.get("VBL_EMAIL")
+    password = os.environ.get("VBL_PASSWORD")
+    if email and password:
+        return email, password
+    return None, None
+
 class VBLBracketScanner:
     def __init__(self):
         self.session = requests.Session()
@@ -58,8 +66,7 @@ class VBLBracketScanner:
         self.matches = []
         
         # Login credentials
-        self.email = "VBL_EMAIL"
-        self.password = "VBL_PASSWORD"
+        self.email, self.password = load_legacy_credentials()
         self.base_url = "https://volleyballlife.com"
         
         # Load existing session if available
@@ -1632,6 +1639,12 @@ def main():
         return 1
     
     bracket_urls = sys.argv[1:]
+
+    email, password = load_legacy_credentials()
+    if not email or not password:
+        print("❌ Missing credentials for legacy bracket scanner.")
+        print("   Set VBL_EMAIL and VBL_PASSWORD before running this script.")
+        return 1
     
     try:
         scanner = VBLBracketScanner()

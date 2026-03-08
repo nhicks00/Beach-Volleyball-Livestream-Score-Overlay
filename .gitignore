@@ -29,8 +29,15 @@ venv/
 # Credentials (never commit secrets)
 credentials.json
 **/credentials.json
+vbl_credentials.json
+**/vbl_credentials.json
+vbl_session.json
+**/vbl_session.json
 
 # Misc
 .idea/
 .vscode/
 scraper_venv/
+.playwright-cli/
+default.profraw
+signalr_mutations_captured.json
