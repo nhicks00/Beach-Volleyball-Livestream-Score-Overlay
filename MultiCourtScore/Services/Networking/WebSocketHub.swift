@@ -159,7 +159,7 @@ final class WebSocketHub {
             if isStale {
                 stalePollingCourtIds.append(court.id)
             }
-            if court.status == .error {
+            if court.status == .error || ((court.errorMessage?.isEmpty == false) && isPolling) {
                 errorCourtIds.append(court.id)
             }
 

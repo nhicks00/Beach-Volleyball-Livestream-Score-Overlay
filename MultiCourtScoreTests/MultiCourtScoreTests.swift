@@ -2363,8 +2363,54 @@ struct PollingFailureModeTests {
         #expect(court.activeIndex == 0)
         #expect(court.status == .waiting)
         let errorMessage = try #require(court.errorMessage)
-        #expect(errorMessage == "HTTP error: 500")
+        #expect(errorMessage == "VBL API unavailable (HTTP 500)")
         #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_surfacesAuthFailureWithOperatorMessage() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/secure/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "6"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == "VBL API authentication failed (401)")
+    }
+
+    @Test func runImmediatePollCycle_surfacesTimeoutWithOperatorMessage() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/timeout/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "7"
+        )
+
+        StubURLProtocol.registerFailure(URLError(.timedOut), for: match.apiURL)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == "VBL API request timed out")
     }
 }
 
@@ -2779,7 +2825,9 @@ struct RuntimeLogStoreTests {
         WebSocketHub.shared.stop()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
-        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel()
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
         defer {
             viewModel.stopServices()
             cleanup()
@@ -2797,27 +2845,56 @@ struct RuntimeLogStoreTests {
         """
         try contents.write(to: runtimeLogURL, atomically: true, encoding: .utf8)
 
-        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
-        defer { close(lockedSocket) }
-
-        viewModel.appSettings.serverPort = occupiedPort
-        viewModel.startServices()
-
-        let didSurfaceError = await waitUntil {
-            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
-        }
-        #expect(didSurfaceError)
+        let match = makeMatchItem(
+            url: "https://example.com/matches/priority-check/vmix?bracket=false",
+            team1: "Team One",
+            team2: "Team Two",
+            matchNumber: "1"
+        )
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
 
         let supportSummary = viewModel.supportSummaryText(runtimeLog: store, date: summaryDate)
 
         #expect(supportSummary.contains("Active Alerts:"))
-        #expect(supportSummary.contains("[overlay-server] Port \(occupiedPort) unavailable"))
+        #expect(supportSummary.contains("[court 1] VBL API authentication failed (401)"))
         #expect(supportSummary.contains("Recent Alerts (last 15m, deduped):"))
         #expect(supportSummary.contains("repeated 3x"))
 
         let activeRange = try #require(supportSummary.range(of: "Active Alerts:"))
         let recentRange = try #require(supportSummary.range(of: "Recent Alerts (last 15m, deduped):"))
         #expect(activeRange.lowerBound < recentRange.lowerBound)
+    }
+
+    @Test func supportSummaryText_includesActivePollEndpointForCurrentFailures() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/1217131/vmix?bracket=false",
+            team1: "Team One",
+            team2: "Team Two",
+            matchNumber: "1"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let supportSummary = viewModel.supportSummaryText(date: Date())
+
+        #expect(supportSummary.contains("Active Alerts:"))
+        #expect(supportSummary.contains("[court 1] VBL API authentication failed (401) [/matches/1217131/vmix?bracket=false]"))
     }
 }
 
@@ -3215,6 +3292,16 @@ struct OverlayServerLifecycleTests {
         #expect(WebSocketHub.shared.startupError == nil)
 
         let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/health"))
+        let didRespond = await waitUntilAsync {
+            do {
+                let (_, response) = try await URLSession.shared.data(from: url)
+                return (response as? HTTPURLResponse)?.statusCode == 200
+            } catch {
+                return false
+            }
+        }
+        #expect(didRespond)
+
         let (data, response) = try await URLSession.shared.data(from: url)
         let httpResponse = try #require(response as? HTTPURLResponse)
         #expect(httpResponse.statusCode == 200)
@@ -3503,7 +3590,11 @@ private func shellOutput(executable: String, arguments: [String]) throws -> Stri
 
 private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
-    private static var responses: [URL: (statusCode: Int, data: Data)] = [:]
+    private enum StubbedResponse {
+        case success(statusCode: Int, data: Data)
+        case failure(Error)
+    }
+    private static var responses: [URL: StubbedResponse] = [:]
 
     static func reset() {
         lock.lock()
@@ -3514,13 +3605,19 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     static func registerJSON(_ json: [String: Any], for url: URL, statusCode: Int = 200) {
         let data = (try? JSONSerialization.data(withJSONObject: json, options: [])) ?? Data()
         lock.lock()
-        responses[url] = (statusCode, data)
+        responses[url] = .success(statusCode: statusCode, data: data)
         lock.unlock()
     }
 
     static func registerData(_ data: Data, for url: URL, statusCode: Int = 200) {
         lock.lock()
-        responses[url] = (statusCode, data)
+        responses[url] = .success(statusCode: statusCode, data: data)
+        lock.unlock()
+    }
+
+    static func registerFailure(_ error: Error, for url: URL) {
+        lock.lock()
+        responses[url] = .failure(error)
         lock.unlock()
     }
 
@@ -3547,15 +3644,20 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        let response = HTTPURLResponse(
-            url: url,
-            statusCode: stub.statusCode,
-            httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: stub.data)
-        client?.urlProtocolDidFinishLoading(self)
+        switch stub {
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
+        case .success(let statusCode, let data):
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     override func stopLoading() {}

@@ -25,11 +25,80 @@ final class AppViewModel: ObservableObject {
         let name: String
         let status: String
         let currentMatch: String?
+        let currentMatchEndpoint: String?
         let queueCount: Int
         let activeIndex: Int?
         let overlayURL: String
         let errorMessage: String?
         let lastPollSecondsAgo: Int?
+    }
+
+    private enum PollFailureClassification {
+        case suppressedPlaceholder(statusCode: Int)
+        case authenticationFailed(statusCode: Int)
+        case accessForbidden(statusCode: Int)
+        case rateLimited(statusCode: Int)
+        case endpointMissing(statusCode: Int)
+        case upstreamUnavailable(statusCode: Int)
+        case invalidResponse
+        case timedOut
+        case networkUnavailable
+        case transport(message: String)
+        case unknown(message: String)
+
+        var operatorMessage: String? {
+            switch self {
+            case .suppressedPlaceholder:
+                return nil
+            case .authenticationFailed(let statusCode):
+                return "VBL API authentication failed (\(statusCode))"
+            case .accessForbidden(let statusCode):
+                return "VBL API access was denied (\(statusCode))"
+            case .rateLimited(let statusCode):
+                return "VBL API rate limited requests (\(statusCode))"
+            case .endpointMissing(let statusCode):
+                return "VBL match endpoint was not found (\(statusCode))"
+            case .upstreamUnavailable(let statusCode):
+                return "VBL API unavailable (HTTP \(statusCode))"
+            case .invalidResponse:
+                return "VBL API returned an invalid response"
+            case .timedOut:
+                return "VBL API request timed out"
+            case .networkUnavailable:
+                return "Network connection to VBL API failed"
+            case .transport(let message):
+                return "VBL API transport error: \(message)"
+            case .unknown(let message):
+                return message
+            }
+        }
+
+        var logDetail: String {
+            switch self {
+            case .suppressedPlaceholder(let statusCode):
+                return "suppressed placeholder response (\(statusCode))"
+            case .authenticationFailed(let statusCode):
+                return "authentication failed (\(statusCode))"
+            case .accessForbidden(let statusCode):
+                return "access denied (\(statusCode))"
+            case .rateLimited(let statusCode):
+                return "rate limited (\(statusCode))"
+            case .endpointMissing(let statusCode):
+                return "match endpoint not found (\(statusCode))"
+            case .upstreamUnavailable(let statusCode):
+                return "upstream unavailable (\(statusCode))"
+            case .invalidResponse:
+                return "invalid response"
+            case .timedOut:
+                return "request timed out"
+            case .networkUnavailable:
+                return "network unavailable"
+            case .transport(let message):
+                return "transport error: \(message)"
+            case .unknown(let message):
+                return message
+            }
+        }
     }
 
     enum RuntimeMode {
@@ -105,6 +174,7 @@ final class AppViewModel: ObservableObject {
         self.signalRCredentialsProvider = { configStore.loadCredentials() }
         self.signalRClientFactory = { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
+        self.webSocketHub.appViewModel = self
 
         loadConfiguration()
         ensureAllCourtsExist()
@@ -131,6 +201,7 @@ final class AppViewModel: ObservableObject {
         self.signalRCredentialsProvider = signalRCredentialsProvider ?? { configStore.loadCredentials() }
         self.signalRClientFactory = signalRClientFactory ?? { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
+        self.webSocketHub.appViewModel = self
         
         loadConfiguration()
         ensureAllCourtsExist()
@@ -823,7 +894,11 @@ final class AppViewModel: ObservableObject {
             if let court = courtSnapshotsById[courtId],
                let errorMessage = court.errorMessage,
                !errorMessage.isEmpty {
-                alerts.append("[court \(courtId)] \(errorMessage)")
+                if let endpoint = court.currentMatchEndpoint, !endpoint.isEmpty {
+                    alerts.append("[court \(courtId)] \(errorMessage) [\(endpoint)]")
+                } else {
+                    alerts.append("[court \(courtId)] \(errorMessage)")
+                }
             } else {
                 alerts.append("[court \(courtId)] polling failed")
             }
@@ -843,6 +918,13 @@ final class AppViewModel: ObservableObject {
         }
 
         return dedupeStringsPreservingOrder(alerts)
+    }
+
+    private func endpointSummary(for url: URL) -> String {
+        if let query = url.query, !query.isEmpty {
+            return "\(url.path)?\(query)"
+        }
+        return url.path
     }
 
     private func dedupeStringsPreservingOrder(_ items: [String]) -> [String] {
@@ -954,6 +1036,7 @@ final class AppViewModel: ObservableObject {
                 name: court.displayName,
                 status: court.status.rawValue,
                 currentMatch: court.currentMatch?.matchNumber,
+                currentMatchEndpoint: court.currentMatch.map { endpointSummary(for: $0.apiURL) },
                 queueCount: court.queue.count,
                 activeIndex: court.activeIndex,
                 overlayURL: overlayURL(for: court.id),
@@ -1070,20 +1153,20 @@ final class AppViewModel: ObservableObject {
             // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
-            let shouldSuppressError = shouldSuppressPollError(error, for: matchItem)
+            let failure = classifyPollFailure(error, for: matchItem)
             if let writeIdx = courtIndex(for: courtId) {
                 courts[writeIdx].lastPollTime = Date()
-                if shouldSuppressError {
+                if case .suppressedPlaceholder = failure {
                     courts[writeIdx].errorMessage = nil
                     if courts[writeIdx].status.isPolling {
                         courts[writeIdx].status = .waiting
                     }
                 } else {
-                    courts[writeIdx].errorMessage = error.localizedDescription
+                    courts[writeIdx].errorMessage = failure.operatorMessage
                 }
             }
             // Don't change to error status on single failure
-            if shouldSuppressError {
+            if case .suppressedPlaceholder = failure {
                 if shouldLogSuppressedPollError(for: courtId, matchItem: matchItem) {
                     runtimeLog.log(
                         .info,
@@ -1092,7 +1175,11 @@ final class AppViewModel: ObservableObject {
                     )
                 }
             } else {
-                runtimeLog.log(.warning, subsystem: "polling", message: "poll error for court \(courtId): \(error.localizedDescription)")
+                runtimeLog.log(
+                    .warning,
+                    subsystem: "polling",
+                    message: "poll error for court \(courtId): \(failure.logDetail) [\(endpointSummary(for: matchItem.apiURL))]"
+                )
             }
         }
     }
@@ -1108,10 +1195,46 @@ final class AppViewModel: ObservableObject {
         .joined(separator: "\n") + "\n"
     }
 
-    private func shouldSuppressPollError(_ error: Error, for match: MatchItem) -> Bool {
-        guard match.isUnresolvedPoolPlaceholder else { return false }
-        guard case APIError.httpError(let statusCode) = error else { return false }
-        return statusCode == 500 || statusCode == 404
+    private func classifyPollFailure(_ error: Error, for match: MatchItem) -> PollFailureClassification {
+        if case APIError.httpError(let statusCode) = error,
+           match.isUnresolvedPoolPlaceholder,
+           statusCode == 404 || statusCode == 500 {
+            return .suppressedPlaceholder(statusCode: statusCode)
+        }
+
+        if case APIError.httpError(let statusCode) = error {
+            switch statusCode {
+            case 401:
+                return .authenticationFailed(statusCode: statusCode)
+            case 403:
+                return .accessForbidden(statusCode: statusCode)
+            case 404:
+                return .endpointMissing(statusCode: statusCode)
+            case 429:
+                return .rateLimited(statusCode: statusCode)
+            case 500...599:
+                return .upstreamUnavailable(statusCode: statusCode)
+            default:
+                return .unknown(message: error.localizedDescription)
+            }
+        }
+
+        if case APIError.invalidResponse = error {
+            return .invalidResponse
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return .timedOut
+            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return .networkUnavailable
+            default:
+                return .transport(message: urlError.localizedDescription)
+            }
+        }
+
+        return .unknown(message: error.localizedDescription)
     }
 
     private func shouldLogSuppressedPollError(for courtId: Int, matchItem: MatchItem, now: Date = Date()) -> Bool {
@@ -1583,7 +1706,8 @@ final class AppViewModel: ObservableObject {
                     }
                     clearQueueMetadataSuppressionLogState(for: courtId, matchItem: match)
                 } catch {
-                    if shouldSuppressPollError(error, for: match) {
+                    let failure = classifyPollFailure(error, for: match)
+                    if case .suppressedPlaceholder = failure {
                         if shouldLogSuppressedQueueMetadataError(for: courtId, matchItem: match) {
                             runtimeLog.log(
                                 .info,
@@ -1592,7 +1716,11 @@ final class AppViewModel: ObservableObject {
                             )
                         }
                     } else {
-                        runtimeLog.log(.warning, subsystem: "queue-metadata", message: "failed to refresh queued metadata for court \(courtId): \(error.localizedDescription)")
+                        runtimeLog.log(
+                            .warning,
+                            subsystem: "queue-metadata",
+                            message: "failed to refresh queued metadata for court \(courtId): \(failure.logDetail) [\(endpointSummary(for: match.apiURL))]"
+                        )
                     }
                 }
             }
