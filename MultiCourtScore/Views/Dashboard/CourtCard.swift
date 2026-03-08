@@ -7,8 +7,53 @@
 
 import SwiftUI
 
+struct CourtHealthStripModel: Equatable {
+    let message: String
+    let tone: DashboardHealthBannerTone
+    let systemImageName: String
+}
+
+func formatCourtHealthDuration(_ seconds: Int) -> String {
+    guard seconds > 0 else { return "just now" }
+
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+
+    if hours > 0 {
+        return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+    }
+
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+
+    return "\(seconds)s"
+}
+
+func makeCourtHealthStripModel(
+    court: Court,
+    operationalHealth: CourtOperationalHealth?,
+    now: Date = Date()
+) -> CourtHealthStripModel? {
+    guard let operationalHealth else { return nil }
+
+    let degradedSeconds = max(1, Int(now.timeIntervalSince(operationalHealth.degradedSince)))
+    let failureCount = operationalHealth.consecutivePollFailures
+    let failureLabel = failureCount == 1 ? "1 poll failure" : "\(failureCount) poll failures"
+    let durationLabel = formatCourtHealthDuration(degradedSeconds)
+    let message = "\(failureLabel) in a row · degraded \(durationLabel)"
+    let tone: DashboardHealthBannerTone = (failureCount >= 3 || court.status == .error) ? .error : .warning
+
+    return CourtHealthStripModel(
+        message: message,
+        tone: tone,
+        systemImageName: tone == .error ? "wifi.exclamationmark" : "exclamationmark.triangle.fill"
+    )
+}
+
 struct CourtCard: View {
     let court: Court
+    let operationalHealth: CourtOperationalHealth?
     let onStart: () -> Void
     let onStop: () -> Void
     let onSkipNext: () -> Void
@@ -21,6 +66,10 @@ struct CourtCard: View {
     var holdScoreDuration: TimeInterval = 180
 
     @State private var isHovered = false
+
+    private var healthStripModel: CourtHealthStripModel? {
+        makeCourtHealthStripModel(court: court, operationalHealth: operationalHealth)
+    }
 
     // MARK: - Status Styling
 
@@ -103,6 +152,20 @@ struct CourtCard: View {
                 .foregroundColor(AppColors.error)
                 .padding(.horizontal, AppLayout.cardPadding)
                 .padding(.bottom, 6)
+            }
+
+            if let healthStripModel {
+                HStack(spacing: 6) {
+                    Image(systemName: healthStripModel.systemImageName)
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(healthStripModel.message)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundColor(healthStripModel.tone.color)
+                .padding(.horizontal, AppLayout.cardPadding)
+                .padding(.bottom, 4)
+                .accessibilityIdentifier("court.\(court.id).health")
             }
 
             // Data freshness indicator
@@ -788,6 +851,7 @@ struct PostmatchTimer: View {
     HStack(spacing: 16) {
         CourtCard(
             court: court,
+            operationalHealth: nil,
             onStart: {},
             onStop: {},
             onSkipNext: {},
@@ -801,6 +865,7 @@ struct PostmatchTimer: View {
 
         CourtCard(
             court: Court.create(id: 2),
+            operationalHealth: nil,
             onStart: {},
             onStop: {},
             onSkipNext: {},

@@ -109,6 +109,9 @@ final class AppViewModel: ObservableObject {
 
     private struct PollFailureLogState {
         let fingerprint: String
+        var firstFailureAt: Date
+        var lastFailureAt: Date
+        var consecutiveFailures: Int
         var lastLoggedAt: Date
         var suppressedCount: Int
     }
@@ -814,9 +817,33 @@ final class AppViewModel: ObservableObject {
         preparePollFailureLog(for: courtId, fingerprint: fingerprint, now: date)
     }
 
-    func currentPollFailureLogStateForTesting(courtId: Int) -> (fingerprint: String, suppressedCount: Int)? {
+    func currentPollFailureLogStateForTesting(
+        courtId: Int
+    ) -> (
+        fingerprint: String,
+        suppressedCount: Int,
+        consecutiveFailures: Int,
+        firstFailureAt: Date,
+        lastFailureAt: Date
+    )? {
         guard let state = pollFailureLogStates[courtId] else { return nil }
-        return (state.fingerprint, state.suppressedCount)
+        return (
+            state.fingerprint,
+            state.suppressedCount,
+            state.consecutiveFailures,
+            state.firstFailureAt,
+            state.lastFailureAt
+        )
+    }
+
+    func currentCourtOperationalHealth(for courtId: Int) -> CourtOperationalHealth? {
+        guard let state = pollFailureLogStates[courtId] else { return nil }
+        return CourtOperationalHealth(
+            consecutivePollFailures: state.consecutiveFailures,
+            degradedSince: state.firstFailureAt,
+            lastFailureAt: state.lastFailureAt,
+            lastFailureFingerprint: state.fingerprint
+        )
     }
 
     // MARK: - Navigation
@@ -1429,6 +1456,9 @@ final class AppViewModel: ObservableObject {
         guard var state = pollFailureLogStates[courtId] else {
             pollFailureLogStates[courtId] = PollFailureLogState(
                 fingerprint: fingerprint,
+                firstFailureAt: now,
+                lastFailureAt: now,
+                consecutiveFailures: 1,
                 lastLoggedAt: now,
                 suppressedCount: 0
             )
@@ -1438,11 +1468,17 @@ final class AppViewModel: ObservableObject {
         guard state.fingerprint == fingerprint else {
             pollFailureLogStates[courtId] = PollFailureLogState(
                 fingerprint: fingerprint,
+                firstFailureAt: now,
+                lastFailureAt: now,
+                consecutiveFailures: 1,
                 lastLoggedAt: now,
                 suppressedCount: 0
             )
             return 0
         }
+
+        state.lastFailureAt = now
+        state.consecutiveFailures += 1
 
         if now.timeIntervalSince(state.lastLoggedAt) < Self.pollFailureLogInterval {
             state.suppressedCount += 1
@@ -1459,10 +1495,11 @@ final class AppViewModel: ObservableObject {
 
     private func clearPollFailureLogState(for courtId: Int) {
         guard let state = pollFailureLogStates.removeValue(forKey: courtId) else { return }
+        let degradedSeconds = max(1, Int(state.lastFailureAt.timeIntervalSince(state.firstFailureAt)))
         runtimeLog.log(
             .info,
             subsystem: "polling",
-            message: "court \(courtId) polling recovered from \(state.fingerprint)"
+            message: "court \(courtId) polling recovered from \(state.fingerprint) after \(state.consecutiveFailures) failure\(state.consecutiveFailures == 1 ? "" : "s") over \(degradedSeconds)s"
         )
     }
 

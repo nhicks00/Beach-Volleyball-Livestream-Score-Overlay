@@ -353,6 +353,13 @@ struct Court: Identifiable, Codable, Equatable {
     }
 }
 
+struct CourtOperationalHealth: Equatable {
+    let consecutivePollFailures: Int
+    let degradedSince: Date
+    let lastFailureAt: Date
+    let lastFailureFingerprint: String
+}
+
 // MARK: - App Error
 enum AppError: Error, LocalizedError {
     case networkError(String)

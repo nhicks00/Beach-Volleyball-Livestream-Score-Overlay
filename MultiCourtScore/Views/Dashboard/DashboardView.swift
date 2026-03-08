@@ -243,6 +243,7 @@ struct DashboardView: View {
                                     ForEach(filteredCourts) { court in
                                         CourtCard(
                                             court: court,
+                                            operationalHealth: appViewModel.currentCourtOperationalHealth(for: court.id),
                                             onStart: { appViewModel.startPolling(for: court.id) },
                                             onStop: { appViewModel.stopPolling(for: court.id) },
                                             onSkipNext: { appViewModel.skipToNext(court.id) },
