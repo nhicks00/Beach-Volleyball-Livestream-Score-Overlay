@@ -2951,6 +2951,17 @@ struct RuntimeLogStoreTests {
 @Suite(.serialized)
 struct SingleInstanceGuardTests {
 
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForExplicitDuplicateInstanceEnvironment() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [
+                "MULTICOURTSCORE_ALLOW_DUPLICATE_INSTANCE": "1"
+            ]
+        )
+
+        #expect(shouldBypass)
+    }
+
     @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForUITestMode() {
         let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
             arguments: ["MultiCourtScore", "--uitest-mode"],
@@ -3034,6 +3045,28 @@ struct SingleInstanceGuardTests {
 }
 
 struct DashboardWindowRecoveryTests {
+
+    @Test func reopenRequestGate_allowsFirstRequestAndSuppressesImmediateDuplicate() {
+        var gate = DashboardReopenRequestGate(minimumInterval: 1.0)
+        let now = Date(timeIntervalSince1970: 100)
+
+        let firstRequestAllowed = gate.shouldRequestReopen(now: now)
+        let secondRequestAllowed = gate.shouldRequestReopen(now: now.addingTimeInterval(0.25))
+
+        #expect(firstRequestAllowed)
+        #expect(!secondRequestAllowed)
+    }
+
+    @Test func reopenRequestGate_allowsRequestAfterCooldown() {
+        var gate = DashboardReopenRequestGate(minimumInterval: 1.0)
+        let now = Date(timeIntervalSince1970: 100)
+
+        let firstRequestAllowed = gate.shouldRequestReopen(now: now)
+        let secondRequestAllowed = gate.shouldRequestReopen(now: now.addingTimeInterval(1.1))
+
+        #expect(firstRequestAllowed)
+        #expect(secondRequestAllowed)
+    }
 
     @Test func applicationShouldTerminateAfterLastWindowClosed_returnsFalse() {
         let delegate = DashboardAppDelegate()

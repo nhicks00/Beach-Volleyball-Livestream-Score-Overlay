@@ -26,6 +26,10 @@ enum SingleInstanceGuard {
         arguments: [String],
         environment: [String: String]
     ) -> Bool {
+        if environment["MULTICOURTSCORE_ALLOW_DUPLICATE_INSTANCE"] == "1" {
+            return true
+        }
+
         if arguments.contains("--uitest-mode") {
             return true
         }
@@ -57,6 +61,30 @@ struct WindowVisibilityDescriptor: Equatable {
     let isMiniaturized: Bool
 }
 
+struct DashboardReopenRequestGate {
+    let minimumInterval: TimeInterval
+    private(set) var lastRequestAt: Date?
+
+    init(minimumInterval: TimeInterval = 1.0, lastRequestAt: Date? = nil) {
+        self.minimumInterval = minimumInterval
+        self.lastRequestAt = lastRequestAt
+    }
+
+    mutating func shouldRequestReopen(now: Date = Date()) -> Bool {
+        guard let lastRequestAt else {
+            self.lastRequestAt = now
+            return true
+        }
+
+        guard now.timeIntervalSince(lastRequestAt) >= minimumInterval else {
+            return false
+        }
+
+        self.lastRequestAt = now
+        return true
+    }
+}
+
 enum DashboardWindowRecovery {
     static func shouldReopenDashboard(hasVisibleWindows: Bool) -> Bool {
         !hasVisibleWindows
@@ -69,8 +97,19 @@ enum DashboardWindowRecovery {
 
 final class DashboardAppDelegate: NSObject, NSApplicationDelegate {
     var reopenDashboard: (() -> Void)?
+    private var reopenRequestGate = DashboardReopenRequestGate()
 
-    private func requestDashboardReopen() {
+    private func requestDashboardReopen(reason: String) {
+        guard reopenRequestGate.shouldRequestReopen() else {
+            return
+        }
+
+        RuntimeLogStore.shared.log(
+            .warning,
+            subsystem: "app-lifecycle",
+            message: reason
+        )
+
         let reopenDashboard = self.reopenDashboard
         DispatchQueue.main.async {
             reopenDashboard?()
@@ -86,12 +125,9 @@ final class DashboardAppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
-        RuntimeLogStore.shared.log(
-            .warning,
-            subsystem: "app-lifecycle",
-            message: "reopening dashboard after app reopen with no visible windows"
+        requestDashboardReopen(
+            reason: "reopening dashboard after app reopen with no visible windows"
         )
-        requestDashboardReopen()
         return true
     }
 
@@ -107,12 +143,9 @@ final class DashboardAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        RuntimeLogStore.shared.log(
-            .warning,
-            subsystem: "app-lifecycle",
-            message: "restoring dashboard because app became active with no visible windows"
+        requestDashboardReopen(
+            reason: "restoring dashboard because app became active with no visible windows"
         )
-        requestDashboardReopen()
     }
 }
 
