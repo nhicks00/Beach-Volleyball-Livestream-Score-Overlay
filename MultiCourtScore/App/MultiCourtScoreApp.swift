@@ -9,6 +9,12 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum DashboardCommand {
+    static let openScanner = Notification.Name("DashboardCommand.openScanner")
+    static let openSettings = Notification.Name("DashboardCommand.openSettings")
+    static let confirmClearAll = Notification.Name("DashboardCommand.confirmClearAll")
+}
+
 struct RunningAppDescriptor: Equatable {
     let bundleIdentifier: String?
     let processIdentifier: pid_t
@@ -155,6 +161,12 @@ struct MultiCourtScoreApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command])
             }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    NotificationCenter.default.post(name: DashboardCommand.openSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
             CommandGroup(after: .windowSize) {
                 Button("Toggle Full Screen") {
                     NSApp.keyWindow?.toggleFullScreen(nil)
@@ -162,6 +174,13 @@ struct MultiCourtScoreApp: App {
                 .keyboardShortcut("f", modifiers: [.control, .command])
             }
             CommandMenu("Courts") {
+                Button("Scan VBL") {
+                    NotificationCenter.default.post(name: DashboardCommand.openScanner, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button("Start All Polling") {
                     appViewModel.startAllPolling()
                 }
@@ -175,7 +194,7 @@ struct MultiCourtScoreApp: App {
                 Divider()
 
                 Button("Clear All Queues") {
-                    appViewModel.clearAllQueues()
+                    NotificationCenter.default.post(name: DashboardCommand.confirmClearAll, object: nil)
                 }
             }
             CommandMenu("Support") {

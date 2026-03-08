@@ -303,6 +303,15 @@ struct DashboardView: View {
             .easeInOut(duration: 0.2),
             value: editorConfig != nil || showScannerModal || showSettingsModal
         )
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.openScanner)) { _ in
+            openScannerModal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.openSettings)) { _ in
+            openSettingsModal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.confirmClearAll)) { _ in
+            openClearAllConfirmation()
+        }
         .accessibilityIdentifier("dashboard.root")
         // Rename Alert
         .alert("Rename Overlay", isPresented: Binding(
@@ -403,8 +412,7 @@ struct DashboardView: View {
                 .tint(AppColors.primary)
 
                 Button(role: .destructive) {
-                    runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
-                    showClearAllConfirmation = true
+                    openClearAllConfirmation()
                 } label: {
                     Label("Clear All", systemImage: "trash")
                         .font(.system(size: 14, weight: .semibold))
@@ -479,8 +487,7 @@ struct DashboardView: View {
                     .help("Scan VBL")
 
                     Button(role: .destructive) {
-                        runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
-                        showClearAllConfirmation = true
+                        openClearAllConfirmation()
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 16, weight: .bold))
@@ -817,6 +824,11 @@ struct DashboardView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             showSettingsModal = false
         }
+    }
+
+    private func openClearAllConfirmation() {
+        runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
+        showClearAllConfirmation = true
     }
 
     private func copyOverlayURL(for courtId: Int) {
