@@ -8,12 +8,13 @@ import asyncio
 import random
 import sys
 import json
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 # Configuration
-EMAIL = "VBL_EMAIL"
-PASSWORD = "VBL_PASSWORD"
+EMAIL = os.environ.get("VBL_EMAIL", "")
+PASSWORD = os.environ.get("VBL_PASSWORD", "")
 BASE_URL = "https://volleyballlife.com"
 
 class VBLLoginBot:
@@ -296,6 +297,11 @@ class VBLLoginBot:
 
 async def main():
     """Main function"""
+    if not EMAIL or not PASSWORD:
+        print("❌ Missing credentials for legacy login script.")
+        print("   Set VBL_EMAIL and VBL_PASSWORD before running this script.")
+        return 1
+
     bot = VBLLoginBot()
     
     try:

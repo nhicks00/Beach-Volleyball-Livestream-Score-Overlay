@@ -471,11 +471,14 @@ async def main():
     username = sys.argv[2] if len(sys.argv) > 2 else None
     password = sys.argv[3] if len(sys.argv) > 3 else None
     
-    # Use hardcoded credentials if not provided
+    if bool(username) != bool(password):
+        print("❌ Provide both username and password, or neither.")
+        sys.exit(1)
+
     if not username:
-        username = "VBL_EMAIL"
-        password = "VBL_PASSWORD"
-        print("🔑 Using provided credentials")
+        print("❌ No credentials provided.")
+        print("   Pass username and password explicitly when using this legacy script.")
+        sys.exit(1)
     
     print(f"🏊 VolleyballLife Pool Play Scraper")
     print(f"🌐 Target URL: {pool_url}")
