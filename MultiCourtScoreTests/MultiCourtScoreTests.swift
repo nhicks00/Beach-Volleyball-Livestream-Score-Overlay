@@ -3301,6 +3301,9 @@ struct PollFailureLoggingTests {
         let stateAfterDuplicate = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
         #expect(stateAfterDuplicate.fingerprint == fingerprint)
         #expect(stateAfterDuplicate.suppressedCount == 1)
+        #expect(stateAfterDuplicate.consecutiveFailures == 2)
+        #expect(stateAfterDuplicate.firstFailureAt == start)
+        #expect(stateAfterDuplicate.lastFailureAt == start.addingTimeInterval(30))
 
         let reminderDecision = viewModel.registerPollFailureForTesting(
             courtId: 1,
@@ -3311,6 +3314,9 @@ struct PollFailureLoggingTests {
 
         let stateAfterReminder = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
         #expect(stateAfterReminder.suppressedCount == 0)
+        #expect(stateAfterReminder.consecutiveFailures == 3)
+        #expect(stateAfterReminder.firstFailureAt == start)
+        #expect(stateAfterReminder.lastFailureAt == start.addingTimeInterval(121))
     }
 
     @Test func repeatedPollFailureLogging_resetsImmediatelyWhenFailureChanges() async throws {
@@ -3343,6 +3349,7 @@ struct PollFailureLoggingTests {
         let changedState = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
         #expect(changedState.fingerprint == "network unavailable [/matches/one/vmix?bracket=false]")
         #expect(changedState.suppressedCount == 0)
+        #expect(changedState.consecutiveFailures == 1)
     }
 }
 
@@ -3626,6 +3633,56 @@ struct DashboardViewLogicTests {
         )
 
         #expect(dashboardHealthStatusText(for: health) == "Degraded: error courts 2, 4")
+    }
+
+    @Test func makeCourtHealthStripModel_formatsSoloOperatorFailureSummary() {
+        var court = Court.create(id: 1)
+        court.status = .waiting
+
+        let degradedSince = ISO8601DateFormatter().date(from: "2026-03-08T18:00:00Z")!
+        let model = makeCourtHealthStripModel(
+            court: court,
+            operationalHealth: CourtOperationalHealth(
+                consecutivePollFailures: 5,
+                degradedSince: degradedSince,
+                lastFailureAt: degradedSince.addingTimeInterval(185),
+                lastFailureFingerprint: "request timed out [/matches/one/vmix?bracket=false]"
+            ),
+            now: degradedSince.addingTimeInterval(185)
+        )
+
+        #expect(
+            model == CourtHealthStripModel(
+                message: "5 poll failures in a row · degraded 3m",
+                tone: .error,
+                systemImageName: "wifi.exclamationmark"
+            )
+        )
+    }
+
+    @Test func makeCourtHealthStripModel_usesWarningToneForEarlyDegradation() {
+        var court = Court.create(id: 2)
+        court.status = .waiting
+
+        let degradedSince = ISO8601DateFormatter().date(from: "2026-03-08T18:10:00Z")!
+        let model = makeCourtHealthStripModel(
+            court: court,
+            operationalHealth: CourtOperationalHealth(
+                consecutivePollFailures: 2,
+                degradedSince: degradedSince,
+                lastFailureAt: degradedSince.addingTimeInterval(12),
+                lastFailureFingerprint: "request timed out [/matches/two/vmix?bracket=false]"
+            ),
+            now: degradedSince.addingTimeInterval(12)
+        )
+
+        #expect(
+            model == CourtHealthStripModel(
+                message: "2 poll failures in a row · degraded 12s",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
     }
 }
 
