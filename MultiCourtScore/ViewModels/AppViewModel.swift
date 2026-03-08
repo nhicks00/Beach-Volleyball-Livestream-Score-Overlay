@@ -754,6 +754,19 @@ final class AppViewModel: ObservableObject {
             lines.append("Startup Error: \(startupError)")
         }
 
+        let recentProblemsWindowSeconds: TimeInterval = 15 * 60
+        let recentProblems = runtimeLog.recentProblemEntries(
+            since: date.addingTimeInterval(-recentProblemsWindowSeconds)
+        )
+        if recentProblems.isEmpty {
+            lines.append("Recent Alerts: none")
+        } else {
+            lines.append("Recent Alerts (last 15m):")
+            for entry in recentProblems {
+                lines.append("- \(entry)")
+            }
+        }
+
         if notableCourts.isEmpty {
             lines.append("Notable Courts: none")
         } else {

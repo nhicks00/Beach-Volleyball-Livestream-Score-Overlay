@@ -2655,6 +2655,7 @@ struct RuntimeLogStoreTests {
         #expect(supportSummary.contains("Health: OK"))
         #expect(supportSummary.contains("Overlay Server: running on localhost:\(freePort)"))
         #expect(supportSummary.contains("Runtime Log: \(sourceURL.path)"))
+        #expect(supportSummary.contains("Recent Alerts: none"))
         #expect(supportSummary.contains("queue 1"))
 
         let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
@@ -2697,6 +2698,55 @@ struct RuntimeLogStoreTests {
         #expect(exportedURL.deletingLastPathComponent() == expectedDirectory)
         #expect(FileManager.default.fileExists(atPath: exportedURL.path))
         #expect(exportedURL.lastPathComponent == viewModel.suggestedDiagnosticsBundleFilename(date: fixedDate))
+    }
+
+    @Test func recentProblemEntries_returnsLatestWarningsAndErrorsOnly() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:00:00.000Z [INFO] [operator] opened settings modal
+        2026-03-08T00:00:01.000Z [WARN] [overlay-server] first warning
+        2026-03-08T00:00:02.000Z [ERROR] [polling] first error
+        2026-03-08T00:00:03.000Z [INFO] [operator] copied support summary
+        2026-03-08T00:00:04.000Z [WARN] [app-lifecycle] second warning
+        2026-03-08T00:00:05.000Z [ERROR] [polling] second error
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let recentProblems = store.recentProblemEntries(maxBytes: 16_000, maxCount: 3)
+
+        #expect(recentProblems.count == 3)
+        #expect(recentProblems[0].contains("[ERROR] [polling] first error"))
+        #expect(recentProblems[1].contains("[WARN] [app-lifecycle] second warning"))
+        #expect(recentProblems[2].contains("[ERROR] [polling] second error"))
+    }
+
+    @Test func recentProblemEntries_since_filtersOutOlderProblems() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:00:00.000Z [WARN] [overlay-server] old warning
+        2026-03-08T00:14:00.000Z [ERROR] [polling] recent error
+        2026-03-08T00:14:30.000Z [WARN] [app-lifecycle] recent warning
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let since = ISO8601DateFormatter().date(from: "2026-03-08T00:05:00Z")!
+        let recentProblems = store.recentProblemEntries(maxBytes: 16_000, maxCount: 5, since: since)
+
+        #expect(recentProblems.count == 2)
+        #expect(recentProblems[0].contains("recent error"))
+        #expect(recentProblems[1].contains("recent warning"))
     }
 }
 

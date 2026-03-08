@@ -80,6 +80,36 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
     }
 
+    func recentProblemEntries(
+        maxBytes: Int = 64_000,
+        maxCount: Int = 5,
+        since: Date? = nil
+    ) -> [String] {
+        queue.sync {
+            guard maxCount > 0 else { return [] }
+            guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+                return []
+            }
+
+            let suffix = data.suffix(maxBytes)
+            let text = Self.decodeAlignedText(from: Data(suffix))
+            let lines = text
+                .split(whereSeparator: \.isNewline)
+                .map(String.init)
+                .filter {
+                    $0.contains("[\(RuntimeLogLevel.warning.rawValue)]") ||
+                    $0.contains("[\(RuntimeLogLevel.error.rawValue)]")
+                }
+                .filter { line in
+                    guard let since else { return true }
+                    guard let timestamp = Self.timestamp(fromLogLine: line) else { return true }
+                    return timestamp >= since
+                }
+
+            return Array(lines.suffix(maxCount))
+        }
+    }
+
     func clear() {
         queue.sync {
             ensureDirectoryExists()
@@ -262,5 +292,14 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
 
         return String(data: alignedData, encoding: .utf8) ?? String(decoding: alignedData, as: UTF8.self)
+    }
+
+    private static func timestamp(fromLogLine line: String) -> Date? {
+        guard let firstSeparator = line.firstIndex(of: " ") else {
+            return nil
+        }
+
+        let timestamp = String(line[..<firstSeparator])
+        return formatter.date(from: timestamp)
     }
 }
