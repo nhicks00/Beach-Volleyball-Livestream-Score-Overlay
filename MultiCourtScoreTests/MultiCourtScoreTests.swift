@@ -3584,6 +3584,45 @@ struct OverlayServerLifecycleTests {
         #expect(!WebSocketHub.shared.isRunning)
     }
 
+    @Test func watchdog_restartsOverlayServerWhenPollingIsActiveAndServerStops() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let freePort = try reserveFreePort()
+        viewModel.appSettings.serverPort = freePort
+        viewModel.replaceQueue(1, with: [
+            makeMatchItem(
+                url: "https://example.com/matches/watchdog-restart",
+                team1: "Team A",
+                team2: "Team B",
+                matchNumber: "1"
+            )
+        ])
+
+        viewModel.startAllPolling()
+        let didStart = await waitUntil {
+            WebSocketHub.shared.isRunning && viewModel.serverRunning
+        }
+        #expect(didStart)
+
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        #expect(!WebSocketHub.shared.isRunning)
+
+        await viewModel.runWatchdogCheckForTesting()
+
+        let didRecover = await waitUntil {
+            WebSocketHub.shared.isRunning && viewModel.serverRunning
+        }
+        #expect(didRecover)
+
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+
     @Test func debugLogs_returnsRecentRuntimeEntries() async throws {
         WebSocketHub.shared.stop()
         try? await Task.sleep(nanoseconds: 100_000_000)

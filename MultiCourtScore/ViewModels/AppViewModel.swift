@@ -749,6 +749,11 @@ final class AppViewModel: ObservableObject {
         rebuildGameIdMap()
     }
 
+    /// Test-only hook to run the watchdog health check deterministically.
+    func runWatchdogCheckForTesting() async {
+        await checkPollingHealth()
+    }
+
     // MARK: - Navigation
 
     func skipToNext(_ courtId: Int) {
@@ -1042,7 +1047,7 @@ final class AppViewModel: ObservableObject {
     private func startWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.checkPollingHealth() }
+            Task { @MainActor in await self?.checkPollingHealth() }
         }
         if let t = watchdogTimer { RunLoop.main.add(t, forMode: .common) }
     }
@@ -1069,7 +1074,28 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func checkPollingHealth() {
+    private func checkPollingHealth() async {
+        let activePollingCourtIds = courts
+            .filter { $0.status.isPolling }
+            .map(\.id)
+
+        if !activePollingCourtIds.isEmpty && (!webSocketHub.isRunning || webSocketHub.startupError != nil) {
+            runtimeLog.log(
+                .warning,
+                subsystem: "polling-watchdog",
+                message: "overlay server unavailable while polling active on courts \(activePollingCourtIds), attempting restart"
+            )
+            let didRestartServer = await ensureServicesRunning()
+            if !didRestartServer {
+                runtimeLog.log(
+                    .error,
+                    subsystem: "polling-watchdog",
+                    message: "overlay server restart failed while polling active on courts \(activePollingCourtIds)"
+                )
+                return
+            }
+        }
+
         for court in courts where court.status.isPolling {
             if let lastPoll = court.lastPollTime, Date().timeIntervalSince(lastPoll) > 30 {
                 runtimeLog.log(.warning, subsystem: "polling-watchdog", message: "court \(court.id) stale, restarting polling")
