@@ -25,6 +25,22 @@ enum CourtFilter: String, CaseIterable {
     }
 }
 
+func dashboardCourtStatusCounts(for courts: [Court]) -> [CourtFilter: Int] {
+    [
+        .all: courts.count,
+        .live: courts.filter { $0.status == .live }.count,
+        .waiting: courts.filter { $0.status == .waiting }.count,
+        .idle: courts.filter { $0.status == .idle }.count
+    ]
+}
+
+func dashboardSupplementalStatusCounts(for courts: [Court]) -> (finished: Int, offline: Int) {
+    (
+        finished: courts.filter { $0.status == .finished }.count,
+        offline: courts.filter { $0.status == .error }.count
+    )
+}
+
 enum DashboardTab: String, CaseIterable {
     case courts = "Courts"
     case changes = "Change Log"
@@ -34,10 +50,71 @@ struct EditorConfig: Identifiable {
     let id: Int
 }
 
-private struct DashboardHealthBannerModel {
+enum DashboardHealthBannerTone: Equatable {
+    case warning
+    case error
+
+    var color: Color {
+        switch self {
+        case .warning:
+            return AppColors.warning
+        case .error:
+            return AppColors.error
+        }
+    }
+}
+
+struct DashboardHealthBannerModel: Equatable {
     let message: String
-    let color: Color
+    let tone: DashboardHealthBannerTone
     let systemImageName: String
+
+    var color: Color {
+        tone.color
+    }
+}
+
+func makeDashboardHealthBannerModel(
+    health: OverlayHealthSnapshot,
+    signalREnabled: Bool,
+    signalRStatus: SignalRStatus
+) -> DashboardHealthBannerModel? {
+    if let startupError = health.startupError, !startupError.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Overlay server unavailable. \(startupError)",
+            tone: .error,
+            systemImageName: "exclamationmark.octagon.fill"
+        )
+    }
+
+    if !health.stalePollingCourtIds.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
+            tone: .warning,
+            systemImageName: "exclamationmark.triangle.fill"
+        )
+    }
+
+    if signalREnabled {
+        switch signalRStatus {
+        case .failed(let reason):
+            return DashboardHealthBannerModel(
+                message: "SignalR disconnected. Polling continues. \(reason)",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        case .noCredentials:
+            return DashboardHealthBannerModel(
+                message: "SignalR is enabled but credentials are missing. Polling continues.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        default:
+            break
+        }
+    }
+
+    return nil
 }
 
 struct DashboardView: View {
@@ -64,21 +141,11 @@ struct DashboardView: View {
     }
 
     private var courtStatusCounts: [CourtFilter: Int] {
-        var counts: [CourtFilter: Int] = [:]
-        counts[.all] = appViewModel.courts.count
-        counts[.live] = 0
-        counts[.waiting] = 0
-        counts[.idle] = 0
-        for court in appViewModel.courts {
-            switch court.status {
-            case .live: counts[.live, default: 0] += 1
-            case .waiting: counts[.waiting, default: 0] += 1
-            case .idle: counts[.idle, default: 0] += 1
-            case .finished: counts[.live, default: 0] += 1
-            case .error: counts[.idle, default: 0] += 1
-            }
-        }
-        return counts
+        dashboardCourtStatusCounts(for: appViewModel.courts)
+    }
+
+    private var supplementalStatusCounts: (finished: Int, offline: Int) {
+        dashboardSupplementalStatusCounts(for: appViewModel.courts)
     }
 
     private var overlayHealthSnapshot: OverlayHealthSnapshot {
@@ -86,44 +153,11 @@ struct DashboardView: View {
     }
 
     private var dashboardHealthBannerModel: DashboardHealthBannerModel? {
-        let health = overlayHealthSnapshot
-
-        if let startupError = health.startupError, !startupError.isEmpty {
-            return DashboardHealthBannerModel(
-                message: "Overlay server unavailable. \(startupError)",
-                color: AppColors.error,
-                systemImageName: "exclamationmark.octagon.fill"
-            )
-        }
-
-        if !health.stalePollingCourtIds.isEmpty {
-            return DashboardHealthBannerModel(
-                message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
-                color: AppColors.warning,
-                systemImageName: "exclamationmark.triangle.fill"
-            )
-        }
-
-        if appViewModel.appSettings.signalREnabled {
-            switch appViewModel.signalRStatus {
-            case .failed(let reason):
-                return DashboardHealthBannerModel(
-                    message: "SignalR disconnected. Polling continues. \(reason)",
-                    color: AppColors.warning,
-                    systemImageName: "exclamationmark.triangle.fill"
-                )
-            case .noCredentials:
-                return DashboardHealthBannerModel(
-                    message: "SignalR is enabled but credentials are missing. Polling continues.",
-                    color: AppColors.warning,
-                    systemImageName: "exclamationmark.triangle.fill"
-                )
-            default:
-                break
-            }
-        }
-
-        return nil
+        makeDashboardHealthBannerModel(
+            health: overlayHealthSnapshot,
+            signalREnabled: appViewModel.appSettings.signalREnabled,
+            signalRStatus: appViewModel.signalRStatus
+        )
     }
 
     var body: some View {
@@ -617,6 +651,28 @@ struct DashboardView: View {
             Text("\(remainingMatches) remaining")
                 .font(.system(size: 11))
                 .foregroundColor(AppColors.textMuted)
+
+            if supplementalStatusCounts.finished > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppColors.info)
+                        .frame(width: 6, height: 6)
+                    Text("\(supplementalStatusCounts.finished) finished")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
+
+            if supplementalStatusCounts.offline > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppColors.error)
+                        .frame(width: 6, height: 6)
+                    Text("\(supplementalStatusCounts.offline) offline")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
 
             if appViewModel.appSettings.signalREnabled {
                 Divider().frame(height: 12)

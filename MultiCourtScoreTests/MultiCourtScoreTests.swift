@@ -2752,6 +2752,184 @@ struct SingleInstanceGuardTests {
 
 @MainActor
 @Suite(.serialized)
+struct DashboardViewLogicTests {
+
+    @Test func dashboardCourtStatusCounts_onlyCountsExactFilterStatuses() {
+        var liveCourt = Court.create(id: 1)
+        liveCourt.status = .live
+
+        var waitingCourt = Court.create(id: 2)
+        waitingCourt.status = .waiting
+
+        var idleCourt = Court.create(id: 3)
+        idleCourt.status = .idle
+
+        var finishedCourt = Court.create(id: 4)
+        finishedCourt.status = .finished
+
+        var offlineCourt = Court.create(id: 5)
+        offlineCourt.status = .error
+
+        let courts = [liveCourt, waitingCourt, idleCourt, finishedCourt, offlineCourt]
+
+        let counts = dashboardCourtStatusCounts(for: courts)
+        let supplemental = dashboardSupplementalStatusCounts(for: courts)
+
+        #expect(counts[.all] == 5)
+        #expect(counts[.live] == 1)
+        #expect(counts[.waiting] == 1)
+        #expect(counts[.idle] == 1)
+        #expect(supplemental.finished == 1)
+        #expect(supplemental.offline == 1)
+    }
+
+    @Test func makeDashboardHealthBannerModel_prefersStartupError() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "stopped",
+            startupError: "Port 8787 unavailable",
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [2],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .failed(reason: "ignored")
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Overlay server unavailable. Port 8787 unavailable",
+                tone: .error,
+                systemImageName: "exclamationmark.octagon.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsStalePollingWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [2, 4],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .connected
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Polling is stale on courts 2, 4.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsSignalRFailureWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Failed: Authentication failed",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .failed(reason: "Authentication failed")
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "SignalR disconnected. Polling continues. Authentication failed",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsMissingCredentialsWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "No Credentials",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .noCredentials
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "SignalR is enabled but credentials are missing. Polling continues.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsNilWhenHealthy() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            stalePollingCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .connected
+        )
+
+        #expect(banner == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
