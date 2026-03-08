@@ -593,6 +593,16 @@ struct DashboardView: View {
 
             Spacer(minLength: 8)
 
+            if dashboardHealthBannerCanRetry {
+                Button("Retry") {
+                    appViewModel.retryServicesRestoringPollingIfConfigured()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(banner.color)
+                .accessibilityIdentifier("dashboard.healthBanner.retry")
+            }
+
             Button("Details") {
                 openSettingsModal()
             }
@@ -613,6 +623,14 @@ struct DashboardView: View {
             alignment: .bottom
         )
         .accessibilityIdentifier("dashboard.healthBanner")
+    }
+
+    private var dashboardHealthBannerCanRetry: Bool {
+        if let startupError = overlayHealthSnapshot.startupError, !startupError.isEmpty {
+            return true
+        }
+
+        return overlayHealthSnapshot.serverStatus != "running"
     }
 
     private var statusBar: some View {

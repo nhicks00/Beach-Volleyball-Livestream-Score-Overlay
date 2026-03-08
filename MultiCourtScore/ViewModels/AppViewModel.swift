@@ -147,6 +147,16 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func retryServicesRestoringPollingIfConfigured() {
+        runtimeLog.log(.info, subsystem: "operator", message: "requested service retry from dashboard")
+        Task { @MainActor in
+            let didStart = await ensureServicesRunning()
+            if didStart && appSettings.autoStartPolling {
+                startAllPolling()
+            }
+        }
+    }
+
     @discardableResult
     func ensureServicesRunning() async -> Bool {
         guard !isUITestMode else {
