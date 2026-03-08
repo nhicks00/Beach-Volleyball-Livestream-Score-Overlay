@@ -172,20 +172,13 @@ class ScannerViewModel: ObservableObject {
     }
     
     // MARK: - Computed Properties
+
+    private var normalizedInputURLs: [String] {
+        Self.normalizedURLs(from: bracketURLs + poolURLs)
+    }
     
     var allURLs: [String] {
-        (bracketURLs + poolURLs)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .map { raw in
-                if raw.lowercased().hasPrefix("http://") || raw.lowercased().hasPrefix("https://") {
-                    return raw
-                }
-                if raw.contains(".") {
-                    return "https://\(raw)"
-                }
-                return raw
-            }
+        Self.deduplicatedURLs(from: normalizedInputURLs)
     }
     
     var canScan: Bool {
@@ -312,6 +305,9 @@ class ScannerViewModel: ObservableObject {
     
     func startScan() {
         guard canScan else { return }
+
+        let urlsToScan = allURLs
+        let duplicateURLCount = max(normalizedInputURLs.count - urlsToScan.count, 0)
         
         isScanning = true
         scanLogs.removeAll()
@@ -319,11 +315,14 @@ class ScannerViewModel: ObservableObject {
         errorMessage = nil
         scanProgress = "Initializing scan..."
         
-        print("🚀 START SCAN CALLED - URLs: \(allURLs)")
-        addLog("Starting VBL scan for \(allURLs.count) URL(s)", type: .info)
+        print("🚀 START SCAN CALLED - URLs: \(urlsToScan)")
+        addLog("Starting VBL scan for \(urlsToScan.count) URL(s)", type: .info)
+        if duplicateURLCount > 0 {
+            addLog("Ignoring \(duplicateURLCount) duplicate URL(s)", type: .warning)
+        }
         
         Task {
-            await performScan()
+            await performScan(urlsToScan)
         }
     }
     
@@ -386,7 +385,7 @@ class ScannerViewModel: ObservableObject {
         return ("/usr/bin/python3", false)
     }
 
-    private func performScan() async {
+    private func performScan(_ urlsToScan: [String]) async {
         addLog("performScan() called", type: .info)
 
         guard let paths = resolveScannerPaths() else {
@@ -406,12 +405,12 @@ class ScannerViewModel: ObservableObject {
         addLog("Script: \(paths.scriptPath)", type: .info)
         
         // PARALLEL MODE: Send all URLs at once for ~4x speedup
-        if allURLs.count > 1 {
-            scanProgress = "🚀 Parallel scanning \(allURLs.count) URLs..."
-            addLog("🚀 Using PARALLEL mode for \(allURLs.count) URLs", type: .info)
+        if urlsToScan.count > 1 {
+            scanProgress = "🚀 Parallel scanning \(urlsToScan.count) URLs..."
+            addLog("🚀 Using PARALLEL mode for \(urlsToScan.count) URLs", type: .info)
             
             let matches = await scanAllURLsParallel(
-                allURLs,
+                urlsToScan,
                 pythonPath: pythonPath,
                 scriptPath: paths.scriptPath,
                 workingDir: paths.workingDir
@@ -425,8 +424,8 @@ class ScannerViewModel: ObservableObject {
             }
         } else {
             // Single URL - use standard mode
-            for (index, url) in allURLs.enumerated() {
-                scanProgress = "Scanning URL \(index + 1) of \(allURLs.count)..."
+            for (index, url) in urlsToScan.enumerated() {
+                scanProgress = "Scanning URL \(index + 1) of \(urlsToScan.count)..."
                 addLog("Scanning: \(url)", type: .info)
                 
                 let matches = await scanSingleURL(
@@ -448,11 +447,34 @@ class ScannerViewModel: ObservableObject {
         isScanning = false
         
         if scanResults.isEmpty {
-            errorMessage = "No matches found in any of the \(allURLs.count) URLs"
+            errorMessage = "No matches found in any of the \(urlsToScan.count) URLs"
             scanProgress = "Scan complete - no matches found"
         } else {
             scanProgress = "Found \(scanResults.count) matches total"
             addLog("Scan complete: \(scanResults.count) total matches", type: .success)
+        }
+    }
+
+    private static func normalizedURLs(from rawURLs: [String]) -> [String] {
+        rawURLs.compactMap { raw in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+                return trimmed
+            }
+            if trimmed.contains(".") {
+                return "https://\(trimmed)"
+            }
+            return trimmed
+        }
+    }
+
+    private static func deduplicatedURLs(from urls: [String]) -> [String] {
+        var seen = Set<String>()
+        return urls.filter { url in
+            let key = url.lowercased()
+            return seen.insert(key).inserted
         }
     }
     

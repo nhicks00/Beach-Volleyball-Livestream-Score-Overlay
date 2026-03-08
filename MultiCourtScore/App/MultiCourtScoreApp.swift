@@ -46,9 +46,74 @@ enum SingleInstanceGuard {
     }
 }
 
+struct WindowVisibilityDescriptor: Equatable {
+    let isVisible: Bool
+    let isMiniaturized: Bool
+}
+
+enum DashboardWindowRecovery {
+    static func shouldReopenDashboard(hasVisibleWindows: Bool) -> Bool {
+        !hasVisibleWindows
+    }
+
+    static func shouldReopenDashboard(windows: [WindowVisibilityDescriptor]) -> Bool {
+        !windows.contains { $0.isVisible && !$0.isMiniaturized }
+    }
+}
+
+final class DashboardAppDelegate: NSObject, NSApplicationDelegate {
+    var reopenDashboard: (() -> Void)?
+
+    private func requestDashboardReopen() {
+        let reopenDashboard = self.reopenDashboard
+        DispatchQueue.main.async {
+            reopenDashboard?()
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard DashboardWindowRecovery.shouldReopenDashboard(hasVisibleWindows: flag) else {
+            return false
+        }
+
+        RuntimeLogStore.shared.log(
+            .warning,
+            subsystem: "app-lifecycle",
+            message: "reopening dashboard after app reopen with no visible windows"
+        )
+        requestDashboardReopen()
+        return true
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        let windowDescriptors = NSApp.windows.map {
+            WindowVisibilityDescriptor(
+                isVisible: $0.isVisible,
+                isMiniaturized: $0.isMiniaturized
+            )
+        }
+
+        guard DashboardWindowRecovery.shouldReopenDashboard(windows: windowDescriptors) else {
+            return
+        }
+
+        RuntimeLogStore.shared.log(
+            .warning,
+            subsystem: "app-lifecycle",
+            message: "restoring dashboard because app became active with no visible windows"
+        )
+        requestDashboardReopen()
+    }
+}
+
 @main
 struct MultiCourtScoreApp: App {
     @Environment(\.openWindow) private var openWindow
+    @NSApplicationDelegateAdaptor(DashboardAppDelegate.self) private var appDelegate
     @StateObject private var appViewModel: AppViewModel
     @State private var didBootstrap = false
 
@@ -63,6 +128,7 @@ struct MultiCourtScoreApp: App {
                 .environmentObject(appViewModel)
                 .background(WindowBehaviorConfigurator())
                 .onAppear {
+                    appDelegate.reopenDashboard = { openDashboardWindow() }
                     guard !didBootstrap else { return }
                     didBootstrap = true
                     guard !handleDuplicateLaunchIfNeeded() else { return }

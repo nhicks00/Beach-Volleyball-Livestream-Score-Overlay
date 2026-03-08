@@ -6,6 +6,7 @@
 //
 
 import Testing
+import AppKit
 import Foundation
 import Darwin
 @testable import MultiCourtScore
@@ -3029,6 +3030,84 @@ struct SingleInstanceGuardTests {
         )
 
         #expect(duplicatePID == nil)
+    }
+}
+
+struct DashboardWindowRecoveryTests {
+
+    @Test func applicationShouldTerminateAfterLastWindowClosed_returnsFalse() {
+        let delegate = DashboardAppDelegate()
+
+        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared) == false)
+    }
+
+    @Test func shouldReopenDashboard_returnsTrueWhenAppHasNoVisibleWindows() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(hasVisibleWindows: false)
+
+        #expect(shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsFalseWhenAppAlreadyHasVisibleWindows() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(hasVisibleWindows: true)
+
+        #expect(!shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsTrueWhenAllWindowsAreMiniaturizedOrHidden() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(
+            windows: [
+                WindowVisibilityDescriptor(isVisible: false, isMiniaturized: false),
+                WindowVisibilityDescriptor(isVisible: true, isMiniaturized: true)
+            ]
+        )
+
+        #expect(shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsFalseWhenAnyWindowIsVisibleAndRestored() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(
+            windows: [
+                WindowVisibilityDescriptor(isVisible: false, isMiniaturized: false),
+                WindowVisibilityDescriptor(isVisible: true, isMiniaturized: false)
+            ]
+        )
+
+        #expect(!shouldReopen)
+    }
+}
+
+@MainActor
+struct ScannerViewModelTests {
+
+    @Test func allURLs_normalizesAndDeduplicatesDuplicateSourcesPreservingOrder() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            " volleyballlife.com/event/34785/division/127872/round/261836/brackets ",
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets"
+        ]
+        viewModel.poolURLs = [
+            "volleyballlife.com/event/34785/division/127872/round/260841/pools",
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+        ]
+
+        #expect(
+            viewModel.allURLs == [
+                "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+                "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+            ]
+        )
+    }
+
+    @Test func canScan_staysTrueWithOnlyDuplicateEntriesBecauseDuplicatesCollapseToOneSource() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets"
+        ]
+        viewModel.poolURLs = [""]
+
+        #expect(viewModel.allURLs.count == 1)
+        #expect(viewModel.canScan)
     }
 }
 
