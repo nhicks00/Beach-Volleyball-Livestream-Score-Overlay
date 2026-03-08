@@ -32,6 +32,34 @@ final class RuntimeLogStore: @unchecked Sendable {
         let data: Data
     }
 
+    struct ProblemSummary: Equatable {
+        let line: String
+        let level: RuntimeLogLevel
+        let subsystem: String
+        let message: String
+        var count: Int
+        let latestTimestamp: Date?
+
+        var renderedLine: String {
+            if count > 1 {
+                return "\(line) (repeated \(count)x)"
+            }
+            return line
+        }
+    }
+
+    private struct ParsedLogEntry {
+        let line: String
+        let timestamp: Date?
+        let level: RuntimeLogLevel
+        let subsystem: String
+        let message: String
+
+        var fingerprint: String {
+            "\(level.rawValue)|\(subsystem)|\(message)"
+        }
+    }
+
     private static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -76,7 +104,10 @@ final class RuntimeLogStore: @unchecked Sendable {
             }
 
             let suffix = data.suffix(maxBytes)
-            return Self.decodeAlignedText(from: Data(suffix))
+            return Self.decodeAlignedText(
+                from: Data(suffix),
+                wasTruncated: suffix.count < data.count
+            )
         }
     }
 
@@ -92,7 +123,10 @@ final class RuntimeLogStore: @unchecked Sendable {
             }
 
             let suffix = data.suffix(maxBytes)
-            let text = Self.decodeAlignedText(from: Data(suffix))
+            let text = Self.decodeAlignedText(
+                from: Data(suffix),
+                wasTruncated: suffix.count < data.count
+            )
             let lines = text
                 .split(whereSeparator: \.isNewline)
                 .map(String.init)
@@ -107,6 +141,44 @@ final class RuntimeLogStore: @unchecked Sendable {
                 }
 
             return Array(lines.suffix(maxCount))
+        }
+    }
+
+    func recentProblemSummaries(
+        maxBytes: Int = 64_000,
+        maxCount: Int = 5,
+        since: Date? = nil
+    ) -> [ProblemSummary] {
+        queue.sync {
+            guard maxCount > 0 else { return [] }
+
+            let entries = recentParsedProblemEntries(maxBytes: maxBytes, since: since)
+            guard !entries.isEmpty else { return [] }
+
+            var summaries: [ProblemSummary] = []
+            var indicesByFingerprint: [String: Int] = [:]
+
+            // Walk newest-first so the displayed line reflects the most recent occurrence.
+            for entry in entries.reversed() {
+                if let existingIndex = indicesByFingerprint[entry.fingerprint] {
+                    summaries[existingIndex].count += 1
+                    continue
+                }
+
+                indicesByFingerprint[entry.fingerprint] = summaries.count
+                summaries.append(
+                    ProblemSummary(
+                        line: entry.line,
+                        level: entry.level,
+                        subsystem: entry.subsystem,
+                        message: entry.message,
+                        count: 1,
+                        latestTimestamp: entry.timestamp
+                    )
+                )
+            }
+
+            return Array(summaries.prefix(maxCount))
         }
     }
 
@@ -185,8 +257,34 @@ final class RuntimeLogStore: @unchecked Sendable {
         }
 
         let tail = Data(data.suffix(retainedBytes))
-        let trimmedText = Self.decodeAlignedText(from: tail)
+        let trimmedText = Self.decodeAlignedText(
+            from: tail,
+            wasTruncated: tail.count < data.count
+        )
         try? Data(trimmedText.utf8).write(to: fileURL, options: .atomic)
+    }
+
+    private func recentParsedProblemEntries(maxBytes: Int, since: Date?) -> [ParsedLogEntry] {
+        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+            return []
+        }
+
+        let suffix = data.suffix(maxBytes)
+        let text = Self.decodeAlignedText(
+            from: Data(suffix),
+            wasTruncated: suffix.count < data.count
+        )
+        return text
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Self.parseLogEntry(String($0)) }
+            .filter {
+                $0.level == .warning || $0.level == .error
+            }
+            .filter { entry in
+                guard let since else { return true }
+                guard let timestamp = entry.timestamp else { return true }
+                return timestamp >= since
+            }
     }
 
     private func ensureDirectoryExists() {
@@ -281,11 +379,13 @@ final class RuntimeLogStore: @unchecked Sendable {
         try? fileManager.moveItem(at: legacyURL, to: currentURL)
     }
 
-    private static func decodeAlignedText(from data: Data) -> String {
+    private static func decodeAlignedText(from data: Data, wasTruncated: Bool) -> String {
         guard !data.isEmpty else { return "" }
 
         let alignedData: Data
-        if let newlineIndex = data.firstIndex(of: 0x0A), newlineIndex < data.index(before: data.endIndex) {
+        if wasTruncated,
+           let newlineIndex = data.firstIndex(of: 0x0A),
+           newlineIndex < data.index(before: data.endIndex) {
             alignedData = Data(data.suffix(from: data.index(after: newlineIndex)))
         } else {
             alignedData = data
@@ -295,11 +395,39 @@ final class RuntimeLogStore: @unchecked Sendable {
     }
 
     private static func timestamp(fromLogLine line: String) -> Date? {
-        guard let firstSeparator = line.firstIndex(of: " ") else {
+        parseLogEntry(line)?.timestamp
+    }
+
+    private static func parseLogEntry(_ line: String) -> ParsedLogEntry? {
+        let parts = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: false)
+        guard parts.count == 4 else {
             return nil
         }
 
-        let timestamp = String(line[..<firstSeparator])
-        return formatter.date(from: timestamp)
+        let timestamp = String(parts[0])
+        let levelToken = String(parts[1])
+        let subsystemToken = String(parts[2])
+        let message = String(parts[3])
+
+        guard levelToken.hasPrefix("["),
+              levelToken.hasSuffix("]"),
+              subsystemToken.hasPrefix("["),
+              subsystemToken.hasSuffix("]") else {
+            return nil
+        }
+
+        let rawLevel = String(levelToken.dropFirst().dropLast())
+        let subsystem = String(subsystemToken.dropFirst().dropLast())
+        guard let level = RuntimeLogLevel(rawValue: rawLevel) else {
+            return nil
+        }
+
+        return ParsedLogEntry(
+            line: line,
+            timestamp: formatter.date(from: timestamp),
+            level: level,
+            subsystem: subsystem,
+            message: message
+        )
     }
 }

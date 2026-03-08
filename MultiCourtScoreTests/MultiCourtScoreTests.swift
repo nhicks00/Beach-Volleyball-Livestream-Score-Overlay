@@ -2748,6 +2748,77 @@ struct RuntimeLogStoreTests {
         #expect(recentProblems[0].contains("recent error"))
         #expect(recentProblems[1].contains("recent warning"))
     }
+
+    @Test func recentProblemSummaries_dedupesRepeatedMessagesAndKeepsLatestOccurrence() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:10:00.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:10:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:11:00.000Z [WARN] [overlay-server] retry requested while unavailable
+        2026-03-08T00:11:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let summaries = store.recentProblemSummaries(maxBytes: 16_000, maxCount: 5)
+
+        #expect(summaries.count == 2)
+        #expect(summaries[0].line.contains("[ERROR] [polling] upstream 500 for pool-326016-2"))
+        #expect(summaries[0].count == 3)
+        #expect(summaries[0].renderedLine.contains("repeated 3x"))
+        #expect(summaries[1].line.contains("[WARN] [overlay-server] retry requested while unavailable"))
+        #expect(summaries[1].count == 1)
+    }
+
+    @Test func supportSummaryText_prioritizesActiveAlertsAboveDedupedRecentHistory() async throws {
+        WebSocketHub.shared.stop()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let appSupportRoot = configStore.settingsURL.deletingLastPathComponent()
+        let runtimeLogURL = RuntimeLogStore.defaultFileURL(appSupportOverride: appSupportRoot)
+        let store = RuntimeLogStore(fileURL: runtimeLogURL)
+        let summaryDate = ISO8601DateFormatter().date(from: "2026-03-08T00:15:00Z")!
+        let contents = """
+        2026-03-08T00:10:00.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:10:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:11:00.000Z [WARN] [overlay-server] retry requested while unavailable
+        2026-03-08T00:11:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        """
+        try contents.write(to: runtimeLogURL, atomically: true, encoding: .utf8)
+
+        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+        defer { close(lockedSocket) }
+
+        viewModel.appSettings.serverPort = occupiedPort
+        viewModel.startServices()
+
+        let didSurfaceError = await waitUntil {
+            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+        }
+        #expect(didSurfaceError)
+
+        let supportSummary = viewModel.supportSummaryText(runtimeLog: store, date: summaryDate)
+
+        #expect(supportSummary.contains("Active Alerts:"))
+        #expect(supportSummary.contains("[overlay-server] Port \(occupiedPort) unavailable"))
+        #expect(supportSummary.contains("Recent Alerts (last 15m, deduped):"))
+        #expect(supportSummary.contains("repeated 3x"))
+
+        let activeRange = try #require(supportSummary.range(of: "Active Alerts:"))
+        let recentRange = try #require(supportSummary.range(of: "Recent Alerts (last 15m, deduped):"))
+        #expect(activeRange.lowerBound < recentRange.lowerBound)
+    }
 }
 
 @MainActor

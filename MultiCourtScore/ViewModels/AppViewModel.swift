@@ -754,16 +754,27 @@ final class AppViewModel: ObservableObject {
             lines.append("Startup Error: \(startupError)")
         }
 
+        let activeAlerts = activeSupportAlerts(
+            healthSnapshot: healthSnapshot,
+            courtSnapshots: courtSnapshots
+        )
+        if !activeAlerts.isEmpty {
+            lines.append("Active Alerts:")
+            for alert in activeAlerts {
+                lines.append("- \(alert)")
+            }
+        }
+
         let recentProblemsWindowSeconds: TimeInterval = 15 * 60
-        let recentProblems = runtimeLog.recentProblemEntries(
+        let recentProblems = runtimeLog.recentProblemSummaries(
             since: date.addingTimeInterval(-recentProblemsWindowSeconds)
         )
         if recentProblems.isEmpty {
             lines.append("Recent Alerts: none")
         } else {
-            lines.append("Recent Alerts (last 15m):")
+            lines.append("Recent Alerts (last 15m, deduped):")
             for entry in recentProblems {
-                lines.append("- \(entry)")
+                lines.append("- \(entry.renderedLine)")
             }
         }
 
@@ -794,6 +805,55 @@ final class AppViewModel: ObservableObject {
         }
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private func activeSupportAlerts(
+        healthSnapshot: OverlayHealthSnapshot,
+        courtSnapshots: [CourtDiagnosticsSnapshot]
+    ) -> [String] {
+        var alerts: [String] = []
+
+        if let startupError = healthSnapshot.startupError, !startupError.isEmpty {
+            alerts.append("[overlay-server] \(startupError)")
+        }
+
+        let courtSnapshotsById = Dictionary(uniqueKeysWithValues: courtSnapshots.map { ($0.id, $0) })
+
+        for courtId in healthSnapshot.errorCourtIds.sorted() {
+            if let court = courtSnapshotsById[courtId],
+               let errorMessage = court.errorMessage,
+               !errorMessage.isEmpty {
+                alerts.append("[court \(courtId)] \(errorMessage)")
+            } else {
+                alerts.append("[court \(courtId)] polling failed")
+            }
+        }
+
+        for courtId in healthSnapshot.stalePollingCourtIds.sorted() where !healthSnapshot.errorCourtIds.contains(courtId) {
+            if let court = courtSnapshotsById[courtId],
+               let lastPollSecondsAgo = court.lastPollSecondsAgo {
+                alerts.append("[court \(courtId)] polling stale (\(lastPollSecondsAgo)s since last poll)")
+            } else {
+                alerts.append("[court \(courtId)] polling stale")
+            }
+        }
+
+        if healthSnapshot.signalREnabled && signalRStatus.degradesHealthWhenEnabled {
+            alerts.append("[signalr] \(healthSnapshot.signalRStatus)")
+        }
+
+        return dedupeStringsPreservingOrder(alerts)
+    }
+
+    private func dedupeStringsPreservingOrder(_ items: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for item in items where seen.insert(item).inserted {
+            result.append(item)
+        }
+
+        return result
     }
 
     func exportDiagnosticsBundle(
