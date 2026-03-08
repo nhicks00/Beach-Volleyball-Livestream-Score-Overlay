@@ -3124,6 +3124,64 @@ struct ScannerViewModelTests {
         #expect(viewModel.allURLs.count == 2)
         #expect(viewModel.duplicateURLCount == 2)
     }
+
+    @Test func deduplicatedMatches_collapsesOverlappingResultsByAPIURL() throws {
+        let bracketMatch = try makeScannerMatch(
+            index: 0,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let duplicateFromDirectPool = try makeScannerMatch(
+            index: 1,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let uniqueMatch = try makeScannerMatch(
+            index: 2,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false",
+            matchNumber: "3",
+            team1: "E / F",
+            team2: "G / H"
+        )
+
+        let result = ScannerViewModel.deduplicatedMatches([
+            bracketMatch,
+            duplicateFromDirectPool,
+            uniqueMatch
+        ])
+
+        #expect(result.removedCount == 1)
+        #expect(result.matches.count == 2)
+        #expect(result.matches.map(\.apiURL) == [
+            "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false"
+        ])
+    }
+
+    private func makeScannerMatch(
+        index: Int,
+        apiURL: String,
+        matchNumber: String,
+        team1: String,
+        team2: String
+    ) throws -> ScannerViewModel.VBLMatch {
+        let payload: [String: Any] = [
+            "index": index,
+            "team1": team1,
+            "team2": team2,
+            "match_number": matchNumber,
+            "court": "Court 1",
+            "startTime": "9:40AM",
+            "startDate": "Fri",
+            "api_url": apiURL
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        return try JSONDecoder().decode(ScannerViewModel.VBLMatch.self, from: data)
+    }
 }
 
 @MainActor

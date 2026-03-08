@@ -188,6 +188,11 @@ class ScannerViewModel: ObservableObject {
     var canScan: Bool {
         !allURLs.isEmpty && !isScanning
     }
+
+    struct DeduplicatedMatchResult {
+        let matches: [VBLMatch]
+        let removedCount: Int
+    }
     
     var groupedByCourt: [String: [VBLMatch]] {
         var grouped = Dictionary(grouping: scanResults) { $0.courtDisplay }
@@ -453,6 +458,11 @@ class ScannerViewModel: ObservableObject {
             errorMessage = "No matches found in any of the \(urlsToScan.count) URLs"
             scanProgress = "Scan complete - no matches found"
         } else {
+            let deduplicated = Self.deduplicatedMatches(scanResults)
+            if deduplicated.removedCount > 0 {
+                scanResults = deduplicated.matches
+                addLog("Collapsed \(deduplicated.removedCount) overlapping match result(s) from overlapping scan sources", type: .warning)
+            }
             scanProgress = "Found \(scanResults.count) matches total"
             addLog("Scan complete: \(scanResults.count) total matches", type: .success)
         }
@@ -479,6 +489,47 @@ class ScannerViewModel: ObservableObject {
             let key = url.lowercased()
             return seen.insert(key).inserted
         }
+    }
+
+    static func deduplicatedMatches(_ matches: [VBLMatch]) -> DeduplicatedMatchResult {
+        var seenAPIURLs = Set<String>()
+        var seenFallbackKeys = Set<String>()
+        var deduplicated: [VBLMatch] = []
+        var removedCount = 0
+
+        for match in matches {
+            let apiURLKey = match.apiURL?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+
+            if let apiURLKey, !apiURLKey.isEmpty {
+                if seenAPIURLs.insert(apiURLKey).inserted {
+                    deduplicated.append(match)
+                } else {
+                    removedCount += 1
+                }
+                continue
+            }
+
+            let fallbackKey = [
+                match.matchNumber ?? "",
+                match.team1 ?? "",
+                match.team2 ?? "",
+                match.startDate ?? "",
+                match.startTime ?? "",
+                match.court ?? ""
+            ]
+            .joined(separator: "|")
+            .lowercased()
+
+            if seenFallbackKeys.insert(fallbackKey).inserted {
+                deduplicated.append(match)
+            } else {
+                removedCount += 1
+            }
+        }
+
+        return DeduplicatedMatchResult(matches: deduplicated, removedCount: removedCount)
     }
     
     private func scanSingleURL(_ url: String, pythonPath: String, scriptPath: String, workingDir: String) async -> [VBLMatch] {
