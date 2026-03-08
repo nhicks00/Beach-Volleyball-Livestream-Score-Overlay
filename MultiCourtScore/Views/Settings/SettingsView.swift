@@ -5,7 +5,9 @@
 //  App settings with sidebar navigation and dark theme
 //
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Settings Navigation
 
@@ -34,7 +36,7 @@ enum SettingsTab: String, CaseIterable {
 struct SettingsView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
-    let onClose: (() -> Void)?
+    let onClose: ((String) -> Void)?
 
     @State private var selectedTab: SettingsTab = .general
     @State private var settings = ConfigStore().loadSettings()
@@ -45,10 +47,15 @@ struct SettingsView: View {
     @State private var showingCredentialsSaved = false
     @State private var showSettingsSaved = false
     @State private var searchText = ""
+    @State private var credentialsLoadRequested = false
+    @State private var runtimeLogPreview = ""
+    @State private var runtimeLogStatusMessage: String?
+    @State private var runtimeLogStatusIsError = false
 
     private let configStore = ConfigStore()
+    private let runtimeLog = RuntimeLogStore.shared
 
-    init(onClose: (() -> Void)? = nil) {
+    init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
     }
 
@@ -65,7 +72,9 @@ struct SettingsView: View {
                         .font(.system(size: 18, weight: .bold))
                         .foregroundColor(AppColors.textPrimary)
                     Spacer()
-                    Button(action: closeSettings) {
+                    Button {
+                        closeSettings(reason: "close-button")
+                    } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(AppColors.textSecondary)
@@ -73,6 +82,7 @@ struct SettingsView: View {
                             .background(Circle().fill(AppColors.surfaceHover))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.close")
                     .help("Close (Esc)")
                 }
                 .padding(.horizontal, 24)
@@ -89,15 +99,26 @@ struct SettingsView: View {
         }
         .frame(minWidth: 650, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .background(AppColors.background)
-        .onExitCommand { closeSettings() }
+        .onExitCommand { closeSettings(reason: "escape") }
+        .background(
+            EscapeKeyMonitor {
+                closeSettings(reason: "escape")
+            }
+        )
         .onAppear {
-            loadCredentials()
+            loadCredentialsIfNeeded()
+            refreshRuntimeDiagnostics()
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == .logs {
+                refreshRuntimeDiagnostics()
+            }
         }
     }
 
-    private func closeSettings() {
+    private func closeSettings(reason: String) {
         if let onClose {
-            onClose()
+            onClose(reason)
         } else {
             dismiss()
         }
@@ -294,6 +315,34 @@ struct SettingsView: View {
                     }
                 }
 
+                // Live Push (SignalR)
+                DetailSection(title: "Live Push (SignalR)") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Enable SignalR push updates", isOn: Binding(
+                            get: { settings.signalREnabled },
+                            set: { newValue in
+                                settings.signalREnabled = newValue
+                                appViewModel.setSignalREnabled(newValue)
+                            }
+                        ))
+                        .toggleStyle(.switch)
+
+                        Text("Receives live score mutations via SignalR. Requires VBL credentials. Polling continues as fallback.")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppColors.textMuted)
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(appViewModel.signalRStatus.statusColor)
+                                .frame(width: 7, height: 7)
+                            Text(appViewModel.signalRStatus.displayLabel)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+                        .opacity(settings.signalREnabled ? 1 : 0.4)
+                    }
+                }
+
                 // Theme
                 DetailSection(title: "Theme") {
                     Picker("Theme", selection: $settings.overlayTheme) {
@@ -445,67 +494,232 @@ struct SettingsView: View {
     // MARK: - Logs Pane (NEW)
 
     private var logsPane: some View {
-        VStack(spacing: 0) {
-            // Log viewer
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(appViewModel.scannerViewModel.scanLogs) { entry in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(entry.timeDisplay)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(AppColors.textMuted)
-                                    .frame(width: 60, alignment: .leading)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                systemHealthSection(health: currentHealthSnapshot)
 
-                                Text(entry.type.icon)
-                                    .font(.system(size: 11))
-
-                                Text(entry.message)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(entry.type.color)
-                                    .lineLimit(nil)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 3)
-                            .id(entry.id)
+                DetailSection(title: "Runtime Diagnostics") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Log File")
+                                .font(.system(size: 11))
+                                .foregroundColor(AppColors.textMuted)
+                            Text(runtimeLog.logFilePath)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textSecondary)
+                                .textSelection(.enabled)
                         }
 
-                        if appViewModel.scannerViewModel.scanLogs.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "terminal")
-                                    .font(.system(size: 32))
-                                    .foregroundColor(AppColors.textMuted)
-                                Text("No log entries yet")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(AppColors.textMuted)
+                        HStack(spacing: 8) {
+                            Button("Refresh") {
+                                refreshRuntimeDiagnostics()
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
+                            .accessibilityIdentifier("settings.logs.refreshRuntime")
+
+                            Button("Reveal in Finder") {
+                                revealRuntimeLogInFinder()
+                            }
+                            .accessibilityIdentifier("settings.logs.revealRuntime")
+
+                            Button("Copy Path") {
+                                copyRuntimeLogPath()
+                            }
+                            .accessibilityIdentifier("settings.logs.copyRuntimePath")
+
+                            Button("Copy Support Summary") {
+                                copySupportSummary()
+                            }
+                            .accessibilityIdentifier("settings.logs.copySupportSummary")
+
+                            Button("Export Runtime Log...") {
+                                exportRuntimeLog()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportRuntime")
+
+                            Button("Export Diagnostics Bundle...") {
+                                exportDiagnosticsBundle()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportDiagnostics")
+
+                            Button("Export + Copy Summary...") {
+                                exportDiagnosticsBundleAndCopySummary()
+                            }
+                            .accessibilityIdentifier("settings.logs.exportDiagnosticsAndCopySummary")
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.system(size: 11))
+
+                        if let runtimeLogStatusMessage {
+                            Text(runtimeLogStatusMessage)
+                                .font(.system(size: 11))
+                                .foregroundColor(runtimeLogStatusIsError ? AppColors.error : AppColors.success)
+                        }
+
+                        ScrollView {
+                            Group {
+                                if runtimeLogPreview.isEmpty {
+                                    Text("No runtime diagnostics entries yet")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(AppColors.textMuted)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                } else {
+                                    Text(runtimeLogPreview)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(AppColors.textSecondary)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(12)
+                                }
+                            }
+                        }
+                        .frame(minHeight: 180, maxHeight: 240)
+                        .background(Color(hex: "#1A1A1A"))
+                        .cornerRadius(8)
+                    }
+                }
+
+                DetailSection(title: "Scanner Logs") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(appViewModel.scannerViewModel.scanLogs) { entry in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(entry.timeDisplay)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(AppColors.textMuted)
+                                            .frame(width: 60, alignment: .leading)
+
+                                        Text(entry.type.icon)
+                                            .font(.system(size: 11))
+
+                                        Text(entry.message)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(entry.type.color)
+                                            .lineLimit(nil)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 3)
+                                    .id(entry.id)
+                                }
+
+                                if appViewModel.scannerViewModel.scanLogs.isEmpty {
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "terminal")
+                                            .font(.system(size: 32))
+                                            .foregroundColor(AppColors.textMuted)
+                                        Text("No scanner log entries yet")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(AppColors.textMuted)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 40)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .frame(minHeight: 180, maxHeight: 260)
+                        .background(Color(hex: "#1A1A1A"))
+                        .cornerRadius(8)
+
+                        HStack {
+                            Text("\(appViewModel.scannerViewModel.scanLogs.count) entries")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(AppColors.textMuted)
+
+                            Spacer()
+
+                            Button("Clear Scanner Logs") {
+                                appViewModel.scannerViewModel.scanLogs.removeAll()
+                                runtimeLog.log(.warning, subsystem: "operator", message: "cleared scanner logs from settings")
+                            }
+                            .buttonStyle(.bordered)
+                            .font(.system(size: 11))
+                            .accessibilityIdentifier("settings.logs.clearScanner")
                         }
                     }
-                    .padding(.vertical, 8)
                 }
-                .background(Color(hex: "#1A1A1A"))
-                .cornerRadius(8)
-                .padding(16)
             }
+            .padding(24)
+        }
+    }
 
-            // Log toolbar
-            HStack {
-                Text("\(appViewModel.scannerViewModel.scanLogs.count) entries")
-                    .font(.system(size: 11, design: .monospaced))
+    private func systemHealthSection(health: OverlayHealthSnapshot) -> some View {
+        DetailSection(title: "System Health") {
+            VStack(alignment: .leading, spacing: 10) {
+                healthRow(
+                    label: "Overall",
+                    value: health.status.uppercased(),
+                    color: health.status == "ok" ? AppColors.success : AppColors.warning
+                )
+                healthRow(
+                    label: "Overlay Server",
+                    value: health.serverStatus == "running" ? "Running on localhost:\(health.port)" : "Stopped",
+                    color: health.serverStatus == "running" ? AppColors.success : AppColors.error
+                )
+                healthRow(
+                    label: "SignalR",
+                    value: health.signalREnabled ? health.signalRStatus : "Disabled",
+                    color: health.signalREnabled ? appViewModel.signalRStatus.statusColor : AppColors.textMuted
+                )
+                healthRow(
+                    label: "Polling Watch",
+                    value: health.stalePollingCourtIds.isEmpty
+                        ? "No stale courts"
+                        : "Stale courts: \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))",
+                    color: health.stalePollingCourtIds.isEmpty ? AppColors.success : AppColors.warning
+                )
+                healthRow(
+                    label: "Poll Errors",
+                    value: health.errorCourtIds.isEmpty
+                        ? "No court errors"
+                        : "Error courts: \(health.errorCourtIds.map(String.init).joined(separator: ", "))",
+                    color: health.errorCourtIds.isEmpty ? AppColors.success : AppColors.error
+                )
+                healthRow(
+                    label: "Court Coverage",
+                    value: "\(health.courtCount) courts in snapshot",
+                    color: AppColors.textSecondary
+                )
+                healthRow(
+                    label: "Uptime",
+                    value: formatOverlayHealthUptime(health.uptime),
+                    color: AppColors.textSecondary
+                )
+                healthRow(
+                    label: "Watchdog",
+                    value: health.watchdogRestartCount == 0
+                        ? "No recoveries"
+                        : "\(health.watchdogRestartCount)x recoveries",
+                    color: health.watchdogRestartCount == 0 ? AppColors.success : AppColors.warning
+                )
+
+                if let lastRecoveryAt = health.lastWatchdogRecoveryAt, !lastRecoveryAt.isEmpty {
+                    healthRow(
+                        label: "Last Recovery",
+                        value: lastRecoveryAt,
+                        color: AppColors.textSecondary
+                    )
+                }
+
+                if let lastRecoveryReason = health.lastWatchdogRecoveryReason, !lastRecoveryReason.isEmpty {
+                    Text(lastRecoveryReason)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textSecondary)
+                        .textSelection(.enabled)
+                }
+
+                if let startupError = health.startupError, !startupError.isEmpty {
+                    Text(startupError)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.error)
+                        .textSelection(.enabled)
+                }
+
+                Text("Diagnostics bundles include this snapshot as health.json.")
+                    .font(.system(size: 11))
                     .foregroundColor(AppColors.textMuted)
-
-                Spacer()
-
-                Button("Clear Logs") {
-                    appViewModel.scannerViewModel.scanLogs.removeAll()
-                }
-                .buttonStyle(.bordered)
-                .font(.system(size: 11))
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
         }
     }
 
@@ -555,10 +769,29 @@ struct SettingsView: View {
         appViewModel.appSettings = settings
     }
 
+    private var currentHealthSnapshot: OverlayHealthSnapshot {
+        WebSocketHub.shared.currentHealthSnapshot(port: appViewModel.appSettings.serverPort)
+    }
+
+    private func healthRow(label: String, value: String, color: Color) -> some View {
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(AppColors.textMuted)
+                .frame(width: 96, alignment: .leading)
+
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(color)
+                .textSelection(.enabled)
+        }
+    }
+
     private func saveCredentials() {
         let creds = ConfigStore.VBLCredentials(username: username, password: password)
         configStore.saveCredentials(creds)
         showingCredentialsSaved = true
+        appViewModel.reconnectSignalRIfNeeded()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             showingCredentialsSaved = false
@@ -571,10 +804,172 @@ struct SettingsView: View {
         password = ""
     }
 
-    private func loadCredentials() {
-        if let creds = configStore.loadCredentials() {
-            username = creds.username
-            password = creds.password
+    private func loadCredentialsIfNeeded() {
+        guard !credentialsLoadRequested else { return }
+        credentialsLoadRequested = true
+
+        let store = configStore
+        DispatchQueue.global(qos: .userInitiated).async {
+            let creds = store.loadCredentials()
+            DispatchQueue.main.async {
+                guard let creds else { return }
+                username = creds.username
+                password = creds.password
+            }
+        }
+    }
+
+    private func refreshRuntimeDiagnostics() {
+        runtimeLogPreview = runtimeLog.recentEntries(maxBytes: 24_000)
+    }
+
+    private func revealRuntimeLogInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([runtimeLog.logFileURL])
+        runtimeLog.log(.info, subsystem: "operator", message: "revealed runtime log in Finder")
+        runtimeLogStatusMessage = "Revealed runtime log in Finder"
+        runtimeLogStatusIsError = false
+    }
+
+    private func copyRuntimeLogPath() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(runtimeLog.logFilePath, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied runtime log path")
+        runtimeLogStatusMessage = "Copied runtime log path"
+        runtimeLogStatusIsError = false
+    }
+
+    private func copySupportSummary() {
+        let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(summary, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied support summary")
+        runtimeLogStatusMessage = "Copied support summary"
+        runtimeLogStatusIsError = false
+    }
+
+    private func exportRuntimeLog() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
+        panel.nameFieldStringValue = suggestedRuntimeLogFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "log") ?? .plainText]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try runtimeLog.exportSnapshot(to: destinationURL)
+            runtimeLog.log(.info, subsystem: "operator", message: "exported runtime log to \(destinationURL.lastPathComponent)")
+            runtimeLogStatusMessage = "Exported runtime log to \(destinationURL.lastPathComponent)"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "runtime log export failed: \(error.localizedDescription)")
+            runtimeLogStatusMessage = "Export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
+    private func exportDiagnosticsBundle() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
+        panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try appViewModel.exportDiagnosticsBundle(to: destinationURL, runtimeLog: runtimeLog)
+            runtimeLogStatusMessage = "Exported diagnostics bundle to \(destinationURL.lastPathComponent)"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
+    private func exportDiagnosticsBundleAndCopySummary() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.directoryURL = RuntimeLogStore.defaultExportsDirectory()
+        panel.nameFieldStringValue = appViewModel.suggestedDiagnosticsBundleFilename()
+        panel.allowedContentTypes = [UTType(filenameExtension: "zip") ?? .data]
+
+        guard panel.runModal() == .OK, let destinationURL = panel.url else {
+            return
+        }
+
+        do {
+            try appViewModel.exportDiagnosticsBundle(to: destinationURL, runtimeLog: runtimeLog)
+            let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(summary, forType: .string)
+            runtimeLog.log(.info, subsystem: "operator", message: "copied support summary")
+            runtimeLogStatusMessage = "Exported diagnostics bundle and copied support summary"
+            runtimeLogStatusIsError = false
+        } catch {
+            runtimeLogStatusMessage = "Diagnostics export failed: \(error.localizedDescription)"
+            runtimeLogStatusIsError = true
+        }
+    }
+
+    private func suggestedRuntimeLogFilename() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "MultiCourtScore-runtime-\(formatter.string(from: Date())).log"
+    }
+
+}
+
+private struct EscapeKeyMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEscape: onEscape)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onEscape = onEscape
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator {
+        var onEscape: () -> Void
+        private var monitor: Any?
+
+        init(onEscape: @escaping () -> Void) {
+            self.onEscape = onEscape
+        }
+
+        func start() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                guard let self else { return event }
+                if event.keyCode == 53 {
+                    self.onEscape()
+                    return nil
+                }
+                return event
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
         }
     }
 }
@@ -583,8 +978,6 @@ struct SettingsView: View {
 
 struct NotificationsPaneContent: View {
     @StateObject private var notificationService = NotificationService.shared
-    @State private var showTestAlert = false
-    @State private var testAlertMessage = ""
 
     var body: some View {
         ScrollView {
@@ -593,36 +986,6 @@ struct NotificationsPaneContent: View {
                 DetailSection(title: "General") {
                     Toggle("Enable Notifications", isOn: $notificationService.isEnabled)
                         .toggleStyle(.switch)
-                }
-
-                // Webhook
-                DetailSection(title: "Webhook Configuration") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Webhook URL")
-                            .font(.system(size: 11))
-                            .foregroundColor(AppColors.textMuted)
-
-                        TextField("https://hooks.zapier.com/...", text: $notificationService.webhookURL)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 12, design: .monospaced))
-
-                        Text("Use IFTTT, Zapier, or Make to receive notifications via email, SMS, or other channels.")
-                            .font(.system(size: 11))
-                            .foregroundColor(AppColors.textMuted)
-
-                        Button {
-                            Task {
-                                await notificationService.sendTestNotification()
-                                testAlertMessage = "Test notification sent!"
-                                showTestAlert = true
-                            }
-                        } label: {
-                            Label("Send Test", systemImage: "paperplane.fill")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(notificationService.webhookURL.isEmpty || !notificationService.isEnabled)
-                    }
                 }
 
                 // Event checkboxes
@@ -636,11 +999,6 @@ struct NotificationsPaneContent: View {
                 }
             }
             .padding(24)
-        }
-        .alert("Test Notification", isPresented: $showTestAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(testAlertMessage)
         }
     }
 }

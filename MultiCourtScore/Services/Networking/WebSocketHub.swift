@@ -9,6 +9,38 @@ import Foundation
 import Vapor
 import Logging
 
+struct OverlayHealthCourtSnapshot: Codable {
+    let id: Int
+    let name: String
+    let status: String
+    let currentMatch: String?
+    let overlayURL: String
+    let queueCount: Int
+    let activeIndex: Int?
+    let lastPollSecondsAgo: Int?
+    let errorMessage: String?
+    let isPolling: Bool
+    let isStale: Bool
+}
+
+struct OverlayHealthSnapshot: Codable {
+    let generatedAt: String
+    let status: String
+    let uptime: Int
+    let serverStatus: String
+    let startupError: String?
+    let signalRStatus: String
+    let signalREnabled: Bool
+    let port: Int
+    let courtCount: Int
+    let watchdogRestartCount: Int
+    let lastWatchdogRecoveryAt: String?
+    let lastWatchdogRecoveryReason: String?
+    let stalePollingCourtIds: [Int]
+    let errorCourtIds: [Int]
+    let courts: [OverlayHealthCourtSnapshot]
+}
+
 @MainActor
 final class WebSocketHub {
     static let shared = WebSocketHub()
@@ -21,6 +53,10 @@ final class WebSocketHub {
     public private(set) var isRunning = false
     private var isStarting = false
     private var startedAt: Date?
+    private var runningPort: Int?
+    public private(set) var startupError: String?
+    private let runtimeLog = RuntimeLogStore.shared
+    private var shutdownTask: Task<Void, Never>?
 
     private init() {}
 
@@ -28,21 +64,30 @@ final class WebSocketHub {
 
     func start(with viewModel: AppViewModel, port: Int = NetworkConstants.webSocketPort) async {
         guard !isRunning && !isStarting else {
-            if isRunning { print("⚠️ Overlay server already running") }
+            if isRunning {
+                runtimeLog.log(.warning, subsystem: "overlay-server", message: "start requested while server is already running")
+            }
             return
         }
 
         // Block further start calls immediately
         isStarting = true
+        startupError = nil
         appViewModel = viewModel
+
+        if let shutdownTask {
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "waiting for pending shutdown before restart")
+            await shutdownTask.value
+            self.shutdownTask = nil
+        }
         
         // Ensure old app is cleaned up
         if let oldApp = app {
-            print("Cleaning up existing server instance...")
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "cleaning up existing server instance before restart")
             do {
                 try await oldApp.asyncShutdown()
             } catch {
-                print("Error shutting down old app: \(error)")
+                runtimeLog.log(.warning, subsystem: "overlay-server", message: "error shutting down previous instance: \(error.localizedDescription)")
             }
             app = nil
         }
@@ -60,32 +105,25 @@ final class WebSocketHub {
             
             // Install routes
             installRoutes(newApp)
-            
-            // Start server in background
-            Task.detached(priority: .utility) { [newApp] in
-                do {
-                    print("⏳ Starting overlay server on port \(port)...")
-                    try await newApp.startup()
 
-                    await MainActor.run {
-                        WebSocketHub.shared.isRunning = true
-                        WebSocketHub.shared.isStarting = false
-                        WebSocketHub.shared.startedAt = Date()
-                        print("✅ Overlay server running at http://localhost:\(port)/overlay/court/X")
-                    }
-                } catch {
-                    print("❌ Failed to start overlay server: \(error)")
-                    await MainActor.run {
-                        WebSocketHub.shared.isRunning = false
-                        WebSocketHub.shared.isStarting = false
-                        WebSocketHub.shared.app = nil
-                    }
-                }
-            }
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "starting on port \(port)")
+            try await newApp.startup()
+
+            isRunning = true
+            isStarting = false
+            startedAt = Date()
+            runningPort = port
+            startupError = nil
+            runtimeLog.log(.info, subsystem: "overlay-server", message: "running at http://localhost:\(port)/overlay/court/X")
         } catch {
-            print("❌ Failed to initialize Vapor Application: \(error)")
+            let startupMessage = Self.describeStartupError(error, port: port)
+            runtimeLog.log(.error, subsystem: "overlay-server", message: "failed to start on port \(port): \(error.localizedDescription)")
             self.isRunning = false
             self.isStarting = false
+            self.startedAt = nil
+            self.runningPort = nil
+            self.app = nil
+            self.startupError = startupMessage
         }
     }
     
@@ -96,15 +134,97 @@ final class WebSocketHub {
         isRunning = false
         isStarting = false
         startedAt = nil
-        Task.detached {
-            print("🛑 Stopping overlay server...")
+        runningPort = nil
+        let shutdownTask = Task.detached {
+            RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopping")
             do {
                 try await appToStop?.asyncShutdown()
             } catch {
-                print("⚠️ Error shutting down app: \(error)")
+                RuntimeLogStore.shared.log(.warning, subsystem: "overlay-server", message: "error during shutdown: \(error.localizedDescription)")
             }
-            print("🛑 Overlay server stopped")
+            RuntimeLogStore.shared.log(.info, subsystem: "overlay-server", message: "stopped")
         }
+        self.shutdownTask = shutdownTask
+    }
+
+    func waitForShutdownIfNeeded() async {
+        guard let shutdownTask else { return }
+        await shutdownTask.value
+        if self.shutdownTask == shutdownTask {
+            self.shutdownTask = nil
+        }
+    }
+
+    func currentHealthSnapshot(port fallbackPort: Int = NetworkConstants.webSocketPort) -> OverlayHealthSnapshot {
+        let now = Date()
+        let uptimeSeconds: Int
+        if let started = startedAt {
+            uptimeSeconds = Int(now.timeIntervalSince(started))
+        } else {
+            uptimeSeconds = 0
+        }
+
+        let resolvedPort = runningPort ?? appViewModel?.appSettings.serverPort ?? fallbackPort
+        let resolvedSignalRState = appViewModel?.signalRStatus ?? .disabled
+        let resolvedSignalRStatus = resolvedSignalRState.displayLabel
+        let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
+        let watchdogRecoverySnapshot = appViewModel?.currentWatchdogRecoverySnapshot()
+
+        var stalePollingCourtIds: [Int] = []
+        var errorCourtIds: [Int] = []
+        let courts = (appViewModel?.courts ?? []).map { court -> OverlayHealthCourtSnapshot in
+            let lastPollSecondsAgo = court.lastPollTime.map { Int(now.timeIntervalSince($0)) }
+            let isPolling = court.status.isPolling
+            let isStale = isPolling && (lastPollSecondsAgo ?? 0) > 30
+            if isStale {
+                stalePollingCourtIds.append(court.id)
+            }
+            if court.status == .error || ((court.errorMessage?.isEmpty == false) && isPolling) {
+                errorCourtIds.append(court.id)
+            }
+
+            let currentMatch: String?
+            if let idx = court.activeIndex, idx < court.queue.count {
+                currentMatch = court.queue[idx].label ?? "Match \(idx + 1)"
+            } else {
+                currentMatch = nil
+            }
+
+            return OverlayHealthCourtSnapshot(
+                id: court.id,
+                name: court.name,
+                status: court.status.rawValue,
+                currentMatch: currentMatch,
+                overlayURL: "http://localhost:\(resolvedPort)/overlay/court/\(court.id)/",
+                queueCount: court.queue.count,
+                activeIndex: court.activeIndex,
+                lastPollSecondsAgo: lastPollSecondsAgo,
+                errorMessage: court.errorMessage,
+                isPolling: isPolling,
+                isStale: isStale
+            )
+        }
+
+        let signalRHealthIssue = signalREnabled && resolvedSignalRState.degradesHealthWhenEnabled
+        let isDegraded = !isRunning || startupError != nil || !stalePollingCourtIds.isEmpty || !errorCourtIds.isEmpty || signalRHealthIssue
+
+        return OverlayHealthSnapshot(
+            generatedAt: ISO8601DateFormatter().string(from: now),
+            status: isDegraded ? "degraded" : "ok",
+            uptime: uptimeSeconds,
+            serverStatus: isRunning ? "running" : "stopped",
+            startupError: startupError,
+            signalRStatus: resolvedSignalRStatus,
+            signalREnabled: signalREnabled,
+            port: resolvedPort,
+            courtCount: courts.count,
+            watchdogRestartCount: watchdogRecoverySnapshot?.count ?? 0,
+            lastWatchdogRecoveryAt: watchdogRecoverySnapshot?.lastRecoveryAt.map { ISO8601DateFormatter().string(from: $0) },
+            lastWatchdogRecoveryReason: watchdogRecoverySnapshot?.lastRecoveryReason,
+            stalePollingCourtIds: stalePollingCourtIds,
+            errorCourtIds: errorCourtIds,
+            courts: courts
+        )
     }
 
     // MARK: - Routes
@@ -113,67 +233,8 @@ final class WebSocketHub {
         // Health check — JSON with per-court status
         app.get("health") { req async throws -> Response in
             return try await MainActor.run {
-                let hub = WebSocketHub.shared
-                let now = Date()
-
-                let uptimeSeconds: Int
-                if let started = hub.startedAt {
-                    uptimeSeconds = Int(now.timeIntervalSince(started))
-                } else {
-                    uptimeSeconds = 0
-                }
-
-                var courtEntries: [[String: Any]] = []
-                var isDegraded = false
-
-                if let vm = hub.appViewModel {
-                    for court in vm.courts {
-                        let lastPollAgo: Double?
-                        if let lp = court.lastPollTime {
-                            lastPollAgo = now.timeIntervalSince(lp)
-                        } else {
-                            lastPollAgo = nil
-                        }
-
-                        // Flag degraded if a polling court hasn't been polled in 30s
-                        if court.status.isPolling, let ago = lastPollAgo, ago > 30 {
-                            isDegraded = true
-                        }
-
-                        let currentMatch: String
-                        if let idx = court.activeIndex, idx < court.queue.count {
-                            currentMatch = court.queue[idx].label ?? "Match \(idx + 1)"
-                        } else {
-                            currentMatch = ""
-                        }
-
-                        var entry: [String: Any] = [
-                            "id": court.id,
-                            "name": court.name,
-                            "status": court.status.rawValue,
-                            "currentMatch": currentMatch,
-                            "overlayURL": "http://localhost:\(NetworkConstants.webSocketPort)/overlay/court/\(court.id)/"
-                        ]
-
-                        if let ago = lastPollAgo {
-                            entry["lastPollSecondsAgo"] = Int(ago)
-                        }
-
-                        if let err = court.errorMessage, !err.isEmpty {
-                            entry["errorMessage"] = err
-                        }
-
-                        courtEntries.append(entry)
-                    }
-                }
-
-                let result: [String: Any] = [
-                    "status": isDegraded ? "degraded" : "ok",
-                    "uptime": uptimeSeconds,
-                    "courts": courtEntries
-                ]
-
-                return try Self.json(result)
+                let snapshot = WebSocketHub.shared.currentHealthSnapshot()
+                return try Self.jsonEncodable(snapshot)
             }
         }
 
@@ -286,6 +347,19 @@ final class WebSocketHub {
                 response.body = .init(string: lines.joined(separator: "\n"))
                 return response
             }
+        }
+
+        app.get("debug", "logs") { _ async throws -> Response in
+            let response = Response(status: .ok)
+            response.headers.contentType = .plainText
+
+            let logText = self.runtimeLog.recentEntries()
+            if logText.isEmpty {
+                response.body = .init(string: "Runtime log is empty.\nPath: \(self.runtimeLog.logFilePath)")
+            } else {
+                response.body = .init(string: "Path: \(self.runtimeLog.logFilePath)\n\n\(logText)")
+            }
+            return response
         }
 
         // Main overlay page
@@ -488,6 +562,21 @@ final class WebSocketHub {
         return response
     }
 
+    private nonisolated static func jsonEncodable<T: Encodable>(_ value: T) throws -> Response {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
+        let response = Response(status: .ok)
+        response.headers.contentType = .json
+        response.headers.cacheControl = .init(noStore: true)
+        response.body = .init(data: data)
+        return response
+    }
+
+    private static func describeStartupError(_ error: Error, port: Int) -> String {
+        "Port \(port) unavailable: \(error.localizedDescription). Another app or MultiCourtScore instance may already be using it."
+    }
+
     /// Replace "Match N" with "this match" in the next-match display string
     /// when Match N is the currently active match on this court.
     private nonisolated static func localizeNextMatch(
@@ -589,7 +678,6 @@ final class WebSocketHub {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>BVM Scoreboard Overlay</title>
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet"/>
 <style>
 /* Tailwind utility classes compiled inline for overlay */
 .carbon-bar {
@@ -642,13 +730,11 @@ final class WebSocketHub {
   animation: status-pulse 2.5s ease-in-out infinite;
 }
 @keyframes status-pulse {
-  0%, 100% { 
+  0%, 100% {
     box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 8px rgba(212,175,55,0.2);
-    transform: scale(1);
   }
-  50% { 
-    box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 15px rgba(212,175,55,0.4);
-    transform: scale(1.02);
+  50% {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6), 0 0 20px rgba(212,175,55,0.5);
   }
 }
 .bubble-bar {
@@ -801,7 +887,7 @@ body {
   background-color: #0a0a0a;
   margin: 0;
   padding: 0;
-  font-family: "Roboto Condensed", sans-serif;
+  font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   color: white;
   overflow: hidden;
 }
@@ -823,17 +909,18 @@ body {
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
   position: absolute;
   top: 0;
+  left: 50%;
   will-change: transform, opacity;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 .bubble-bar.hidden-up {
-  transform: translateY(-120%) translateZ(0);
+  transform: translateX(-50%) translateY(-120%) translateZ(0);
   opacity: 0;
   pointer-events: none;
 }
 .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
   opacity: 1;
 }
 
@@ -933,6 +1020,7 @@ body {
   pointer-events: none;
   transition: opacity 0.5s ease;
   z-index: 50;
+  background: var(--bg-dark, rgba(18,18,18,0.95));
 }
 #connecting-indicator.visible {
   opacity: 1;
@@ -1004,14 +1092,15 @@ body.layout-top-left .bubble-container {
 }
 body.layout-top-left .bubble-bar {
   top: 0;
+  left: 50%;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
 }
 body.layout-top-left .bubble-bar.hidden-up {
-  transform: translateY(-120%) translateZ(0);
+  transform: translateX(-50%) translateY(-120%) translateZ(0);
 }
 body.layout-top-left .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
 }
 
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
@@ -1034,14 +1123,15 @@ body.layout-bottom-left .bubble-container {
 body.layout-bottom-left .bubble-bar {
   top: auto;
   bottom: 0;
+  left: 50%;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
 }
 body.layout-bottom-left .bubble-bar.hidden-up {
-  transform: translateY(120%) translateZ(0);
+  transform: translateX(-50%) translateY(120%) translateZ(0);
 }
 body.layout-bottom-left .bubble-bar.visible {
-  transform: translateY(0) translateZ(0);
+  transform: translateX(-50%) translateY(0) translateZ(0);
 }
 /* Invert border-radius for upward bubbles */
 body.layout-bottom-left .bubble-bar {
@@ -1426,6 +1516,7 @@ var celebrationActive = false;
 // Stale data tracking
 var lastDataChangeTime = Date.now();
 var lastDataJSON = '';
+var lastData = null;
 var consecutiveFetchErrors = 0;
 var staleIndicatorState = 'fresh'; // 'fresh' | 'stale' | 'lost'
 
@@ -1524,6 +1615,7 @@ function onFetchError() {
   consecutiveFetchErrors++;
   if (consecutiveFetchErrors >= 5) {
     connectingIndicator.classList.add('visible');
+    scoringContent.style.opacity = '0';
   }
   var elapsed = (Date.now() - lastDataChangeTime) / 1000;
   if (elapsed >= 60 && staleIndicatorState !== 'lost') {
@@ -1541,6 +1633,10 @@ function applyStaleIndicator() {
     staleIndicator.textContent = '';
     scorebug.classList.remove('stale-border');
     connectingIndicator.classList.remove('visible');
+    // Restore scoring content visibility after connection recovery
+    if (scoringContent && overlayState !== 'intermission' && overlayState !== 'postmatch') {
+      scoringContent.style.opacity = '1';
+    }
   } else if (staleIndicatorState === 'stale') {
     staleIndicator.className = 'stale';
     staleIndicator.textContent = '';
@@ -1698,6 +1794,7 @@ function hideNextMatchBar() {
 /* Main score update */
 function applyData(d) {
   if (!d) return;
+  lastData = d;
 
   // Track current match number for "this match" substitution
   if (d.matchNumber) currentMatchNumber = String(d.matchNumber);
@@ -2327,8 +2424,8 @@ function updateTradBoardHeight() {
     }
     if (w > 0) {
       document.documentElement.style.setProperty('--trad-board-width', w + 'px');
+        }
     }
-  }
 }
 
 function applyLayoutTransition(newLayout) {
@@ -2352,6 +2449,14 @@ function applyLayoutTransition(newLayout) {
     socialBar.style.fontSize = '';
     nextBar.style.fontSize = '';
     if (intStatusBar) intStatusBar.style.fontSize = '';
+
+    // Ensure scoring content doesn't bleed through during intermission/postmatch
+    if (overlayState === 'intermission' || overlayState === 'postmatch') {
+      if (scoringContent) scoringContent.style.opacity = '0';
+    }
+
+    // Force refresh team names in all containers so no stale names remain
+    if (lastData) applyData(lastData);
 
     // Re-equalize trad board name widths if switching to trad layout
     if (newLayout !== 'center') {
@@ -2793,4 +2898,8 @@ tick();
 </body>
 </html>
 """#
+
+    static var embeddedOverlayHTMLForTesting: String {
+        bvmOverlayHTML
+    }
 }

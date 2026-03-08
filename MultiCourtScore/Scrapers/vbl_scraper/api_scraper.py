@@ -310,8 +310,6 @@ def _extract_pool_matches(
 
             for match in pool.get('matches', []):
                 match_id = match.get('id', 0)
-                if match_id == 0:
-                    continue
 
                 home_team = match.get('homeTeam', {})
                 away_team = match.get('awayTeam', {})
@@ -331,9 +329,12 @@ def _extract_pool_matches(
 
                 # Pool match format from games
                 games = match.get('games', [])
-                sets_to_win = len(games) if games else 1
+                num_games = len(games) if games else 1
+                sets_to_win = num_games if num_games > 1 else 1
                 if sets_to_win > 1:
                     sets_to_win = (sets_to_win + 1) // 2
+                # Pool play: "play all N sets regardless of who wins"
+                sets_to_play = num_games if num_games > 1 else None
 
                 first_game = games[0] if games else {}
                 points_per_set = first_game.get('to', 21)
@@ -349,6 +350,15 @@ def _extract_pool_matches(
                 match_number = match.get('number')
                 court = match.get('court')
 
+                # Unstarted pool matches have id=0; use pool+number as a unique
+                # placeholder so each match gets a distinct cache key.  The app
+                # will get a 404 until the match starts and a re-scan yields a
+                # real ID.
+                if match_id and match_id != 0:
+                    api_url = f"{VMIX_BASE}/{match_id}/vmix?bracket=false"
+                else:
+                    api_url = f"{VMIX_BASE}/pool-{pid}-{match_number or idx}/vmix?bracket=false"
+
                 vbl_match = VBLMatch(
                     index=idx,
                     match_number=str(match_number) if match_number else None,
@@ -359,10 +369,11 @@ def _extract_pool_matches(
                     court=str(court) if court else None,
                     start_time=_format_time(match.get('startTime')),
                     start_date=_format_date(match.get('startTime')),
-                    api_url=f"{VMIX_BASE}/{match_id}/vmix?bracket=false",
+                    api_url=api_url,
                     match_type=match_type,
                     type_detail=type_detail,
                     sets_to_win=sets_to_win,
+                    sets_to_play=sets_to_play,
                     points_per_set=points_per_set,
                     point_cap=point_cap,
                     format_text=format_text,

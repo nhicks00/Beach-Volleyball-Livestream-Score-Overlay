@@ -25,6 +25,22 @@ enum CourtFilter: String, CaseIterable {
     }
 }
 
+func dashboardCourtStatusCounts(for courts: [Court]) -> [CourtFilter: Int] {
+    [
+        .all: courts.count,
+        .live: courts.filter { $0.status == .live }.count,
+        .waiting: courts.filter { $0.status == .waiting }.count,
+        .idle: courts.filter { $0.status == .idle }.count
+    ]
+}
+
+func dashboardSupplementalStatusCounts(for courts: [Court]) -> (finished: Int, offline: Int) {
+    (
+        finished: courts.filter { $0.status == .finished }.count,
+        offline: courts.filter { $0.status == .error }.count
+    )
+}
+
 enum DashboardTab: String, CaseIterable {
     case courts = "Courts"
     case changes = "Change Log"
@@ -34,8 +50,129 @@ struct EditorConfig: Identifiable {
     let id: Int
 }
 
+enum DashboardHealthBannerTone: Equatable {
+    case warning
+    case error
+
+    var color: Color {
+        switch self {
+        case .warning:
+            return AppColors.warning
+        case .error:
+            return AppColors.error
+        }
+    }
+}
+
+struct DashboardHealthBannerModel: Equatable {
+    let message: String
+    let tone: DashboardHealthBannerTone
+    let systemImageName: String
+
+    var color: Color {
+        tone.color
+    }
+}
+
+func formatOverlayHealthUptime(_ seconds: Int) -> String {
+    guard seconds > 0 else { return "0m" }
+
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+
+    if hours > 0 {
+        return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+    }
+
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+
+    return "\(max(1, seconds))s"
+}
+
+func dashboardHealthStatusText(for health: OverlayHealthSnapshot) -> String {
+    if let startupError = health.startupError, !startupError.isEmpty {
+        return startupError
+    }
+    if !health.errorCourtIds.isEmpty {
+        return "Degraded: error courts \(health.errorCourtIds.map(String.init).joined(separator: ", "))"
+    }
+    if !health.stalePollingCourtIds.isEmpty {
+        return "Degraded: stale courts \(health.stalePollingCourtIds.map(String.init).joined(separator: ", "))"
+    }
+    return "localhost:\(String(health.port))"
+}
+
+func dashboardHealthRuntimeSummary(for health: OverlayHealthSnapshot) -> String? {
+    var parts: [String] = []
+
+    if health.uptime > 0 {
+        parts.append("up \(formatOverlayHealthUptime(health.uptime))")
+    }
+
+    if health.watchdogRestartCount > 0 {
+        parts.append("watchdog \(health.watchdogRestartCount)x")
+    }
+
+    guard !parts.isEmpty else { return nil }
+    return parts.joined(separator: "  |  ")
+}
+
+func makeDashboardHealthBannerModel(
+    health: OverlayHealthSnapshot,
+    signalREnabled: Bool,
+    signalRStatus: SignalRStatus
+) -> DashboardHealthBannerModel? {
+    if let startupError = health.startupError, !startupError.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Overlay server unavailable. \(startupError)",
+            tone: .error,
+            systemImageName: "exclamationmark.octagon.fill"
+        )
+    }
+
+    if !health.errorCourtIds.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Polling failed on court\(health.errorCourtIds.count == 1 ? "" : "s") \(health.errorCourtIds.map(String.init).joined(separator: ", ")).",
+            tone: .error,
+            systemImageName: "exclamationmark.octagon.fill"
+        )
+    }
+
+    if !health.stalePollingCourtIds.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
+            tone: .warning,
+            systemImageName: "exclamationmark.triangle.fill"
+        )
+    }
+
+    if signalREnabled {
+        switch signalRStatus {
+        case .failed(let reason):
+            return DashboardHealthBannerModel(
+                message: "SignalR disconnected. Polling continues. \(reason)",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        case .noCredentials:
+            return DashboardHealthBannerModel(
+                message: "SignalR is enabled but credentials are missing. Polling continues.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        default:
+            break
+        }
+    }
+
+    return nil
+}
+
 struct DashboardView: View {
     @EnvironmentObject var appViewModel: AppViewModel
+    private let runtimeLog = RuntimeLogStore.shared
 
     // State
     @State private var renamingCourtId: Int?
@@ -57,21 +194,23 @@ struct DashboardView: View {
     }
 
     private var courtStatusCounts: [CourtFilter: Int] {
-        var counts: [CourtFilter: Int] = [:]
-        counts[.all] = appViewModel.courts.count
-        counts[.live] = 0
-        counts[.waiting] = 0
-        counts[.idle] = 0
-        for court in appViewModel.courts {
-            switch court.status {
-            case .live: counts[.live, default: 0] += 1
-            case .waiting: counts[.waiting, default: 0] += 1
-            case .idle: counts[.idle, default: 0] += 1
-            case .finished: counts[.live, default: 0] += 1
-            case .error: counts[.idle, default: 0] += 1
-            }
-        }
-        return counts
+        dashboardCourtStatusCounts(for: appViewModel.courts)
+    }
+
+    private var supplementalStatusCounts: (finished: Int, offline: Int) {
+        dashboardSupplementalStatusCounts(for: appViewModel.courts)
+    }
+
+    private var overlayHealthSnapshot: OverlayHealthSnapshot {
+        WebSocketHub.shared.currentHealthSnapshot(port: appViewModel.appSettings.serverPort)
+    }
+
+    private var dashboardHealthBannerModel: DashboardHealthBannerModel? {
+        makeDashboardHealthBannerModel(
+            health: overlayHealthSnapshot,
+            signalREnabled: appViewModel.appSettings.signalREnabled,
+            signalRStatus: appViewModel.signalRStatus
+        )
     }
 
     var body: some View {
@@ -83,6 +222,10 @@ struct DashboardView: View {
                 VStack(spacing: 0) {
                     // Toolbar header
                     toolbar(for: rootGeo.size.width)
+
+                    if let banner = dashboardHealthBannerModel {
+                        dashboardHealthBanner(banner, health: overlayHealthSnapshot)
+                    }
 
                     // Courts grid
                     if selectedTab == .courts {
@@ -104,7 +247,7 @@ struct DashboardView: View {
                                             onStop: { appViewModel.stopPolling(for: court.id) },
                                             onSkipNext: { appViewModel.skipToNext(court.id) },
                                             onSkipPrevious: { appViewModel.skipToPrevious(court.id) },
-                                            onEditQueue: { editorConfig = EditorConfig(id: court.id) },
+                                            onEditQueue: { openQueueEditor(for: court.id) },
                                             onRename: {
                                                 renamingCourtId = court.id
                                                 newCourtName = court.name
@@ -138,9 +281,7 @@ struct DashboardView: View {
                 
                 GeometryReader { geo in
                     QueueEditorView(courtId: config.id, onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                editorConfig = nil
-                            }
+                            closeQueueEditor(reason: "dismissed")
                         })
                         .environmentObject(appViewModel)
                         .frame(
@@ -159,16 +300,12 @@ struct DashboardView: View {
                 Color.black.opacity(0.45)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                        }
+                        closeScannerModal(reason: "backdrop")
                     }
 
                 GeometryReader { geo in
-                    ScanWorkflowView(onClose: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                        }
+                    ScanWorkflowView(onClose: { reason in
+                        closeScannerModal(reason: reason)
                     })
                     .environmentObject(appViewModel)
                     .frame(
@@ -187,16 +324,12 @@ struct DashboardView: View {
                 Color.black.opacity(0.45)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                        }
+                        closeSettingsModal(reason: "backdrop")
                     }
 
                 GeometryReader { geo in
-                    SettingsView(onClose: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                        }
+                    SettingsView(onClose: { reason in
+                        closeSettingsModal(reason: reason)
                     })
                     .environmentObject(appViewModel)
                     .frame(
@@ -215,6 +348,16 @@ struct DashboardView: View {
             .easeInOut(duration: 0.2),
             value: editorConfig != nil || showScannerModal || showSettingsModal
         )
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.openScanner)) { _ in
+            openScannerModal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.openSettings)) { _ in
+            openSettingsModal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: DashboardCommand.confirmClearAll)) { _ in
+            openClearAllConfirmation()
+        }
+        .accessibilityIdentifier("dashboard.root")
         // Rename Alert
         .alert("Rename Overlay", isPresented: Binding(
             get: { renamingCourtId != nil },
@@ -283,56 +426,60 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 Button { appViewModel.startAllPolling() } label: {
                     Label("Start All", systemImage: "play.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.startAll")
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.success)
 
                 Button { appViewModel.stopAllPolling() } label: {
                     Label("Stop All", systemImage: "stop.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.stopAll")
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.error)
 
                 Divider()
-                    .frame(height: 20)
+                    .frame(height: 24)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showSettingsModal = false
-                        showScannerModal = true
-                    }
+                    openScannerModal()
                 } label: {
                     Label("Scan VBL", systemImage: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.scan")
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
                 .tint(AppColors.primary)
 
                 Button(role: .destructive) {
-                    showClearAllConfirmation = true
+                    openClearAllConfirmation()
                 } label: {
                     Label("Clear All", systemImage: "trash")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 }
+                .accessibilityIdentifier("toolbar.clearAll")
                 .buttonStyle(.bordered)
+                .controlSize(.regular)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showScannerModal = false
-                        showSettingsModal = true
-                    }
+                    openSettingsModal()
                 } label: {
                     Image(systemName: "gear")
-                        .font(.system(size: 14))
+                        .font(.system(size: 16))
                 }
+                .accessibilityIdentifier("toolbar.settings")
                 .buttonStyle(.borderless)
                 .foregroundColor(AppColors.textSecondary)
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+        .frame(minHeight: AppLayout.toolbarHeight)
         .background(AppColors.toolbarBackground)
         .overlay(
             Divider().overlay(AppColors.border),
@@ -350,61 +497,65 @@ struct DashboardView: View {
                     .minimumScaleFactor(0.85)
 
                 Spacer(minLength: 8)
-                
+
                 HStack(spacing: 6) {
                     Button { appViewModel.startAllPolling() } label: {
                         Image(systemName: "play.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.startAll")
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.success)
                     .help("Start All")
-                    
+
                     Button { appViewModel.stopAllPolling() } label: {
                         Image(systemName: "stop.circle.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.stopAll")
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.error)
                     .help("Stop All")
-                    
+
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showSettingsModal = false
-                            showScannerModal = true
-                        }
+                        openScannerModal()
                     } label: {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.scan")
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .tint(AppColors.primary)
                     .help("Scan VBL")
-                    
+
                     Button(role: .destructive) {
-                        showClearAllConfirmation = true
+                        openClearAllConfirmation()
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.clearAll")
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .help("Clear All")
-                    
+
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showScannerModal = false
-                            showSettingsModal = true
-                        }
+                        openSettingsModal()
                     } label: {
                         Image(systemName: "gear")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                     }
+                    .accessibilityIdentifier("toolbar.settings")
                     .buttonStyle(.bordered)
+                    .controlSize(.regular)
                     .help("Settings")
                 }
             }
             .padding(.horizontal, AppLayout.contentPadding)
-            
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     Picker("View", selection: $selectedTab) {
@@ -414,7 +565,7 @@ struct DashboardView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 220)
-                    
+
                     if selectedTab == .courts {
                         filterPicker
                     }
@@ -422,7 +573,8 @@ struct DashboardView: View {
                 .padding(.horizontal, AppLayout.contentPadding)
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 14)
+        .frame(minHeight: AppLayout.toolbarHeight)
         .background(AppColors.toolbarBackground)
         .overlay(
             Divider().overlay(AppColors.border),
@@ -480,8 +632,109 @@ struct DashboardView: View {
 
     // MARK: - Status Bar
 
+    private func dashboardHealthBanner(_ banner: DashboardHealthBannerModel, health: OverlayHealthSnapshot) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: banner.systemImageName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(banner.color)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(banner.message)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(2)
+
+                if let runtimeSummary = dashboardHealthRuntimeSummary(for: health) {
+                    Text(runtimeSummary)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if dashboardHealthBannerCanRetry {
+                Button("Retry") {
+                    appViewModel.retryServicesRestoringPollingIfConfigured()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(banner.color)
+                .accessibilityIdentifier("dashboard.healthBanner.retry")
+            }
+
+            Button("Export") {
+                exportDiagnosticsBundleAndCopySummaryFromBanner()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(banner.color)
+            .accessibilityIdentifier("dashboard.healthBanner.export")
+
+            Button("Details") {
+                openSettingsModal()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(banner.color)
+        }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 0)
+                .fill(banner.color.opacity(0.10))
+        )
+        .overlay(
+            Rectangle()
+                .fill(banner.color.opacity(0.35))
+                .frame(height: 1),
+            alignment: .bottom
+        )
+        .accessibilityIdentifier("dashboard.healthBanner")
+    }
+
+    private var dashboardHealthBannerCanRetry: Bool {
+        if let startupError = overlayHealthSnapshot.startupError, !startupError.isEmpty {
+            return true
+        }
+
+        return overlayHealthSnapshot.serverStatus != "running"
+    }
+
+    private func exportDiagnosticsBundleAndCopySummaryFromBanner() {
+        #if os(macOS)
+        do {
+            let destinationURL = try appViewModel.exportDiagnosticsBundleToDefaultLocation(runtimeLog: runtimeLog)
+            let summary = appViewModel.supportSummaryText(runtimeLog: runtimeLog)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(summary, forType: .string)
+            runtimeLog.log(.info, subsystem: "operator", message: "exported diagnostics bundle from dashboard health banner to \(destinationURL.lastPathComponent)")
+            runtimeLog.log(.info, subsystem: "operator", message: "copied support summary from dashboard health banner")
+            NSWorkspace.shared.activateFileViewerSelecting([destinationURL])
+        } catch {
+            runtimeLog.log(.warning, subsystem: "operator", message: "dashboard health banner diagnostics export failed: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Diagnostics export failed"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        #endif
+    }
+
     private var statusBar: some View {
-        HStack(spacing: 16) {
+        let health = overlayHealthSnapshot
+        let healthColor: Color = {
+            if health.status == "ok" {
+                return AppColors.success
+            }
+            return health.serverStatus == "running" ? AppColors.warning : AppColors.error
+        }()
+        let healthText = dashboardHealthStatusText(for: health)
+        let healthRuntimeSummary = dashboardHealthRuntimeSummary(for: health)
+
+        return HStack(spacing: 16) {
             Text("v\(AppConfig.version)")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(AppColors.textMuted)
@@ -508,15 +761,60 @@ struct DashboardView: View {
                 .font(.system(size: 11))
                 .foregroundColor(AppColors.textMuted)
 
+            if supplementalStatusCounts.finished > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppColors.info)
+                        .frame(width: 6, height: 6)
+                    Text("\(supplementalStatusCounts.finished) finished")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
+
+            if supplementalStatusCounts.offline > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppColors.error)
+                        .frame(width: 6, height: 6)
+                    Text("\(supplementalStatusCounts.offline) offline")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
+
+            if appViewModel.appSettings.signalREnabled {
+                Divider().frame(height: 12)
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(appViewModel.signalRStatus.statusColor)
+                        .frame(width: 6, height: 6)
+                    Text(appViewModel.signalRStatus.displayLabel)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                }
+            }
+
             Spacer()
 
             HStack(spacing: 4) {
                 Circle()
-                    .fill(appViewModel.serverRunning ? AppColors.success : AppColors.error)
+                    .fill(healthColor)
                     .frame(width: 6, height: 6)
-                Text("localhost:\(String(appViewModel.appSettings.serverPort))")
+                Text(healthText)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(AppColors.textMuted)
+                    .foregroundColor(health.status == "ok" ? AppColors.textMuted : healthColor)
+                    .lineLimit(1)
+
+                if let healthRuntimeSummary {
+                    Text("•")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                    Text(healthRuntimeSummary)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(AppColors.textMuted)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)
@@ -530,11 +828,69 @@ struct DashboardView: View {
 
     // MARK: - Helpers
 
+    private func openQueueEditor(for courtId: Int) {
+        runtimeLog.log(.info, subsystem: "operator", message: "opened queue editor for court \(courtId)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            editorConfig = EditorConfig(id: courtId)
+        }
+    }
+
+    private func closeQueueEditor(reason: String) {
+        if let courtId = editorConfig?.id {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed queue editor for court \(courtId) via \(reason)")
+        }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            editorConfig = nil
+        }
+    }
+
+    private func openScannerModal() {
+        if showSettingsModal {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed settings modal via switch-to-scanner")
+        }
+        runtimeLog.log(.info, subsystem: "operator", message: "opened scanner modal")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSettingsModal = false
+            showScannerModal = true
+        }
+    }
+
+    private func closeScannerModal(reason: String) {
+        runtimeLog.log(.info, subsystem: "operator", message: "closed scanner modal via \(reason)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showScannerModal = false
+        }
+    }
+
+    private func openSettingsModal() {
+        if showScannerModal {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed scanner modal via switch-to-settings")
+        }
+        runtimeLog.log(.info, subsystem: "operator", message: "opened settings modal")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showScannerModal = false
+            showSettingsModal = true
+        }
+    }
+
+    private func closeSettingsModal(reason: String) {
+        runtimeLog.log(.info, subsystem: "operator", message: "closed settings modal via \(reason)")
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSettingsModal = false
+        }
+    }
+
+    private func openClearAllConfirmation() {
+        runtimeLog.log(.warning, subsystem: "operator", message: "opened clear-all confirmation")
+        showClearAllConfirmation = true
+    }
+
     private func copyOverlayURL(for courtId: Int) {
         #if os(macOS)
         let url = appViewModel.overlayURL(for: courtId)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
+        runtimeLog.log(.info, subsystem: "operator", message: "copied overlay url for court \(courtId): \(url)")
         urlCopiedCourtId = courtId
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if urlCopiedCourtId == courtId {

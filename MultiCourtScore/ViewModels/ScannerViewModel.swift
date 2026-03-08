@@ -16,6 +16,7 @@ class ScannerViewModel: ObservableObject {
     @Published var scanLogs: [ScanLogEntry] = []
     @Published var scanResults: [VBLMatch] = []
     @Published var errorMessage: String?
+    @Published var overlappingMatchCount = 0
     
     // MARK: - Scan URLs (dynamic arrays)
     @Published var bracketURLs: [String] = [""]
@@ -107,6 +108,7 @@ class ScannerViewModel: ObservableObject {
         let typeDetail: String?
         // Match format fields
         let setsToWin: Int?
+        let setsToPlay: Int?
         let pointsPerSet: Int?
         let pointCap: Int?
         let formatText: String?
@@ -115,6 +117,8 @@ class ScannerViewModel: ObservableObject {
         let team2_score: Int?
         // Division ID for hydrate re-fetch (parsed from scan URL)
         var divisionId: Int?
+        // Tournament ID for SignalR subscriptions (parsed from scan URL)
+        var tournamentId: Int?
         
         var displayName: String {
             if let t1 = team1, let t2 = team2, !t1.isEmpty, !t2.isEmpty {
@@ -140,7 +144,7 @@ class ScannerViewModel: ObservableObject {
             case apiURL = "api_url"
             case matchType = "match_type"
             case typeDetail = "type_detail"
-            case setsToWin, pointsPerSet, pointCap, formatText
+            case setsToWin, setsToPlay, pointsPerSet, pointCap, formatText
             case team1_score, team2_score
         }
         
@@ -159,6 +163,7 @@ class ScannerViewModel: ObservableObject {
             matchType = try container.decodeIfPresent(String.self, forKey: .matchType)
             typeDetail = try container.decodeIfPresent(String.self, forKey: .typeDetail)
             setsToWin = try container.decodeIfPresent(Int.self, forKey: .setsToWin)
+            setsToPlay = try container.decodeIfPresent(Int.self, forKey: .setsToPlay)
             pointsPerSet = try container.decodeIfPresent(Int.self, forKey: .pointsPerSet)
             pointCap = try container.decodeIfPresent(Int.self, forKey: .pointCap)
             formatText = try container.decodeIfPresent(String.self, forKey: .formatText)
@@ -168,24 +173,26 @@ class ScannerViewModel: ObservableObject {
     }
     
     // MARK: - Computed Properties
+
+    private var normalizedInputURLs: [String] {
+        Self.normalizedURLs(from: bracketURLs + poolURLs)
+    }
     
     var allURLs: [String] {
-        (bracketURLs + poolURLs)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .map { raw in
-                if raw.lowercased().hasPrefix("http://") || raw.lowercased().hasPrefix("https://") {
-                    return raw
-                }
-                if raw.contains(".") {
-                    return "https://\(raw)"
-                }
-                return raw
-            }
+        Self.deduplicatedURLs(from: normalizedInputURLs)
+    }
+
+    var duplicateURLCount: Int {
+        max(normalizedInputURLs.count - allURLs.count, 0)
     }
     
     var canScan: Bool {
         !allURLs.isEmpty && !isScanning
+    }
+
+    struct DeduplicatedMatchResult {
+        let matches: [VBLMatch]
+        let removedCount: Int
     }
     
     var groupedByCourt: [String: [VBLMatch]] {
@@ -308,18 +315,24 @@ class ScannerViewModel: ObservableObject {
     
     func startScan() {
         guard canScan else { return }
+
+        let urlsToScan = allURLs
         
         isScanning = true
         scanLogs.removeAll()
         scanResults = []
         errorMessage = nil
+        overlappingMatchCount = 0
         scanProgress = "Initializing scan..."
         
-        print("🚀 START SCAN CALLED - URLs: \(allURLs)")
-        addLog("Starting VBL scan for \(allURLs.count) URL(s)", type: .info)
+        print("🚀 START SCAN CALLED - URLs: \(urlsToScan)")
+        addLog("Starting VBL scan for \(urlsToScan.count) URL(s)", type: .info)
+        if duplicateURLCount > 0 {
+            addLog("Ignoring \(duplicateURLCount) duplicate URL(s)", type: .warning)
+        }
         
         Task {
-            await performScan()
+            await performScan(urlsToScan)
         }
     }
     
@@ -335,6 +348,7 @@ class ScannerViewModel: ObservableObject {
         scanResults = []
         scanLogs = []
         errorMessage = nil
+        overlappingMatchCount = 0
         scanProgress = ""
     }
     
@@ -382,7 +396,7 @@ class ScannerViewModel: ObservableObject {
         return ("/usr/bin/python3", false)
     }
 
-    private func performScan() async {
+    private func performScan(_ urlsToScan: [String]) async {
         addLog("performScan() called", type: .info)
 
         guard let paths = resolveScannerPaths() else {
@@ -402,12 +416,12 @@ class ScannerViewModel: ObservableObject {
         addLog("Script: \(paths.scriptPath)", type: .info)
         
         // PARALLEL MODE: Send all URLs at once for ~4x speedup
-        if allURLs.count > 1 {
-            scanProgress = "🚀 Parallel scanning \(allURLs.count) URLs..."
-            addLog("🚀 Using PARALLEL mode for \(allURLs.count) URLs", type: .info)
+        if urlsToScan.count > 1 {
+            scanProgress = "🚀 Parallel scanning \(urlsToScan.count) URLs..."
+            addLog("🚀 Using PARALLEL mode for \(urlsToScan.count) URLs", type: .info)
             
             let matches = await scanAllURLsParallel(
-                allURLs,
+                urlsToScan,
                 pythonPath: pythonPath,
                 scriptPath: paths.scriptPath,
                 workingDir: paths.workingDir
@@ -421,8 +435,8 @@ class ScannerViewModel: ObservableObject {
             }
         } else {
             // Single URL - use standard mode
-            for (index, url) in allURLs.enumerated() {
-                scanProgress = "Scanning URL \(index + 1) of \(allURLs.count)..."
+            for (index, url) in urlsToScan.enumerated() {
+                scanProgress = "Scanning URL \(index + 1) of \(urlsToScan.count)..."
                 addLog("Scanning: \(url)", type: .info)
                 
                 let matches = await scanSingleURL(
@@ -444,12 +458,86 @@ class ScannerViewModel: ObservableObject {
         isScanning = false
         
         if scanResults.isEmpty {
-            errorMessage = "No matches found in any of the \(allURLs.count) URLs"
+            errorMessage = "No matches found in any of the \(urlsToScan.count) URLs"
             scanProgress = "Scan complete - no matches found"
         } else {
-            scanProgress = "Found \(scanResults.count) matches total"
-            addLog("Scan complete: \(scanResults.count) total matches", type: .success)
+            finalizeScanResults(scanResults)
         }
+    }
+
+    func finalizeScanResults(_ matches: [VBLMatch]) {
+        let deduplicated = Self.deduplicatedMatches(matches)
+        scanResults = deduplicated.matches
+        overlappingMatchCount = deduplicated.removedCount
+        if deduplicated.removedCount > 0 {
+            addLog("Collapsed \(deduplicated.removedCount) overlapping match result(s) from overlapping scan sources", type: .warning)
+        }
+        scanProgress = "Found \(scanResults.count) matches total"
+        addLog("Scan complete: \(scanResults.count) total matches", type: .success)
+    }
+
+    private static func normalizedURLs(from rawURLs: [String]) -> [String] {
+        rawURLs.compactMap { raw in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+
+            if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+                return trimmed
+            }
+            if trimmed.contains(".") {
+                return "https://\(trimmed)"
+            }
+            return trimmed
+        }
+    }
+
+    private static func deduplicatedURLs(from urls: [String]) -> [String] {
+        var seen = Set<String>()
+        return urls.filter { url in
+            let key = url.lowercased()
+            return seen.insert(key).inserted
+        }
+    }
+
+    static func deduplicatedMatches(_ matches: [VBLMatch]) -> DeduplicatedMatchResult {
+        var seenAPIURLs = Set<String>()
+        var seenFallbackKeys = Set<String>()
+        var deduplicated: [VBLMatch] = []
+        var removedCount = 0
+
+        for match in matches {
+            let apiURLKey = match.apiURL?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+
+            if let apiURLKey, !apiURLKey.isEmpty {
+                if seenAPIURLs.insert(apiURLKey).inserted {
+                    deduplicated.append(match)
+                } else {
+                    removedCount += 1
+                }
+                continue
+            }
+
+            let fallbackKey = [
+                match.matchNumber ?? "",
+                match.team1 ?? "",
+                match.team2 ?? "",
+                match.startDate ?? "",
+                match.startTime ?? "",
+                match.court ?? ""
+            ]
+            .joined(separator: "|")
+            .lowercased()
+
+            if seenFallbackKeys.insert(fallbackKey).inserted {
+                deduplicated.append(match)
+            } else {
+                removedCount += 1
+            }
+        }
+
+        return DeduplicatedMatchResult(matches: deduplicated, removedCount: removedCount)
     }
     
     private func scanSingleURL(_ url: String, pythonPath: String, scriptPath: String, workingDir: String) async -> [VBLMatch] {
@@ -519,9 +607,11 @@ class ScannerViewModel: ObservableObject {
                             matches = m
                         } else if let results = result.results, let first = results.first {
                             let divId = ScannerViewModel.parseDivisionId(from: first.url)
+                            let tournId = ScannerViewModel.parseTournamentId(from: first.url)
                             matches = first.matches.map { m in
                                 var m = m
                                 m.divisionId = divId
+                                m.tournamentId = tournId
                                 return m
                             }
                         }
@@ -617,11 +707,14 @@ class ScannerViewModel: ObservableObject {
                                 if let matchesData = result["matches"] as? [[String: Any]] {
                                     let matchType = result["match_type"] as? String
                                     let typeDetail = result["type_detail"] as? String
-                                    let divisionId = Self.parseDivisionId(from: result["url"] as? String)
+                                    let resultURL = result["url"] as? String
+                                    let divisionId = Self.parseDivisionId(from: resultURL)
+                                    let tournamentId = Self.parseTournamentId(from: resultURL)
 
                                     for matchDict in matchesData {
                                         if var match = self.parseVBLMatch(from: matchDict, matchType: matchType, typeDetail: typeDetail) {
                                             match.divisionId = divisionId
+                                            match.tournamentId = tournamentId
                                             allMatches.append(match)
                                         }
                                     }
@@ -782,12 +875,29 @@ class ScannerViewModel: ObservableObject {
         }
     }
 
+    func addSignalRLog(_ message: String) {
+        let entry = ScanLogEntry(timestamp: Date(), message: message, type: .info)
+        scanLogs.append(entry)
+        if scanLogs.count > 200 {
+            scanLogs.removeFirst()
+        }
+    }
+
     // MARK: - URL Parsing
 
     /// Extract division ID from a VBL URL like .../division/127872/...
     nonisolated static func parseDivisionId(from url: String?) -> Int? {
         guard let url else { return nil }
         guard let range = url.range(of: #"/division/(\d+)"#, options: .regularExpression) else { return nil }
+        let match = url[range]
+        let digits = match.drop(while: { !$0.isNumber })
+        return Int(digits)
+    }
+
+    /// Extract tournament ID from a VBL URL like .../event/34785/...
+    nonisolated static func parseTournamentId(from url: String?) -> Int? {
+        guard let url else { return nil }
+        guard let range = url.range(of: #"/event/(\d+)"#, options: .regularExpression) else { return nil }
         let match = url[range]
         let digits = match.drop(while: { !$0.isNumber })
         return Int(digits)
@@ -827,12 +937,14 @@ class ScannerViewModel: ObservableObject {
                 courtNumber: match.court,
                 physicalCourt: match.court,  // Track physical court for reassignment
                 setsToWin: match.setsToWin,
+                setsToPlay: match.setsToPlay,
                 pointsPerSet: match.pointsPerSet,
                 pointCap: match.pointCap,
                 formatText: match.formatText,
                 team1_score: match.team1_score,
                 team2_score: match.team2_score,
-                divisionId: match.divisionId ?? divisionId
+                divisionId: match.divisionId ?? divisionId,
+                tournamentId: match.tournamentId
             )
         }
     }

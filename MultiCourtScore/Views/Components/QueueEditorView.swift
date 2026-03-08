@@ -18,6 +18,8 @@ struct QueueEditorView: View {
     @State private var selectedRowId: UUID?
     @State private var showDiscardAlert = false
 
+    private let runtimeLog = RuntimeLogStore.shared
+
     private var court: Court? {
         appViewModel.court(for: courtId)
     }
@@ -31,8 +33,10 @@ struct QueueEditorView: View {
 
     private func dismissSafely() {
         if hasUnsavedChanges {
+            runtimeLog.log(.warning, subsystem: "operator", message: "attempted to close queue editor for court \(courtId) with unsaved changes")
             showDiscardAlert = true
         } else {
+            runtimeLog.log(.info, subsystem: "operator", message: "closed queue editor for court \(courtId) without changes")
             onDismiss()
         }
     }
@@ -64,7 +68,10 @@ struct QueueEditorView: View {
         }
         .alert("Discard Changes?", isPresented: $showDiscardAlert) {
             Button("Cancel", role: .cancel) {}
-            Button("Discard", role: .destructive) { onDismiss() }
+            Button("Discard", role: .destructive) {
+                runtimeLog.log(.warning, subsystem: "operator", message: "discarded queue editor changes for court \(courtId)")
+                onDismiss()
+            }
         } message: {
             Text("You have unsaved changes to this queue. Discard them?")
         }
@@ -158,6 +165,8 @@ struct QueueEditorView: View {
                     .background(Circle().fill(AppColors.surfaceHover))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("queueEditor.close")
+            .keyboardShortcut(.escape, modifiers: [])
             .help("Close (Esc)")
         }
         .padding(.horizontal, 20)
@@ -173,42 +182,64 @@ struct QueueEditorView: View {
 
     private var queueList: some View {
         VStack(spacing: 0) {
-            // Column headers
+            // Column headers — spacer for drag handle + narrower # to match rows
             HStack(spacing: 0) {
+                Spacer().frame(width: 20) // drag handle slot
                 Text("#")
-                    .frame(width: 40)
+                    .frame(width: 28)
                 Text("Match")
                     .frame(minWidth: 200, alignment: .leading)
                 Spacer()
                 Text("Schedule")
-                    .frame(width: 120, alignment: .center)
+                    .frame(width: 120, alignment: .leading)
+                Text("Cam")
+                    .frame(width: 56, alignment: .center)
                 Text("Actions")
-                    .frame(width: 120, alignment: .center)
+                    .frame(width: 100, alignment: .center)
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundColor(AppColors.textMuted)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 24)
             .padding(.vertical, 10)
             .background(AppColors.surfaceElevated)
 
             Divider().overlay(AppColors.border)
 
-            // Match rows with drag reordering
+            // Match rows with drag reordering — use ID-based lookup to avoid stale indices
             List {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                ForEach(rows) { row in
+                    let index = rows.firstIndex(where: { $0.id == row.id }) ?? 0
                     QueueMatchRow(
                         index: index + 1,
                         row: Binding(
-                            get: { rows.indices.contains(index) ? rows[index] : row },
-                            set: { if rows.indices.contains(index) { rows[index] = $0 } }
+                            get: { rows.first(where: { $0.id == row.id }) ?? row },
+                            set: { newValue in
+                                if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+                                    rows[idx] = newValue
+                                }
+                            }
                         ),
                         isSelected: selectedRowId == row.id,
                         onSelect: { selectedRowId = row.id },
-                        onMoveUp: { moveRow(at: index, direction: -1) },
-                        onMoveDown: { moveRow(at: index, direction: 1) },
-                        onDelete: { deleteRow(at: index) },
+                        onMoveUp: {
+                            if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+                                moveRow(at: idx, direction: -1)
+                            }
+                        },
+                        onMoveDown: {
+                            if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+                                moveRow(at: idx, direction: 1)
+                            }
+                        },
+                        onDelete: {
+                            if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+                                deleteRow(at: idx)
+                            }
+                        },
                         onMoveToCourt: { targetCourtId in
-                            moveRowToCourt(at: index, targetCourtId: targetCourtId)
+                            if let idx = rows.firstIndex(where: { $0.id == row.id }) {
+                                moveRowToCourt(at: idx, targetCourtId: targetCourtId)
+                            }
                         },
                         isFirst: index == 0,
                         isLast: index == rows.count - 1,
@@ -356,6 +387,7 @@ struct QueueEditorView: View {
         guard let court = court else { return }
         rows = court.queue.map { match in
             QueueRow(
+                id: match.id,
                 label: match.label ?? "",
                 urlString: match.apiURL.absoluteString,
                 team1: match.team1Name ?? "",
@@ -370,6 +402,7 @@ struct QueueEditorView: View {
                 courtNumber: match.courtNumber ?? "",
                 physicalCourt: match.physicalCourt ?? "",
                 setsToWin: match.setsToWin,
+                setsToPlay: match.setsToPlay,
                 pointsPerSet: match.pointsPerSet,
                 pointCap: match.pointCap,
                 formatText: match.formatText ?? ""
@@ -386,6 +419,7 @@ struct QueueEditorView: View {
             }
 
             return MatchItem(
+                id: row.id,
                 apiURL: url,
                 label: row.label.isEmpty ? nil : row.label,
                 team1Name: row.team1.isEmpty ? nil : row.team1,
@@ -400,6 +434,7 @@ struct QueueEditorView: View {
                 courtNumber: row.courtNumber.isEmpty ? nil : row.courtNumber,
                 physicalCourt: row.physicalCourt.isEmpty ? nil : row.physicalCourt,
                 setsToWin: row.setsToWin,
+                setsToPlay: row.setsToPlay,
                 pointsPerSet: row.pointsPerSet,
                 pointCap: row.pointCap,
                 formatText: row.formatText.isEmpty ? nil : row.formatText
@@ -408,11 +443,13 @@ struct QueueEditorView: View {
 
         if items.count != rows.filter({ !$0.urlString.isEmpty }).count {
             errorMessage = "One or more URLs are invalid"
+            runtimeLog.log(.warning, subsystem: "operator", message: "queue editor save failed validation for court \(courtId)")
             return
         }
 
         errorMessage = nil
-        appViewModel.replaceQueue(courtId, with: items)
+        appViewModel.replaceQueuePreservingState(courtId, with: items)
+        runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor for court \(courtId) with \(items.count) matches")
         onDismiss()
     }
 
@@ -429,6 +466,7 @@ struct QueueEditorView: View {
               url.scheme?.hasPrefix("http") == true else { return }
 
         let item = MatchItem(
+            id: row.id,
             apiURL: url,
             label: row.label.isEmpty ? nil : row.label,
             team1Name: row.team1.isEmpty ? nil : row.team1,
@@ -443,6 +481,7 @@ struct QueueEditorView: View {
             courtNumber: row.courtNumber.isEmpty ? nil : row.courtNumber,
             physicalCourt: row.physicalCourt.isEmpty ? nil : row.physicalCourt,
             setsToWin: row.setsToWin,
+            setsToPlay: row.setsToPlay,
             pointsPerSet: row.pointsPerSet,
             pointCap: row.pointCap,
             formatText: row.formatText.isEmpty ? nil : row.formatText
@@ -559,7 +598,7 @@ struct QueueMatchRow: View {
 
             Spacer()
 
-            // Schedule
+            // Schedule — left-aligned
             HStack(spacing: 8) {
                 if !row.startDate.isEmpty {
                     Text(row.startDate)
@@ -578,10 +617,32 @@ struct QueueMatchRow: View {
                         .foregroundColor(AppColors.textPrimary)
                 }
             }
-            .frame(width: 120, alignment: .center)
+            .frame(width: 120, alignment: .leading)
 
-            // Action buttons
-            HStack(spacing: 4) {
+            // Camera / Move to court — dedicated column
+            if let onMoveToCourt = onMoveToCourt {
+                Menu {
+                    ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
+                        if cameraId != currentCourtId {
+                            Button(CourtNaming.defaultName(for: cameraId)) {
+                                onMoveToCourt(cameraId)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "video.badge.arrow.up.right")
+                        .font(.system(size: 13))
+                        .foregroundColor(AppColors.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 56, alignment: .center)
+                .help("Move to another camera")
+            } else {
+                Spacer().frame(width: 56)
+            }
+
+            // Action buttons (up/down/delete only — camera moved to its own column)
+            HStack(spacing: 6) {
                 Button { onMoveUp() } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 12, weight: .bold))
@@ -604,26 +665,8 @@ struct QueueMatchRow: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundColor(AppColors.error.opacity(0.8))
-
-                if let onMoveToCourt = onMoveToCourt {
-                    Menu {
-                        ForEach(1...AppConfig.maxCourts, id: \.self) { cameraId in
-                            if cameraId != currentCourtId {
-                                Button(CourtNaming.defaultName(for: cameraId)) {
-                                    onMoveToCourt(cameraId)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.right.square")
-                            .font(.system(size: 12))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 20)
-                    .help("Move to another camera")
-                }
             }
-            .frame(width: 120, alignment: .center)
+            .frame(width: 100, alignment: .center)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -833,7 +876,7 @@ struct LabeledField: View {
 // MARK: - Queue Row Model
 
 struct QueueRow: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     var label: String = ""
     var urlString: String = ""
     var team1: String = ""
@@ -848,6 +891,7 @@ struct QueueRow: Identifiable {
     var courtNumber: String = ""
     var physicalCourt: String = ""
     var setsToWin: Int? = nil
+    var setsToPlay: Int? = nil
     var pointsPerSet: Int? = nil
     var pointCap: Int? = nil
     var formatText: String = ""

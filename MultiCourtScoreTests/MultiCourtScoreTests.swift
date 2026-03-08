@@ -6,7 +6,9 @@
 //
 
 import Testing
+import AppKit
 import Foundation
+import Darwin
 @testable import MultiCourtScore
 
 // MARK: - ScoreSnapshot Tests
@@ -275,7 +277,7 @@ struct CourtTests {
     @Test func create_setsDefaults() async throws {
         let court = Court.create(id: 3)
         #expect(court.id == 3)
-        #expect(court.name == "Overlay 3")
+        #expect(court.name == "Mevo 3")
         #expect(court.queue.isEmpty)
         #expect(court.activeIndex == nil)
         #expect(court.status == .idle)
@@ -665,6 +667,3152 @@ struct Set3TiebreakTests {
     }
 }
 
+// MARK: - Hydrate Parsing Tests
+
+@MainActor
+struct HydrateParsingTests {
+
+    @Test func extractHydrateMatches_readsDayScopedBracketAndPoolMatches() async throws {
+        let matches = AppViewModel.extractHydrateMatches(from: makeDayScopedHydrateJSON())
+        let matchIds = matches.compactMap { $0["id"] as? Int }
+
+        #expect(matchIds == [101, 201])
+    }
+
+    @Test func buildGameIdLookup_readsDayScopedGames() async throws {
+        let lookup = AppViewModel.buildGameIdLookup(from: makeDayScopedHydrateJSON())
+
+        #expect(lookup["101"] == [1001, 1002])
+        #expect(lookup["201"] == [2001])
+    }
+
+    @Test func buildTeamLookup_resolvesNestedTeamIdsFromDayScopedHydrate() async throws {
+        let lookup = AppViewModel.buildTeamLookup(from: makeDayScopedHydrateJSON())
+
+        #expect(lookup["101"]?.team1 == "Alice Smith / Beth Jones")
+        #expect(lookup["101"]?.team2 == "Cara Diaz / Dana Reed")
+        #expect(lookup["201"]?.team1 == "Eva Long / Finn West")
+        #expect(lookup["201"]?.team2 == "Gina Shaw / Hale Young")
+    }
+
+    @Test func extractHydrateMatches_keepsLegacyTopLevelFallback() async throws {
+        let matches = AppViewModel.extractHydrateMatches(from: makeLegacyHydrateJSON())
+        let matchIds = matches.compactMap { $0["id"] as? Int }
+
+        #expect(matchIds == [301, 401])
+    }
+}
+
+@MainActor
+struct QueueAdvanceDecisionTests {
+
+    @Test func shouldHoldPostMatch_isTrue_forObservedLiveFinal() async throws {
+        let shouldHold = AppViewModel.shouldHoldPostMatch(
+            matchConcluded: true,
+            observedActiveScoring: true,
+            hasScoreData: true,
+            isFinalStatus: true,
+            previousStatus: .live
+        )
+
+        #expect(shouldHold)
+    }
+
+    @Test func shouldHoldPostMatch_isFalse_forSyntheticBacklogWithoutEvidence() async throws {
+        let shouldHold = AppViewModel.shouldHoldPostMatch(
+            matchConcluded: true,
+            observedActiveScoring: false,
+            hasScoreData: false,
+            isFinalStatus: false,
+            previousStatus: .waiting
+        )
+
+        #expect(!shouldHold)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesStaleMatchImmediately() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: false,
+            isStale: true,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_holdsRecentFinalUntilNextMatchStarts() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(!shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesWhenHoldExpires() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: true,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesBacklogFinalWhenNoHoldNeeded() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: false,
+            nextMatchHasStarted: false
+        )
+
+        #expect(shouldAdvance)
+    }
+
+    @Test func shouldAdvanceAfterConclusion_advancesHeldFinalWhenNextMatchAlreadyStarted() async throws {
+        let shouldAdvance = AppViewModel.shouldAdvanceAfterConclusion(
+            matchConcluded: true,
+            isStale: false,
+            holdExpired: false,
+            shouldHoldPostMatch: true,
+            nextMatchHasStarted: true
+        )
+
+        #expect(shouldAdvance)
+    }
+}
+
+@MainActor
+struct QueueMergeTests {
+
+    @Test func mergeQueue_updatesExistingMetadataWithoutResettingQueuePosition() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let existingMatch = makeMatchItem(
+            url: "https://example.com/match/original",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "7",
+            courtNumber: "Ct 1",
+            scheduledTime: "8:00AM",
+            setsToWin: 1,
+            pointCap: 21,
+            gameIds: [111]
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/match/second",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "8"
+        )
+
+        viewModel.replaceQueue(1, with: [existingMatch, secondMatch], startIndex: 1)
+
+        let updatedExisting = makeMatchItem(
+            url: "https://example.com/match/live",
+            team1: existingMatch.team1Name,
+            team2: existingMatch.team2Name,
+            matchNumber: existingMatch.matchNumber,
+            courtNumber: "Center Court",
+            scheduledTime: "8:30AM",
+            setsToWin: 2,
+            pointCap: 23,
+            gameIds: [222, 333]
+        )
+        let newAppendedMatch = makeMatchItem(
+            url: "https://example.com/match/new",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "9"
+        )
+
+        viewModel.mergeQueue(1, with: [updatedExisting, newAppendedMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.queue.count == 3)
+        #expect(court.queue[0].apiURL == updatedExisting.apiURL)
+        #expect(court.queue[0].courtNumber == "Center Court")
+        #expect(court.queue[0].scheduledTime == "8:30AM")
+        #expect(court.queue[0].setsToWin == 2)
+        #expect(court.queue[0].pointCap == 23)
+        #expect(court.queue[0].gameIds == [222, 333])
+        #expect(court.queue[1].matchNumber == "8")
+        #expect(court.queue[2].matchNumber == "9")
+    }
+
+    @Test func mergeQueue_usesMatchNumberToKeepRematchesDistinct() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let original = makeMatchItem(
+            url: "https://example.com/match/semis",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "12"
+        )
+        let rematch = makeMatchItem(
+            url: "https://example.com/match/finals",
+            team1: original.team1Name,
+            team2: original.team2Name,
+            matchNumber: "18"
+        )
+
+        viewModel.replaceQueue(1, with: [original])
+        viewModel.mergeQueue(1, with: [rematch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue.count == 2)
+        #expect(court.queue.map(\.matchNumber) == ["12", "18"])
+        #expect(court.queue[0].apiURL == original.apiURL)
+        #expect(court.queue[1].apiURL == rematch.apiURL)
+    }
+
+    @Test func mergeQueue_prefersURLIdentityWhenRescanResolvesPlaceholderTeams() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        var placeholder = makeMatchItem(
+            url: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Match 1 Winner",
+            team2: "Match 2 Winner",
+            matchNumber: "2",
+            courtNumber: "1",
+            scheduledTime: "9:40AM"
+        )
+        placeholder.team1Seed = "TBD"
+        placeholder.team2Seed = "TBD"
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/match/active",
+            team1: "A. Team / B. Team",
+            team2: "C. Team / D. Team",
+            matchNumber: "1",
+            courtNumber: "1"
+        )
+
+        viewModel.replaceQueue(1, with: [activeMatch, placeholder], startIndex: 0)
+
+        var resolved = makeMatchItem(
+            url: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-2/vmix?bracket=false",
+            team1: "M. Pacheco / D. Toliver",
+            team2: "G. Black / D. Wenger",
+            matchNumber: "2",
+            courtNumber: "1",
+            scheduledTime: "9:40AM"
+        )
+        resolved.team1Seed = "2"
+        resolved.team2Seed = "4"
+
+        viewModel.mergeQueue(1, with: [resolved])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue.count == 2)
+        #expect(court.activeIndex == 0)
+        #expect(court.queue[1].apiURL == resolved.apiURL)
+        #expect(court.queue[1].team1Name == "M. Pacheco / D. Toliver")
+        #expect(court.queue[1].team2Name == "G. Black / D. Wenger")
+        #expect(court.queue[1].team1Seed == "2")
+        #expect(court.queue[1].team2Seed == "4")
+    }
+
+    @Test func saveConfigurationNow_writesCourtsIntoInjectedConfigStoreDirectory() async throws {
+        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let queuedMatch = makeMatchItem(
+            url: "https://example.com/match/persisted",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5"
+        )
+
+        viewModel.replaceQueue(1, with: [queuedMatch])
+
+        let data = try Data(contentsOf: configStore.courtsConfigURL)
+        let savedCourts = try JSONDecoder().decode([Court].self, from: data)
+        let savedCourt = try #require(savedCourts.first(where: { $0.id == 1 }))
+
+        #expect(savedCourt.queue.count == 1)
+        #expect(savedCourt.queue[0].apiURL == queuedMatch.apiURL)
+        #expect(savedCourt.queue[0].matchNumber == "5")
+    }
+
+    @Test func replaceQueue_normalizesLegacyPoolMatchesWithoutExplicitFormatText() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let legacyPoolMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=false")!,
+            team1Name: "Alice Smith / Beth Jones",
+            team2Name: "Cara Diaz / Dana Reed",
+            matchNumber: "14"
+        )
+
+        viewModel.replaceQueue(1, with: [legacyPoolMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        let normalized = try #require(court.queue.first)
+        #expect(normalized.setsToWin == 1)
+        #expect(normalized.pointsPerSet == 21)
+        #expect(normalized.pointCap == 23)
+    }
+
+    @Test func replaceQueue_preservesExplicitFormatsForBracketAndPoolMatches() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let bracketMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=true")!,
+            team1Name: "Alice Smith / Beth Jones",
+            team2Name: "Cara Diaz / Dana Reed",
+            matchNumber: "21"
+        )
+        let explicitPoolMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/vmix?court=7&bracket=false")!,
+            team1Name: "Eva Long / Finn West",
+            team2Name: "Gina Shaw / Hale Young",
+            matchNumber: "22",
+            setsToWin: 1,
+            pointsPerSet: 25,
+            pointCap: 27,
+            formatText: "1 game to 25, cap 27"
+        )
+
+        viewModel.replaceQueue(1, with: [bracketMatch, explicitPoolMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.queue[0].setsToWin == nil)
+        #expect(court.queue[0].pointsPerSet == nil)
+        #expect(court.queue[0].pointCap == nil)
+        #expect(court.queue[1].formatText == "1 game to 25, cap 27")
+        #expect(court.queue[1].setsToWin == 1)
+        #expect(court.queue[1].pointsPerSet == 25)
+        #expect(court.queue[1].pointCap == 27)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct QueueEditorSaveStateTests {
+
+    @Test func replaceQueuePreservingState_keepsActiveIndexAndStatusWhenQueueIsUnchanged() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-editor-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-editor-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: activeMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, activeMatch], startIndex: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.replaceQueuePreservingState(1, with: [firstMatch, activeMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.currentMatch?.id == activeMatch.id)
+        #expect(court.lastSnapshot?.status == "Pre-Match")
+    }
+
+    @Test func replaceQueuePreservingState_tracksActiveMatchAcrossReorder() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let thirdMatch = makeMatchItem(
+            url: "https://example.com/matches/reorder-third",
+            team1: "Ivy North / June South",
+            team2: "Kirk East / Lane West",
+            matchNumber: "3"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: activeMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, activeMatch, thirdMatch], startIndex: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.replaceQueuePreservingState(1, with: [activeMatch, firstMatch, thirdMatch])
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.currentMatch?.id == activeMatch.id)
+        #expect(court.lastSnapshot?.status == "Pre-Match")
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct ClearAllQueuesTests {
+
+    @Test func clearAllQueues_resetsTransientRuntimeStateAcrossCourts() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let erroredMatch = makeMatchItem(
+            url: "https://example.com/matches/clear-all-error",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let finishedMatch = makeMatchItem(
+            url: "https://example.com/matches/clear-all-finished",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 18),
+            for: finishedMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [erroredMatch])
+        viewModel.replaceQueue(2, with: [finishedMatch])
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 2)
+
+        let beforeErrored = try #require(viewModel.court(for: 1))
+        let beforeFinished = try #require(viewModel.court(for: 2))
+        #expect(beforeErrored.errorMessage != nil)
+        #expect(beforeErrored.lastPollTime != nil)
+        #expect(beforeFinished.finishedAt != nil)
+        #expect(beforeFinished.lastSnapshot?.status == "Final")
+        #expect(beforeFinished.lastPollTime != nil)
+
+        viewModel.clearAllQueues()
+
+        for courtId in [1, 2] {
+            let court = try #require(viewModel.court(for: courtId))
+            #expect(court.queue.isEmpty)
+            #expect(court.activeIndex == nil)
+            #expect(court.status == .idle)
+            #expect(court.lastSnapshot == nil)
+            #expect(court.liveSince == nil)
+            #expect(court.finishedAt == nil)
+            #expect(court.lastPollTime == nil)
+            #expect(court.errorMessage == nil)
+        }
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct QueuePollingEdgeCaseTests {
+
+    @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-1",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/queue-2",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: secondMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_keepsCurrentMatchWhenItIsAlreadyLive() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/live-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/live-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 10, away: 9),
+            for: secondMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "In Progress")
+        #expect(snapshot.setHistory.last?.team1Score == 8)
+        #expect(snapshot.setHistory.last?.team2Score == 7)
+    }
+
+    @Test func runImmediatePollCycle_skipsBacklogOfCompletedMatchesBeforePollingNextPlayableMatch() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let finishedMatchOne = makeMatchItem(
+            url: "https://example.com/matches/finished-1",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let finishedMatchTwo = makeMatchItem(
+            url: "https://example.com/matches/finished-2",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let playableMatch = makeMatchItem(
+            url: "https://example.com/matches/playable-3",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 17),
+            for: finishedMatchOne.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Final", home: 21, away: 19),
+            for: finishedMatchTwo.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: playableMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [finishedMatchOne, finishedMatchTwo, playableMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 2)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Pre-Match")
+        #expect(snapshot.matchNumber == playableMatch.matchNumber)
+    }
+
+    @Test func runImmediatePollCycle_doesNotAdvancePlayAllPoolMatchAfterOnlyOneCompletedSet() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let currentMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-current")!,
+            team1Name: "William Mota / Derek Strause",
+            team2Name: "Nathan Hicks / Reid Malone",
+            team1Seed: "1",
+            team2Seed: "3",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:00AM",
+            startDate: "Fri",
+            matchNumber: "1",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+        let nextMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-next")!,
+            team1Name: "Marvin Pacheco / Derek Toliver",
+            team2Name: "George Black / Daniel Wenger",
+            team1Seed: "2",
+            team2Seed: "4",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:40AM",
+            startDate: "Fri",
+            matchNumber: "2",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: currentMatch.team1Name ?? "Team A",
+                team2Name: currentMatch.team2Name ?? "Team B",
+                game1: (18, 21),
+                game2: (0, 0)
+            ),
+            for: currentMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [currentMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "In Progress")
+        #expect(snapshot.setHistory.count == 1)
+        let firstSet = try #require(snapshot.setHistory.first)
+        #expect(firstSet == SetScore(setNumber: 1, team1Score: 18, team2Score: 21, isComplete: true))
+    }
+
+    @Test func runImmediatePollCycle_advancesPlayAllPoolMatchAfterRequiredSetsComplete() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let currentMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-finished")!,
+            team1Name: "William Mota / Derek Strause",
+            team2Name: "Nathan Hicks / Reid Malone",
+            team1Seed: "1",
+            team2Seed: "3",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:00AM",
+            startDate: "Fri",
+            matchNumber: "1",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+        let nextMatch = MatchItem(
+            apiURL: URL(string: "https://example.com/matches/pool-play-all-finished-next")!,
+            team1Name: "Marvin Pacheco / Derek Toliver",
+            team2Name: "George Black / Daniel Wenger",
+            team1Seed: "2",
+            team2Seed: "4",
+            matchType: "Pool Play",
+            typeDetail: "Pool 1",
+            scheduledTime: "9:40AM",
+            startDate: "Fri",
+            matchNumber: "2",
+            courtNumber: "1",
+            setsToWin: 1,
+            setsToPlay: 2,
+            pointsPerSet: 21,
+            pointCap: 23,
+            formatText: "Best of 2, all sets to 21 with a 23 point cap"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: currentMatch.team1Name ?? "Team A",
+                team2Name: currentMatch.team2Name ?? "Team B",
+                game1: (18, 21),
+                game2: (21, 19)
+            ),
+            for: currentMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [currentMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Pre-Match")
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct QueueConclusionTimingTests {
+
+    @Test func runImmediatePollCycle_advancesStaleLiveMatchToNextQueueItem() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let staleMatch = makeMatchItem(
+            url: "https://example.com/matches/stale-live",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/stale-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: staleMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [staleMatch, nextMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        viewModel.appSettings.staleMatchTimeout = 0
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+
+    @Test func runImmediatePollCycle_holdsObservedFinalWhenNextMatchHasNotStarted() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/hold-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/hold-next-pre",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "4",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 18,
+                team2Score: 16,
+                setHistory: [SetScore(setNumber: 1, team1Score: 18, team2Score: 16, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 16,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 16, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .finished)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Final")
+        #expect(court.finishedAt != nil)
+    }
+
+    @Test func runImmediatePollCycle_advancesHeldFinalWhenHoldExpires() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/expire-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/expire-next-pre",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "6",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 19,
+                team2Score: 18,
+                setHistory: [SetScore(setNumber: 1, team1Score: 19, team2Score: 18, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 19,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 19, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        viewModel.appSettings.holdScoreDuration = 0
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 19,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 19, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+
+    @Test func runImmediatePollCycle_advancesHeldFinalAsSoonAsNextMatchStarts() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let liveThenFinalMatch = makeMatchItem(
+            url: "https://example.com/matches/next-live-final",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "7",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextLiveMatch = makeMatchItem(
+            url: "https://example.com/matches/next-live-match",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "8",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        viewModel.appSettings.holdScoreDuration = 300
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextLiveMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveThenFinalMatch, nextLiveMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 16,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 16, team2Score: 14, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 5, away: 4),
+            for: nextLiveMatch.apiURL
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 14, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.finishedAt == nil)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct SignalRSubscriptionTests {
+
+    @Test func signalRDidConnect_subscribesUniquePairsAcrossPollingCourtsOnly() async throws {
+        let recordingClient = RecordingSignalRClient()
+        let credentials = ConfigStore.VBLCredentials(username: "tester@example.com", password: "secret")
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            signalRCredentialsProvider: { credentials },
+            signalRClientFactory: { _ in recordingClient }
+        )
+        defer { cleanup() }
+
+        let sharedActiveMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-shared-active",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let sharedQueuedMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-shared-queued",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let secondCourtSharedMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-second-shared",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "3",
+            tournamentId: 100,
+            divisionId: 10
+        )
+        let distinctPollingMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-distinct",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "4",
+            tournamentId: 200,
+            divisionId: 20
+        )
+        let idleCourtMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-idle",
+            team1: "Quinn Ash / Rory Blue",
+            team2: "Sage Cove / Tali Dawn",
+            matchNumber: "5",
+            tournamentId: 300,
+            divisionId: 30
+        )
+
+        viewModel.replaceQueue(1, with: [sharedActiveMatch, sharedQueuedMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [secondCourtSharedMatch, distinctPollingMatch], startIndex: 0)
+        viewModel.replaceQueue(3, with: [idleCourtMatch], startIndex: 0)
+
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        _ = await viewModel.applySnapshotForTesting(courtId: 2, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+
+        viewModel.setSignalREnabled(true)
+        #expect(await waitUntilAsync { (await recordingClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await recordingClient.subscriptions()).count == 2 })
+
+        let subscriptions = await recordingClient.subscriptions()
+        #expect(subscriptions.count == 2)
+        #expect(Set(subscriptions.map { "\($0.tournamentId)-\($0.divisionId)" }) == Set(["100-10", "200-20"]))
+    }
+
+    @Test func reconnectSignalRIfNeeded_disconnectsOldClientAndResubscribesWithReplacement() async throws {
+        let firstClient = RecordingSignalRClient()
+        let secondClient = RecordingSignalRClient()
+        let credentials = ConfigStore.VBLCredentials(username: "tester@example.com", password: "secret")
+        var factoryBuildCount = 0
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            signalRCredentialsProvider: { credentials },
+            signalRClientFactory: { _ in
+                defer { factoryBuildCount += 1 }
+                return factoryBuildCount == 0 ? firstClient : secondClient
+            }
+        )
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/signalr-reconnect",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "8",
+            tournamentId: 400,
+            divisionId: 40
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+
+        viewModel.setSignalREnabled(true)
+        #expect(await waitUntilAsync { (await firstClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await firstClient.subscriptions()).count == 1 })
+
+        viewModel.reconnectSignalRIfNeeded()
+
+        #expect(await waitUntilAsync { (await firstClient.disconnectCount()) == 1 })
+        #expect(await waitUntilAsync { (await secondClient.connectCalls()).count == 1 })
+
+        viewModel.signalRDidConnect()
+        #expect(await waitUntilAsync { (await secondClient.subscriptions()).count == 1 })
+
+        let firstSubscriptions = await firstClient.subscriptions()
+        let secondSubscriptions = await secondClient.subscriptions()
+        #expect(firstSubscriptions.map { "\($0.tournamentId)-\($0.divisionId)" } == ["400-40"])
+        #expect(secondSubscriptions.map { "\($0.tournamentId)-\($0.divisionId)" } == ["400-40"])
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct SignalRMutationQueueTests {
+
+    @Test func signalRDidReceiveMutation_advancesSingleSetQueueAndRemapsNextGameId() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let finishedPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-pool-finished",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23,
+            gameIds: [901]
+        )
+        let nextPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-pool-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23,
+            gameIds: [902]
+        )
+
+        viewModel.replaceQueue(1, with: [finishedPoolMatch, nextPoolMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        viewModel.rebuildGameIdMapForTesting()
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 3, away: 2),
+            for: nextPoolMatch.apiURL
+        )
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 901,
+                "home": 8,
+                "away": 7,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.status == "In Progress"
+                && snapshot.setHistory.last?.team1Score == 8
+                && snapshot.setHistory.last?.team2Score == 7
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 901,
+                "home": 21,
+                "away": 16,
+                "number": 0,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1) else { return false }
+            return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 902,
+                "home": 5,
+                "away": 4,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  court.activeIndex == 1,
+                  court.status == .live,
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return snapshot.status == "In Progress"
+                && snapshot.setHistory.last?.team1Score == 5
+                && snapshot.setHistory.last?.team2Score == 4
+        })
+    }
+
+    @Test func signalRDidReceiveMutation_waitsForBestOfThreeMatchToBeWonBeforeAdvancing() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let bracketMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-bracket-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "10",
+            setsToWin: 2,
+            gameIds: [1001, 1002, 1003]
+        )
+        let queuedNextMatch = makeMatchItem(
+            url: "https://example.com/matches/signalr-bracket-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "11",
+            setsToWin: 2,
+            gameIds: [1004, 1005, 1006]
+        )
+
+        viewModel.replaceQueue(1, with: [bracketMatch, queuedNextMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 2))
+        viewModel.rebuildGameIdMapForTesting()
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 6, away: 5),
+            for: queuedNextMatch.apiURL
+        )
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 1001,
+                "home": 21,
+                "away": 18,
+                "number": 0,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.team1Score == 1
+                && snapshot.team2Score == 0
+                && snapshot.status == "In Progress"
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 1002,
+                "home": 21,
+                "away": 17,
+                "number": 1,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1) else { return false }
+            return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
+        })
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct CourtReassignmentTests {
+
+    @Test func runCourtChangeForTesting_movesLiveMatchBehindTargetLiveMatchAndResetsSourceCourt() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let notificationService = RecordingNotificationService()
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            apiClient: apiClient,
+            notificationService: notificationService
+        )
+        defer { cleanup() }
+
+        let movingMatch = makeMatchItem(
+            url: "https://example.com/matches/move-live",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "5",
+            physicalCourt: "Court Alpha",
+            scheduledTime: "9:15AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let sourceNextMatch = makeMatchItem(
+            url: "https://example.com/matches/source-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "6",
+            scheduledTime: "10:00AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let targetLiveMatch = makeMatchItem(
+            url: "https://example.com/matches/target-live",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "11",
+            scheduledTime: "9:00AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let targetQueuedMatch = makeMatchItem(
+            url: "https://example.com/matches/target-queued",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "12",
+            scheduledTime: "10:30AM",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: movingMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 10, away: 9),
+            for: targetLiveMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [movingMatch, sourceNextMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [targetLiveMatch, targetQueuedMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 2)
+        await viewModel.runCourtChangeForTesting(matchId: movingMatch.id, fromCourt: 1, toCourt: 2)
+
+        let sourceCourt = try #require(viewModel.court(for: 1))
+        #expect(sourceCourt.queue.map(\.id) == [sourceNextMatch.id])
+        #expect(sourceCourt.activeIndex == 0)
+        #expect(sourceCourt.status == .waiting)
+        #expect(sourceCourt.lastSnapshot == nil)
+
+        let targetCourt = try #require(viewModel.court(for: 2))
+        #expect(targetCourt.activeIndex == 0)
+        #expect(targetCourt.status == .live)
+        #expect(targetCourt.queue.count == 3)
+        #expect(targetCourt.queue[0].id == targetLiveMatch.id)
+        #expect(targetCourt.queue[1].id == movingMatch.id)
+        #expect(targetCourt.queue[2].id == targetQueuedMatch.id)
+
+        #expect(notificationService.courtChangeEvents.count == 1)
+        let event = try #require(notificationService.courtChangeEvents.first)
+        #expect(event.oldCamera == 1)
+        #expect(event.newCamera == 2)
+        #expect(event.isLiveMatch)
+    }
+
+    @Test func runCourtChangeForTesting_decrementsActiveIndexWhenQueuedMatchMovesOffSourceCourt() async throws {
+        let notificationService = RecordingNotificationService()
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(notificationService: notificationService)
+        defer { cleanup() }
+
+        let movedMatch = makeMatchItem(
+            url: "https://example.com/matches/move-queued",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3",
+            physicalCourt: "Court Beta",
+            scheduledTime: "8:00AM"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/stays-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "4",
+            scheduledTime: "9:00AM"
+        )
+        let laterSourceMatch = makeMatchItem(
+            url: "https://example.com/matches/stays-later",
+            team1: "Ivy Cole / June Hart",
+            team2: "Kira Snow / Lane Park",
+            matchNumber: "5",
+            scheduledTime: "10:00AM"
+        )
+        let targetExistingEarly = makeMatchItem(
+            url: "https://example.com/matches/target-early",
+            team1: "Mina Vale / Nora West",
+            team2: "Opal Young / Piper Zane",
+            matchNumber: "9",
+            scheduledTime: "9:30AM"
+        )
+        let targetExistingLate = makeMatchItem(
+            url: "https://example.com/matches/target-late",
+            team1: "Quinn Ash / Rory Blue",
+            team2: "Sage Cove / Tali Dawn",
+            matchNumber: "10",
+            scheduledTime: "11:00AM"
+        )
+
+        viewModel.replaceQueue(1, with: [movedMatch, activeMatch, laterSourceMatch], startIndex: 1)
+        viewModel.replaceQueue(2, with: [targetExistingEarly, targetExistingLate], startIndex: 0)
+
+        await viewModel.runCourtChangeForTesting(matchId: movedMatch.id, fromCourt: 1, toCourt: 2)
+
+        let sourceCourt = try #require(viewModel.court(for: 1))
+        #expect(sourceCourt.activeIndex == 0)
+        #expect(sourceCourt.queue.map(\.id) == [activeMatch.id, laterSourceMatch.id])
+
+        let targetCourt = try #require(viewModel.court(for: 2))
+        #expect(targetCourt.queue.map(\.id) == [movedMatch.id, targetExistingEarly.id, targetExistingLate.id])
+
+        #expect(notificationService.courtChangeEvents.count == 1)
+        let event = try #require(notificationService.courtChangeEvents.first)
+        #expect(!event.isLiveMatch)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct PollingFailureModeTests {
+
+    @Test func runImmediatePollCycle_treatsMalformedJSONAsWaitingInsteadOfCrashing() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/malformed-json",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+
+        StubURLProtocol.registerData(Data("not-json".utf8), for: match.apiURL)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "Waiting")
+        #expect(snapshot.team1Score == 0)
+        #expect(snapshot.team2Score == 0)
+    }
+
+    @Test func runImmediatePollCycle_marksScoreOnlyPayloadAsLiveEvenWithoutStatusString() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/score-only",
+            team1: "Fallback Team One",
+            team2: "Fallback Team Two",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            [
+                "team1_text": "Live Team One",
+                "team2_text": "Live Team Two",
+                "score": [
+                    "home": 5,
+                    "away": 3
+                ]
+            ],
+            for: match.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.team1Name == "Live Team One")
+        #expect(snapshot.team2Name == "Live Team Two")
+        #expect(snapshot.setHistory.last?.team1Score == 5)
+        #expect(snapshot.setHistory.last?.team2Score == 3)
+    }
+
+    @Test func runImmediatePollCycle_surfacesTransportFailureWithoutChangingQueuePosition() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/network-miss",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3"
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let errorMessage = try #require(court.errorMessage)
+        #expect(!errorMessage.isEmpty)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_suppressesSyntheticPoolPlaceholderHttp500() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == nil)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_logsSyntheticPoolPlaceholderSuppressionOnlyOnceWithinThrottleWindow() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder poll error for court 1: \(match.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 1)
+    }
+
+    @Test func runImmediatePollCycle_logsSyntheticPoolPlaceholderSuppressionAgainAfterSuccessfulPoll() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Placeholder Team One",
+            team2: "Placeholder Team Two",
+            matchNumber: "4"
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: "Placeholder Team One",
+                team2Name: "Placeholder Team Two",
+                game1: (0, 0)
+            ),
+            for: match.apiURL
+        )
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder poll error for court 1: \(match.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 2)
+    }
+
+    @Test func runImmediatePollCycle_suppressesPlaceholderQueueMetadataRefreshWarning() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/1217131/vmix?bracket=false",
+            team1: "William Mota / Derek Strause",
+            team2: "Nathan Hicks / Reid Malone",
+            matchNumber: "1"
+        )
+        let queuedPlaceholder = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Marvin Pacheco / Derek Toliver",
+            team2: "George Black / Daniel Wenger",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: activeMatch.team1Name ?? "Team 1",
+                team2Name: activeMatch.team2Name ?? "Team 2",
+                game1: (0, 0)
+            ),
+            for: activeMatch.apiURL
+        )
+        StubURLProtocol.registerData(Data(), for: queuedPlaceholder.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [activeMatch, queuedPlaceholder], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let suppressedLine = "suppressed placeholder queue metadata refresh for court 1: \(queuedPlaceholder.apiURL.absoluteString)"
+
+        #expect(recentEntries.contains(suppressedLine))
+        #expect(!recentEntries.contains("failed to refresh queued metadata for court 1"))
+    }
+
+    @Test func runImmediatePollCycle_logsPlaceholderQueueMetadataRefreshOnlyOnceWithinThrottleWindow() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/1217131/vmix?bracket=false",
+            team1: "William Mota / Derek Strause",
+            team2: "Nathan Hicks / Reid Malone",
+            matchNumber: "1"
+        )
+        let queuedPlaceholder = makeMatchItem(
+            url: "https://example.com/matches/pool-326016-2/vmix?bracket=false",
+            team1: "Marvin Pacheco / Derek Toliver",
+            team2: "George Black / Daniel Wenger",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerData(
+            makeVMixArrayData(
+                team1Name: activeMatch.team1Name ?? "Team 1",
+                team2Name: activeMatch.team2Name ?? "Team 2",
+                game1: (0, 0)
+            ),
+            for: activeMatch.apiURL
+        )
+        StubURLProtocol.registerData(Data(), for: queuedPlaceholder.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [activeMatch, queuedPlaceholder], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        await viewModel.clearScoreCacheForTesting()
+        viewModel.resetQueueMetadataRefreshForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let logLine = "suppressed placeholder queue metadata refresh for court 1: \(queuedPlaceholder.apiURL.absoluteString)"
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        let occurrences = recentEntries.components(separatedBy: logLine).count - 1
+
+        #expect(occurrences == 1)
+    }
+
+    @Test func runImmediatePollCycle_keepsRealMatchHttp500Visible() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/325750/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "5"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 500)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let errorMessage = try #require(court.errorMessage)
+        #expect(errorMessage == "VBL API unavailable (HTTP 500)")
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_surfacesAuthFailureWithOperatorMessage() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/secure/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "6"
+        )
+
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == "VBL API authentication failed (401)")
+    }
+
+    @Test func runImmediatePollCycle_surfacesTimeoutWithOperatorMessage() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/timeout/vmix?bracket=true",
+            team1: "Resolved Team One",
+            team2: "Resolved Team Two",
+            matchNumber: "7"
+        )
+
+        StubURLProtocol.registerFailure(URLError(.timedOut), for: match.apiURL)
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .waiting)
+        #expect(court.errorMessage == "VBL API request timed out")
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct RuntimeLogStoreTests {
+
+    @Test func exportSnapshot_copiesCurrentRuntimeLogContents() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+        let exportURL = tempDirectory.appendingPathComponent("runtime-export.log")
+        let store = RuntimeLogStore(fileURL: sourceURL)
+
+        let sourceText = """
+        2026-03-07T00:00:00.000Z [INFO] [polling] started polling for court 1
+        2026-03-07T00:00:05.000Z [WARN] [polling] suppressed placeholder poll error
+        """
+        try sourceText.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        try store.exportSnapshot(to: exportURL)
+
+        let exportedText = try String(contentsOf: exportURL, encoding: .utf8)
+        #expect(exportedText == sourceText)
+    }
+
+    @Test func defaultExportsDirectory_usesArchivesFolderInsideAppSupportRoot() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let exportsURL = RuntimeLogStore.defaultExportsDirectory(appSupportOverride: tempDirectory)
+
+        #expect(exportsURL == tempDirectory.appendingPathComponent("Archives", isDirectory: true))
+        #expect(FileManager.default.fileExists(atPath: exportsURL.path))
+    }
+
+    @Test func defaultFileURL_migratesLegacyRootRuntimeLogIntoLogsFolder() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let legacyURL = tempDirectory.appendingPathComponent("runtime.log")
+        try "legacy runtime log\n".write(to: legacyURL, atomically: true, encoding: .utf8)
+
+        let migratedURL = RuntimeLogStore.defaultFileURL(appSupportOverride: tempDirectory)
+
+        #expect(migratedURL == tempDirectory.appendingPathComponent("Logs/runtime.log"))
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+        let migratedText = try String(contentsOf: migratedURL, encoding: .utf8)
+        #expect(migratedText == "legacy runtime log\n")
+    }
+
+    @Test func exportDiagnosticsBundle_includesManifestRuntimeLogAndAttachments() async throws {
+        struct Manifest: Codable {
+            let generatedAt: String
+            let appVersion: String
+        }
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+        let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
+        let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+        let store = RuntimeLogStore(fileURL: sourceURL)
+
+        let sourceText = "2026-03-07T00:00:00.000Z [INFO] [operator] opened settings modal\n"
+        try sourceText.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        try store.exportDiagnosticsBundle(
+            to: archiveURL,
+            manifest: Manifest(generatedAt: "2026-03-07T00:00:00Z", appVersion: "2.0.0"),
+            attachments: [
+                .init(fileName: "settings.json", data: Data("{\"serverPort\":8787}\n".utf8)),
+                .init(fileName: "scanner-logs.txt", data: Data("No scanner log entries\n".utf8))
+            ]
+        )
+
+        #expect(FileManager.default.fileExists(atPath: archiveURL.path))
+
+        let listing = try shellOutput(
+            executable: "/usr/bin/unzip",
+            arguments: ["-Z1", archiveURL.path]
+        )
+        #expect(!listing.split(separator: "\n").contains(where: { $0.contains("/._") }))
+
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
+        try unzip.run()
+        unzip.waitUntilExit()
+        #expect(unzip.terminationStatus == 0)
+
+        let extractedItems = try FileManager.default.contentsOfDirectory(
+            at: extractedURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        let bundleDirectory = try #require(extractedItems.first)
+
+        let exportedRuntimeLog = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("runtime.log"),
+            encoding: .utf8
+        )
+        #expect(exportedRuntimeLog == sourceText)
+
+        let manifestJSON = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("manifest.json"),
+            encoding: .utf8
+        )
+        #expect(manifestJSON.contains("\"appVersion\" : \"2.0.0\""))
+
+        let settingsJSON = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("settings.json"),
+            encoding: .utf8
+        )
+        #expect(settingsJSON.contains("\"serverPort\":8787"))
+
+        let scannerLogs = try String(
+            contentsOf: bundleDirectory.appendingPathComponent("scanner-logs.txt"),
+            encoding: .utf8
+        )
+        #expect(scannerLogs == "No scanner log entries\n")
+    }
+
+    @Test func overlayHTML_isSelfContainedAndBundledResourceMatchesEmbeddedVersion() async throws {
+        struct OverlayHTMLTestFailure: Error, CustomStringConvertible {
+            let description: String
+        }
+
+        func firstDifferenceDescription(_ lhs: String, _ rhs: String) -> String {
+            let lhsBytes = Array(lhs.utf8)
+            let rhsBytes = Array(rhs.utf8)
+            let sharedCount = min(lhsBytes.count, rhsBytes.count)
+
+            for index in 0..<sharedCount where lhsBytes[index] != rhsBytes[index] {
+                let lowerBound = max(0, index - 32)
+                let upperBound = min(sharedCount, index + 32)
+                let lhsSnippet = String(decoding: lhsBytes[lowerBound..<upperBound], as: UTF8.self)
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                let rhsSnippet = String(decoding: rhsBytes[lowerBound..<upperBound], as: UTF8.self)
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                return "first diff at byte \(index); lhs[\(lowerBound)..<\(upperBound)]='\(lhsSnippet)'; rhs[\(lowerBound)..<\(upperBound)]='\(rhsSnippet)'"
+            }
+
+            if lhsBytes.count != rhsBytes.count {
+                return "shared prefix matched for \(sharedCount) bytes but lengths differ: lhs=\(lhsBytes.count), rhs=\(rhsBytes.count)"
+            }
+
+            return "no byte difference"
+        }
+
+        func ensureSelfContained(_ html: String, label: String) throws {
+            let forbiddenMarkers = [
+                "https://",
+                "fonts.googleapis.com",
+                "cdn.tailwindcss.com",
+                "cdnjs.cloudflare.com"
+            ]
+
+            let hits = forbiddenMarkers.filter { html.localizedCaseInsensitiveContains($0) }
+            if !hits.isEmpty {
+                throw OverlayHTMLTestFailure(description: "\(label) still references external resources: \(hits.joined(separator: ", "))")
+            }
+        }
+
+        func normalizedOverlayHTML(_ html: String) -> String {
+            var normalized = html.replacingOccurrences(of: "\r\n", with: "\n")
+            if normalized.hasSuffix("\n") {
+                normalized.removeLast()
+            }
+            return normalized
+        }
+
+        let embeddedHTML = WebSocketHub.embeddedOverlayHTMLForTesting
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceOverlayURL = projectRoot.appendingPathComponent("MultiCourtScore/Resources/overlay.html")
+        let sourceOverlayHTML = try String(contentsOf: sourceOverlayURL, encoding: .utf8)
+        let appBundle = try #require(
+            (Bundle.allBundles + Bundle.allFrameworks).first {
+                $0.bundleIdentifier == "com.NathanHicks.MultiCourtScore"
+                    || $0.bundleURL.lastPathComponent == "MultiCourtScore.app"
+            }
+        )
+        let bundledURL = try #require(
+            appBundle.url(forResource: "overlay", withExtension: "html")
+        )
+        let bundledHTML = try String(contentsOf: bundledURL, encoding: .utf8)
+
+        try ensureSelfContained(embeddedHTML, label: "embedded overlay")
+        try ensureSelfContained(sourceOverlayHTML, label: "source overlay")
+        try ensureSelfContained(bundledHTML, label: "bundled overlay")
+
+        let normalizedEmbeddedHTML = normalizedOverlayHTML(embeddedHTML)
+        let normalizedSourceOverlayHTML = normalizedOverlayHTML(sourceOverlayHTML)
+        let normalizedBundledHTML = normalizedOverlayHTML(bundledHTML)
+
+        if normalizedSourceOverlayHTML != normalizedEmbeddedHTML {
+            throw OverlayHTMLTestFailure(
+                description: "embedded overlay differs from source overlay; \(firstDifferenceDescription(normalizedSourceOverlayHTML, normalizedEmbeddedHTML))"
+            )
+        }
+
+        if normalizedSourceOverlayHTML != normalizedBundledHTML {
+            throw OverlayHTMLTestFailure(
+                description: "bundled overlay differs from source overlay at \(bundledURL.path); \(firstDifferenceDescription(normalizedSourceOverlayHTML, normalizedBundledHTML))"
+            )
+        }
+    }
+
+    @Test func appViewModelExportDiagnosticsBundle_includesHealthSnapshotAndCourtState() async throws {
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
+
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer {
+                WebSocketHub.shared.stop()
+                cleanup()
+            }
+
+            let tempDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+            let sourceURL = tempDirectory.appendingPathComponent("runtime.log")
+            let archiveURL = tempDirectory.appendingPathComponent("diagnostics.zip")
+            let extractedURL = tempDirectory.appendingPathComponent("extracted", isDirectory: true)
+            let store = RuntimeLogStore(fileURL: sourceURL)
+            try "2026-03-07T00:00:00.000Z [INFO] [operator] exported diagnostics bundle\n"
+                .write(to: sourceURL, atomically: true, encoding: .utf8)
+
+            let freePort = try reserveFreePort()
+            viewModel.appSettings.serverPort = freePort
+            viewModel.replaceQueue(1, with: [
+                makeMatchItem(
+                    url: "https://example.com/match/1",
+                    team1: "Nathan Hicks",
+                    team2: "Reid Malone",
+                    matchNumber: "1"
+                )
+            ])
+
+            await WebSocketHub.shared.start(with: viewModel, port: freePort)
+            try viewModel.exportDiagnosticsBundle(to: archiveURL, runtimeLog: store)
+
+            let listing = try shellOutput(
+                executable: "/usr/bin/unzip",
+                arguments: ["-Z1", archiveURL.path]
+            )
+            #expect(listing.contains("/health.json"))
+            #expect(listing.contains("/court-state.json"))
+            #expect(listing.contains("/support-summary.txt"))
+
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            unzip.arguments = ["-x", "-k", archiveURL.path, extractedURL.path]
+            try unzip.run()
+            unzip.waitUntilExit()
+            #expect(unzip.terminationStatus == 0)
+
+            let extractedItems = try FileManager.default.contentsOfDirectory(
+                at: extractedURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            let bundleDirectory = try #require(extractedItems.first)
+
+            let healthData = try Data(contentsOf: bundleDirectory.appendingPathComponent("health.json"))
+            let healthSnapshot = try JSONDecoder().decode(OverlayHealthSnapshot.self, from: healthData)
+            #expect(healthSnapshot.port == freePort)
+            #expect(healthSnapshot.courtCount == 10)
+            #expect(healthSnapshot.errorCourtIds.isEmpty)
+
+            let supportSummary = try String(
+                contentsOf: bundleDirectory.appendingPathComponent("support-summary.txt"),
+                encoding: .utf8
+            )
+            #expect(supportSummary.contains("Health: OK"))
+            #expect(supportSummary.contains("Overlay Server: running on localhost:\(freePort)"))
+            #expect(supportSummary.contains("Runtime Log: \(sourceURL.path)"))
+            #expect(supportSummary.contains("Recent Alerts: none"))
+            #expect(supportSummary.contains("queue 1"))
+
+            let courtStateData = try Data(contentsOf: bundleDirectory.appendingPathComponent("court-state.json"))
+            let courtSnapshots = try JSONDecoder().decode([AppViewModel.CourtDiagnosticsSnapshot].self, from: courtStateData)
+            let firstCourt = try #require(courtSnapshots.first)
+            #expect(firstCourt.queueCount == 1)
+            #expect(firstCourt.overlayURL == "http://localhost:\(freePort)/overlay/court/1/")
+        }
+    }
+
+    @Test func appViewModelExportDiagnosticsBundleToDefaultLocation_usesArchivesBesideRuntimeLog() async throws {
+        await stopSharedOverlayServer()
+
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer {
+            WebSocketHub.shared.stop()
+            try? FileManager.default.removeItem(at: tempRoot)
+        }
+
+        let configStore = ConfigStore(appSupportOverride: tempRoot)
+        let viewModel = AppViewModel(
+            runtimeMode: .live,
+            webSocketHub: .shared,
+            configStore: configStore,
+            apiClient: APIClient(),
+            notificationService: RecordingNotificationService()
+        )
+
+        let runtimeLogURL = RuntimeLogStore.defaultFileURL(appSupportOverride: tempRoot)
+        let store = RuntimeLogStore(fileURL: runtimeLogURL)
+        try "2026-03-08T00:00:00.000Z [INFO] [operator] diagnostics export\n"
+            .write(to: runtimeLogURL, atomically: true, encoding: .utf8)
+
+        let fixedDate = Date(timeIntervalSince1970: 1_762_395_507)
+        let exportedURL = try viewModel.exportDiagnosticsBundleToDefaultLocation(runtimeLog: store, date: fixedDate)
+
+        let expectedDirectory = tempRoot.appendingPathComponent("Archives", isDirectory: true)
+        #expect(exportedURL.deletingLastPathComponent() == expectedDirectory)
+        #expect(FileManager.default.fileExists(atPath: exportedURL.path))
+        #expect(exportedURL.lastPathComponent == viewModel.suggestedDiagnosticsBundleFilename(date: fixedDate))
+    }
+
+    @Test func recentProblemEntries_returnsLatestWarningsAndErrorsOnly() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:00:00.000Z [INFO] [operator] opened settings modal
+        2026-03-08T00:00:01.000Z [WARN] [overlay-server] first warning
+        2026-03-08T00:00:02.000Z [ERROR] [polling] first error
+        2026-03-08T00:00:03.000Z [INFO] [operator] copied support summary
+        2026-03-08T00:00:04.000Z [WARN] [app-lifecycle] second warning
+        2026-03-08T00:00:05.000Z [ERROR] [polling] second error
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let recentProblems = store.recentProblemEntries(maxBytes: 16_000, maxCount: 3)
+
+        #expect(recentProblems.count == 3)
+        #expect(recentProblems[0].contains("[ERROR] [polling] first error"))
+        #expect(recentProblems[1].contains("[WARN] [app-lifecycle] second warning"))
+        #expect(recentProblems[2].contains("[ERROR] [polling] second error"))
+    }
+
+    @Test func recentProblemEntries_since_filtersOutOlderProblems() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:00:00.000Z [WARN] [overlay-server] old warning
+        2026-03-08T00:14:00.000Z [ERROR] [polling] recent error
+        2026-03-08T00:14:30.000Z [WARN] [app-lifecycle] recent warning
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let since = ISO8601DateFormatter().date(from: "2026-03-08T00:05:00Z")!
+        let recentProblems = store.recentProblemEntries(maxBytes: 16_000, maxCount: 5, since: since)
+
+        #expect(recentProblems.count == 2)
+        #expect(recentProblems[0].contains("recent error"))
+        #expect(recentProblems[1].contains("recent warning"))
+    }
+
+    @Test func recentProblemSummaries_dedupesRepeatedMessagesAndKeepsLatestOccurrence() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let logURL = tempDirectory.appendingPathComponent("runtime.log")
+        let store = RuntimeLogStore(fileURL: logURL)
+        let contents = """
+        2026-03-08T00:10:00.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:10:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:11:00.000Z [WARN] [overlay-server] retry requested while unavailable
+        2026-03-08T00:11:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        """
+        try contents.write(to: logURL, atomically: true, encoding: .utf8)
+
+        let summaries = store.recentProblemSummaries(maxBytes: 16_000, maxCount: 5)
+
+        #expect(summaries.count == 2)
+        #expect(summaries[0].line.contains("[ERROR] [polling] upstream 500 for pool-326016-2"))
+        #expect(summaries[0].count == 3)
+        #expect(summaries[0].renderedLine.contains("repeated 3x"))
+        #expect(summaries[1].line.contains("[WARN] [overlay-server] retry requested while unavailable"))
+        #expect(summaries[1].count == 1)
+    }
+
+    @Test func supportSummaryText_prioritizesActiveAlertsAboveDedupedRecentHistory() async throws {
+        await stopSharedOverlayServer()
+
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, configStore, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let appSupportRoot = configStore.settingsURL.deletingLastPathComponent()
+        let runtimeLogURL = RuntimeLogStore.defaultFileURL(appSupportOverride: appSupportRoot)
+        let store = RuntimeLogStore(fileURL: runtimeLogURL)
+        let summaryDate = ISO8601DateFormatter().date(from: "2026-03-08T00:15:00Z")!
+        let contents = """
+        2026-03-08T00:10:00.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:10:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        2026-03-08T00:11:00.000Z [WARN] [overlay-server] retry requested while unavailable
+        2026-03-08T00:11:30.000Z [ERROR] [polling] upstream 500 for pool-326016-2
+        """
+        try contents.write(to: runtimeLogURL, atomically: true, encoding: .utf8)
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/priority-check/vmix?bracket=false",
+            team1: "Team One",
+            team2: "Team Two",
+            matchNumber: "1"
+        )
+        StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let supportSummary = viewModel.supportSummaryText(runtimeLog: store, date: summaryDate)
+
+        #expect(supportSummary.contains("Active Alerts:"))
+        #expect(supportSummary.contains("[court 1] VBL API authentication failed (401)"))
+        #expect(supportSummary.contains("Recent Alerts (last 15m, deduped):"))
+        #expect(supportSummary.contains("repeated 3x"))
+
+        let activeRange = try #require(supportSummary.range(of: "Active Alerts:"))
+        let recentRange = try #require(supportSummary.range(of: "Recent Alerts (last 15m, deduped):"))
+        #expect(activeRange.lowerBound < recentRange.lowerBound)
+    }
+
+    @Test func supportSummaryText_includesActivePollEndpointForCurrentFailures() async throws {
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
+
+            let session = makeStubSession()
+            let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+            defer {
+                viewModel.stopServices()
+                cleanup()
+            }
+
+            let match = makeMatchItem(
+                url: "https://example.com/matches/1217131/vmix?bracket=false",
+                team1: "Team One",
+                team2: "Team Two",
+                matchNumber: "1"
+            )
+
+            StubURLProtocol.registerData(Data(), for: match.apiURL, statusCode: 401)
+
+            viewModel.replaceQueue(1, with: [match], startIndex: 0)
+            await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+            let supportSummary = viewModel.supportSummaryText(date: Date())
+
+            #expect(supportSummary.contains("Active Alerts:"))
+            #expect(supportSummary.contains("[court 1] VBL API authentication failed (401) [/matches/1217131/vmix?bracket=false]"))
+        }
+    }
+
+    @Test func supportSummaryText_includesWatchdogRecoveryDetailsAfterSelfHealing() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let recoveryDate = ISO8601DateFormatter().date(from: "2026-03-08T17:30:00Z")!
+        let recoveryReason = "overlay server unavailable while polling active on courts [1]"
+
+        viewModel.recordWatchdogRecoveryForTesting(
+            reason: recoveryReason,
+            at: recoveryDate
+        )
+
+        let supportSummary = viewModel.supportSummaryText(date: recoveryDate)
+
+        #expect(supportSummary.contains("Watchdog Recoveries: 1"))
+        #expect(supportSummary.contains(recoveryReason))
+        #expect(supportSummary.contains("2026-03-08T17:30:00Z"))
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct SingleInstanceGuardTests {
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForExplicitDuplicateInstanceEnvironment() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [
+                "MULTICOURTSCORE_ALLOW_DUPLICATE_INSTANCE": "1"
+            ]
+        )
+
+        #expect(shouldBypass)
+    }
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForUITestMode() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore", "--uitest-mode"],
+            environment: [:]
+        )
+
+        #expect(shouldBypass)
+    }
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsTrueForXCTestEnvironment() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [
+                "XCTestConfigurationFilePath": "/tmp/Test.xctestconfiguration"
+            ]
+        )
+
+        #expect(shouldBypass)
+    }
+
+    @Test func shouldBypassDuplicateLaunchGuard_returnsFalseForNormalLaunch() {
+        let shouldBypass = SingleInstanceGuard.shouldBypassDuplicateLaunchGuard(
+            arguments: ["MultiCourtScore"],
+            environment: [:]
+        )
+
+        #expect(!shouldBypass)
+    }
+
+    @Test func duplicateProcessID_returnsMatchingLiveSiblingProcess() {
+        let duplicatePID = SingleInstanceGuard.duplicateProcessID(
+            bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+            currentProcessID: 100,
+            runningApplications: [
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 100,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 200,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.example.OtherApp",
+                    processIdentifier: 300,
+                    isTerminated: false
+                )
+            ]
+        )
+
+        #expect(duplicatePID == 200)
+    }
+
+    @Test func duplicateProcessID_ignores_terminated_or_mismatched_processes() {
+        let duplicatePID = SingleInstanceGuard.duplicateProcessID(
+            bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+            currentProcessID: 100,
+            runningApplications: [
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 100,
+                    isTerminated: false
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.NathanHicks.MultiCourtScore",
+                    processIdentifier: 200,
+                    isTerminated: true
+                ),
+                RunningAppDescriptor(
+                    bundleIdentifier: "com.example.OtherApp",
+                    processIdentifier: 300,
+                    isTerminated: false
+                )
+            ]
+        )
+
+        #expect(duplicatePID == nil)
+    }
+}
+
+struct DashboardWindowRecoveryTests {
+
+    @Test func reopenRequestGate_allowsFirstRequestAndSuppressesImmediateDuplicate() {
+        var gate = DashboardReopenRequestGate(minimumInterval: 1.0)
+        let now = Date(timeIntervalSince1970: 100)
+
+        let firstRequestAllowed = gate.shouldRequestReopen(now: now)
+        let secondRequestAllowed = gate.shouldRequestReopen(now: now.addingTimeInterval(0.25))
+
+        #expect(firstRequestAllowed)
+        #expect(!secondRequestAllowed)
+    }
+
+    @Test func reopenRequestGate_allowsRequestAfterCooldown() {
+        var gate = DashboardReopenRequestGate(minimumInterval: 1.0)
+        let now = Date(timeIntervalSince1970: 100)
+
+        let firstRequestAllowed = gate.shouldRequestReopen(now: now)
+        let secondRequestAllowed = gate.shouldRequestReopen(now: now.addingTimeInterval(1.1))
+
+        #expect(firstRequestAllowed)
+        #expect(secondRequestAllowed)
+    }
+
+    @Test func applicationShouldTerminateAfterLastWindowClosed_returnsFalse() {
+        let delegate = DashboardAppDelegate()
+
+        #expect(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared) == false)
+    }
+
+    @Test func shouldReopenDashboard_returnsTrueWhenAppHasNoVisibleWindows() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(hasVisibleWindows: false)
+
+        #expect(shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsFalseWhenAppAlreadyHasVisibleWindows() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(hasVisibleWindows: true)
+
+        #expect(!shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsTrueWhenAllWindowsAreMiniaturizedOrHidden() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(
+            windows: [
+                WindowVisibilityDescriptor(isVisible: false, isMiniaturized: false),
+                WindowVisibilityDescriptor(isVisible: true, isMiniaturized: true)
+            ]
+        )
+
+        #expect(shouldReopen)
+    }
+
+    @Test func shouldReopenDashboard_returnsFalseWhenAnyWindowIsVisibleAndRestored() {
+        let shouldReopen = DashboardWindowRecovery.shouldReopenDashboard(
+            windows: [
+                WindowVisibilityDescriptor(isVisible: false, isMiniaturized: false),
+                WindowVisibilityDescriptor(isVisible: true, isMiniaturized: false)
+            ]
+        )
+
+        #expect(!shouldReopen)
+    }
+}
+
+@MainActor
+struct ScannerViewModelTests {
+
+    @Test func allURLs_normalizesAndDeduplicatesDuplicateSourcesPreservingOrder() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            " volleyballlife.com/event/34785/division/127872/round/261836/brackets ",
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets"
+        ]
+        viewModel.poolURLs = [
+            "volleyballlife.com/event/34785/division/127872/round/260841/pools",
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+        ]
+
+        #expect(
+            viewModel.allURLs == [
+                "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+                "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+            ]
+        )
+    }
+
+    @Test func canScan_staysTrueWithOnlyDuplicateEntriesBecauseDuplicatesCollapseToOneSource() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets"
+        ]
+        viewModel.poolURLs = [""]
+
+        #expect(viewModel.allURLs.count == 1)
+        #expect(viewModel.canScan)
+    }
+
+    @Test func duplicateURLCount_reportsCollapsedDuplicatesAcrossBracketAndPoolInputs() {
+        let viewModel = ScannerViewModel()
+        viewModel.bracketURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/261836/brackets",
+            " volleyballlife.com/event/34785/division/127872/round/261836/brackets "
+        ]
+        viewModel.poolURLs = [
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools",
+            "https://volleyballlife.com/event/34785/division/127872/round/260841/pools"
+        ]
+
+        #expect(viewModel.allURLs.count == 2)
+        #expect(viewModel.duplicateURLCount == 2)
+    }
+
+    @Test func deduplicatedMatches_collapsesOverlappingResultsByAPIURL() throws {
+        let bracketMatch = try makeScannerMatch(
+            index: 0,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let duplicateFromDirectPool = try makeScannerMatch(
+            index: 1,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let uniqueMatch = try makeScannerMatch(
+            index: 2,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false",
+            matchNumber: "3",
+            team1: "E / F",
+            team2: "G / H"
+        )
+
+        let result = ScannerViewModel.deduplicatedMatches([
+            bracketMatch,
+            duplicateFromDirectPool,
+            uniqueMatch
+        ])
+
+        #expect(result.removedCount == 1)
+        #expect(result.matches.count == 2)
+        #expect(result.matches.map(\.apiURL) == [
+            "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false"
+        ])
+    }
+
+    @Test func finalizeScanResults_tracksCollapsedOverlappingMatchCount() throws {
+        let viewModel = ScannerViewModel()
+        let primary = try makeScannerMatch(
+            index: 0,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let overlapping = try makeScannerMatch(
+            index: 1,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/1217131/vmix?bracket=false",
+            matchNumber: "2",
+            team1: "A / B",
+            team2: "C / D"
+        )
+        let unique = try makeScannerMatch(
+            index: 2,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/pool-326016-3/vmix?bracket=false",
+            matchNumber: "3",
+            team1: "E / F",
+            team2: "G / H"
+        )
+
+        viewModel.finalizeScanResults([primary, overlapping, unique])
+
+        #expect(viewModel.scanResults.count == 2)
+        #expect(viewModel.overlappingMatchCount == 1)
+        #expect(viewModel.scanProgress == "Found 2 matches total")
+    }
+
+    private func makeScannerMatch(
+        index: Int,
+        apiURL: String,
+        matchNumber: String,
+        team1: String,
+        team2: String
+    ) throws -> ScannerViewModel.VBLMatch {
+        let payload: [String: Any] = [
+            "index": index,
+            "team1": team1,
+            "team2": team2,
+            "match_number": matchNumber,
+            "court": "Court 1",
+            "startTime": "9:40AM",
+            "startDate": "Fri",
+            "api_url": apiURL
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        return try JSONDecoder().decode(ScannerViewModel.VBLMatch.self, from: data)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct PollFailureLoggingTests {
+
+    @Test func repeatedPollFailureLogging_suppressesDuplicatesUntilReminderWindow() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let fingerprint = "authentication failed (401) [/matches/1217131/vmix?bracket=false]"
+        let start = ISO8601DateFormatter().date(from: "2026-03-08T18:00:00Z")!
+
+        let firstDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start
+        )
+        #expect(firstDecision == 0)
+
+        let duplicateDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start.addingTimeInterval(30)
+        )
+        #expect(duplicateDecision == nil)
+
+        let stateAfterDuplicate = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(stateAfterDuplicate.fingerprint == fingerprint)
+        #expect(stateAfterDuplicate.suppressedCount == 1)
+
+        let reminderDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: fingerprint,
+            at: start.addingTimeInterval(121)
+        )
+        #expect(reminderDecision == 1)
+
+        let stateAfterReminder = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(stateAfterReminder.suppressedCount == 0)
+    }
+
+    @Test func repeatedPollFailureLogging_resetsImmediatelyWhenFailureChanges() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer {
+            viewModel.stopServices()
+            cleanup()
+        }
+
+        let start = ISO8601DateFormatter().date(from: "2026-03-08T18:30:00Z")!
+
+        _ = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "upstream unavailable (500) [/matches/one/vmix?bracket=false]",
+            at: start
+        )
+        _ = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "upstream unavailable (500) [/matches/one/vmix?bracket=false]",
+            at: start.addingTimeInterval(20)
+        )
+
+        let changedDecision = viewModel.registerPollFailureForTesting(
+            courtId: 1,
+            fingerprint: "network unavailable [/matches/one/vmix?bracket=false]",
+            at: start.addingTimeInterval(40)
+        )
+        #expect(changedDecision == 0)
+
+        let changedState = try #require(viewModel.currentPollFailureLogStateForTesting(courtId: 1))
+        #expect(changedState.fingerprint == "network unavailable [/matches/one/vmix?bracket=false]")
+        #expect(changedState.suppressedCount == 0)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct DashboardViewLogicTests {
+
+    @Test func dashboardCourtStatusCounts_onlyCountsExactFilterStatuses() {
+        var liveCourt = Court.create(id: 1)
+        liveCourt.status = .live
+
+        var waitingCourt = Court.create(id: 2)
+        waitingCourt.status = .waiting
+
+        var idleCourt = Court.create(id: 3)
+        idleCourt.status = .idle
+
+        var finishedCourt = Court.create(id: 4)
+        finishedCourt.status = .finished
+
+        var offlineCourt = Court.create(id: 5)
+        offlineCourt.status = .error
+
+        let courts = [liveCourt, waitingCourt, idleCourt, finishedCourt, offlineCourt]
+
+        let counts = dashboardCourtStatusCounts(for: courts)
+        let supplemental = dashboardSupplementalStatusCounts(for: courts)
+
+        #expect(counts[.all] == 5)
+        #expect(counts[.live] == 1)
+        #expect(counts[.waiting] == 1)
+        #expect(counts[.idle] == 1)
+        #expect(supplemental.finished == 1)
+        #expect(supplemental.offline == 1)
+    }
+
+    @Test func makeDashboardHealthBannerModel_prefersStartupError() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "stopped",
+            startupError: "Port 8787 unavailable",
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [2],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .failed(reason: "ignored")
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Overlay server unavailable. Port 8787 unavailable",
+                tone: .error,
+                systemImageName: "exclamationmark.octagon.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsStalePollingWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [2, 4],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .connected
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Polling is stale on courts 2, 4.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsCourtErrorWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: false,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [],
+            errorCourtIds: [3],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: false,
+            signalRStatus: .disabled
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "Polling failed on court 3.",
+                tone: .error,
+                systemImageName: "exclamationmark.octagon.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsSignalRFailureWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Failed: Authentication failed",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .failed(reason: "Authentication failed")
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "SignalR disconnected. Polling continues. Authentication failed",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsMissingCredentialsWarning() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "No Credentials",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .noCredentials
+        )
+
+        #expect(
+            banner == DashboardHealthBannerModel(
+                message: "SignalR is enabled but credentials are missing. Polling continues.",
+                tone: .warning,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeDashboardHealthBannerModel_returnsNilWhenHealthy() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 12,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 0,
+            lastWatchdogRecoveryAt: nil,
+            lastWatchdogRecoveryReason: nil,
+            stalePollingCourtIds: [],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        let banner = makeDashboardHealthBannerModel(
+            health: health,
+            signalREnabled: true,
+            signalRStatus: .connected
+        )
+
+        #expect(banner == nil)
+    }
+
+    @Test func formatOverlayHealthUptime_formatsReadableDurations() {
+        #expect(formatOverlayHealthUptime(0) == "0m")
+        #expect(formatOverlayHealthUptime(42) == "42s")
+        #expect(formatOverlayHealthUptime(180) == "3m")
+        #expect(formatOverlayHealthUptime(7_560) == "2h 6m")
+    }
+
+    @Test func dashboardHealthRuntimeSummary_includesUptimeAndWatchdogRecoveries() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "ok",
+            uptime: 7_560,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 2,
+            lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
+            lastWatchdogRecoveryReason: "court 1 polling stale",
+            stalePollingCourtIds: [],
+            errorCourtIds: [],
+            courts: []
+        )
+
+        #expect(dashboardHealthRuntimeSummary(for: health) == "up 2h 6m  |  watchdog 2x")
+    }
+
+    @Test func dashboardHealthStatusText_prefersCurrentDegradedCondition() {
+        let health = OverlayHealthSnapshot(
+            generatedAt: "2026-03-07T00:00:00Z",
+            status: "degraded",
+            uptime: 600,
+            serverStatus: "running",
+            startupError: nil,
+            signalRStatus: "Connected",
+            signalREnabled: true,
+            port: 8787,
+            courtCount: 4,
+            watchdogRestartCount: 1,
+            lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
+            lastWatchdogRecoveryReason: "court 1 polling stale",
+            stalePollingCourtIds: [],
+            errorCourtIds: [2, 4],
+            courts: []
+        )
+
+        #expect(dashboardHealthStatusText(for: health) == "Degraded: error courts 2, 4")
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct SignalRStatusHealthTests {
+
+    @Test func degradesHealthWhenEnabled_onlyForOperatorActionableFailures() {
+        #expect(!SignalRStatus.disabled.degradesHealthWhenEnabled)
+        #expect(SignalRStatus.noCredentials.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.connecting.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.connected.degradesHealthWhenEnabled)
+        #expect(!SignalRStatus.reconnecting(attempt: 2).degradesHealthWhenEnabled)
+        #expect(SignalRStatus.failed(reason: "Authentication failed").degradesHealthWhenEnabled)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct OverlayServerLifecycleTests {
+
+    @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
+        await stopSharedOverlayServer()
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+        defer { close(lockedSocket) }
+
+        viewModel.appSettings.serverPort = occupiedPort
+        viewModel.startServices()
+
+        let didSurfaceError = await waitUntil {
+            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+        }
+
+        #expect(didSurfaceError)
+        #expect(!viewModel.serverRunning)
+        let configError = try #require(configErrorMessage(from: viewModel.error))
+        #expect(configError.contains("Port \(occupiedPort) unavailable"))
+        #expect(configError.contains("Another app or MultiCourtScore instance"))
+
+        viewModel.stopServices()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+    }
+
+    @Test func startAllPolling_doesNotStartQueuesWhenOverlayServerFailsToStart() async throws {
+        await stopSharedOverlayServer()
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+        defer { close(lockedSocket) }
+
+        viewModel.appSettings.serverPort = occupiedPort
+        viewModel.replaceQueue(1, with: [
+            makeMatchItem(
+                url: "https://example.com/match/occupied-port",
+                team1: "Team A",
+                team2: "Team B",
+                matchNumber: "1"
+            )
+        ])
+
+        viewModel.startAllPolling()
+
+        let didSurfaceError = await waitUntil {
+            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+        }
+
+        #expect(didSurfaceError)
+        #expect(!viewModel.serverRunning)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.status == .idle)
+        #expect(court.lastPollTime == nil)
+        #expect(court.errorMessage == nil)
+    }
+
+    @Test func start_servesHealthEndpointOnFreePort() async throws {
+        await stopSharedOverlayServer()
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let freePort = try reserveFreePort()
+        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+
+        #expect(WebSocketHub.shared.isRunning)
+        #expect(WebSocketHub.shared.startupError == nil)
+
+        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/health"))
+        let didRespond = await waitUntilAsync {
+            do {
+                let (_, response) = try await URLSession.shared.data(from: url)
+                return (response as? HTTPURLResponse)?.statusCode == 200
+            } catch {
+                return false
+            }
+        }
+        #expect(didRespond)
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        #expect(httpResponse.statusCode == 200)
+
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["status"] as? String == "ok")
+        #expect(json["serverStatus"] as? String == "running")
+        #expect(json["port"] as? Int == freePort)
+        #expect(json["signalRStatus"] as? String == SignalRStatus.disabled.displayLabel)
+        #expect(json["signalREnabled"] as? Bool == false)
+        let courts = try #require(json["courts"] as? [[String: Any]])
+        #expect(courts.count == viewModel.courts.count)
+
+        await stopSharedOverlayServer()
+        #expect(!WebSocketHub.shared.isRunning)
+    }
+
+    @Test func watchdog_restartsOverlayServerWhenPollingIsActiveAndServerStops() async throws {
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
+
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
+
+            let freePort = try reserveFreePort()
+            viewModel.appSettings.serverPort = freePort
+            viewModel.replaceQueue(1, with: [
+                makeMatchItem(
+                    url: "https://example.com/matches/watchdog-restart",
+                    team1: "Team A",
+                    team2: "Team B",
+                    matchNumber: "1"
+                )
+            ])
+
+            let didStart = await viewModel.ensureServicesRunning()
+            #expect(didStart)
+            viewModel.setPollingStateForTesting(courtId: 1, status: .waiting)
+
+            await stopSharedOverlayServer()
+            #expect(!WebSocketHub.shared.isRunning)
+
+            await viewModel.runWatchdogCheckForTesting()
+
+            let didRecover = await waitUntil {
+                WebSocketHub.shared.isRunning && viewModel.serverRunning
+            }
+            #expect(didRecover)
+
+            let healthSnapshot = WebSocketHub.shared.currentHealthSnapshot(port: freePort)
+            #expect(healthSnapshot.watchdogRestartCount == 1)
+            #expect(healthSnapshot.lastWatchdogRecoveryReason == "overlay server unavailable while polling active on courts [1]")
+            #expect(healthSnapshot.lastWatchdogRecoveryAt != nil)
+
+            await stopSharedOverlayServer()
+        }
+    }
+
+    @Test func debugLogs_returnsRecentRuntimeEntries() async throws {
+        await stopSharedOverlayServer()
+
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let freePort = try reserveFreePort()
+        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+
+        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/debug/logs"))
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let httpResponse = try #require(response as? HTTPURLResponse)
+        #expect(httpResponse.statusCode == 200)
+
+        let body = String(decoding: data, as: UTF8.self)
+        #expect(body.contains("Path:"))
+        #expect(body.contains("[overlay-server]"))
+        #expect(body.contains("running at http://localhost"))
+
+        await stopSharedOverlayServer()
+    }
+}
+
 // MARK: - Test Helpers
 
 private func makeSnapshot(
@@ -694,4 +3842,473 @@ private func makeSnapshot(
         timestamp: Date(),
         setsToWin: setsToWin
     )
+}
+
+private func makeDayScopedHydrateJSON() -> [String: Any] {
+    [
+        "teams": [
+            makeHydrateTeam(id: 11, players: [("Alice", "Smith"), ("Beth", "Jones")]),
+            makeHydrateTeam(id: 22, players: [("Cara", "Diaz"), ("Dana", "Reed")]),
+            makeHydrateTeam(id: 33, players: [("Eva", "Long"), ("Finn", "West")]),
+            makeHydrateTeam(id: 44, players: [("Gina", "Shaw"), ("Hale", "Young")])
+        ],
+        "days": [
+            [
+                "brackets": [
+                    [
+                        "matches": [
+                            [
+                                "id": 101,
+                                "homeTeamId": 11,
+                                "awayTeamId": 22,
+                                "games": [
+                                    ["id": 1001],
+                                    ["id": 1002]
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                "flights": [
+                    [
+                        "pools": [
+                            [
+                                "matches": [
+                                    [
+                                        "id": 201,
+                                        "homeTeam": ["teamId": 33],
+                                        "awayTeam": ["teamId": 44],
+                                        "games": [
+                                            ["id": 2001]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ]
+}
+
+private func makeLegacyHydrateJSON() -> [String: Any] {
+    [
+        "brackets": [
+            [
+                "matches": [
+                    ["id": 301]
+                ]
+            ]
+        ],
+        "pools": [
+            [
+                "matches": [
+                    ["id": 401]
+                ]
+            ]
+        ]
+    ]
+}
+
+@MainActor
+private func makeIsolatedAppViewModel(
+    apiClient: APIClient = APIClient(),
+    notificationService: NotificationSending? = nil,
+    signalRCredentialsProvider: (() -> ConfigStore.VBLCredentials?)? = nil,
+    signalRClientFactory: ((any SignalRDelegate) -> any SignalRClienting)? = nil
+) -> (AppViewModel, ConfigStore, () -> Void) {
+    let tempRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("MultiCourtScoreTests-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+
+    let configStore = ConfigStore(appSupportOverride: tempRoot)
+    let resolvedNotificationService = notificationService ?? RecordingNotificationService()
+    let viewModel = AppViewModel(
+        runtimeMode: .live,
+        webSocketHub: .shared,
+        configStore: configStore,
+        apiClient: apiClient,
+        notificationService: resolvedNotificationService,
+        signalRCredentialsProvider: signalRCredentialsProvider,
+        signalRClientFactory: signalRClientFactory
+    )
+    let cleanup: () -> Void = {
+        viewModel.stopServices()
+        try? FileManager.default.removeItem(at: tempRoot)
+    }
+    return (viewModel, configStore, cleanup)
+}
+
+private func makeMatchItem(
+    url: String,
+    team1: String?,
+    team2: String?,
+    matchNumber: String?,
+    courtNumber: String? = nil,
+    physicalCourt: String? = nil,
+    scheduledTime: String? = nil,
+    setsToWin: Int? = nil,
+    pointCap: Int? = nil,
+    gameIds: [Int]? = nil,
+    tournamentId: Int? = nil,
+    divisionId: Int? = nil
+) -> MatchItem {
+    MatchItem(
+        apiURL: URL(string: url)!,
+        team1Name: team1,
+        team2Name: team2,
+        scheduledTime: scheduledTime,
+        matchNumber: matchNumber,
+        courtNumber: courtNumber,
+        physicalCourt: physicalCourt,
+        setsToWin: setsToWin,
+        pointCap: pointCap,
+        divisionId: divisionId,
+        tournamentId: tournamentId,
+        gameIds: gameIds
+    )
+}
+
+private func configErrorMessage(from error: AppError?) -> String? {
+    guard case let .configError(message)? = error else { return nil }
+    return message
+}
+
+@MainActor
+private func stopSharedOverlayServer() async {
+    WebSocketHub.shared.stop()
+    await WebSocketHub.shared.waitForShutdownIfNeeded()
+}
+
+private actor SharedOverlayServerTestLock {
+    static let shared = SharedOverlayServerTestLock()
+
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !isLocked {
+            isLocked = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isLocked = false
+            return
+        }
+
+        let nextWaiter = waiters.removeFirst()
+        nextWaiter.resume()
+    }
+}
+
+private func withSharedOverlayServerTestScope<T>(
+    _ operation: () async throws -> T
+) async rethrows -> T {
+    await SharedOverlayServerTestLock.shared.acquire()
+    do {
+        let result = try await operation()
+        await SharedOverlayServerTestLock.shared.release()
+        return result
+    } catch {
+        await SharedOverlayServerTestLock.shared.release()
+        throw error
+    }
+}
+
+private func reserveFreePort() throws -> Int {
+    let (socket, port) = try reserveListeningSocket()
+    close(socket)
+    return port
+}
+
+private func makeStubSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [StubURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+private func makeScoreDict(
+    status: String,
+    home: Int,
+    away: Int,
+    setNumber: Int = 1
+) -> [String: Any] {
+    [
+        "status": status,
+        "setNumber": setNumber,
+        "score": [
+            "home": home,
+            "away": away
+        ]
+    ]
+}
+
+private func makeVMixArrayData(
+    team1Name: String,
+    team2Name: String,
+    game1: (Int, Int),
+    game2: (Int, Int) = (0, 0),
+    game3: (Int, Int) = (0, 0)
+) -> Data {
+    let payload: [[String: Any]] = [
+        [
+            "teamName": team1Name,
+            "game1": game1.0,
+            "game2": game2.0,
+            "game3": game3.0
+        ],
+        [
+            "teamName": team2Name,
+            "game1": game1.1,
+            "game2": game2.1,
+            "game3": game3.1
+        ]
+    ]
+
+    return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+}
+
+private func shellOutput(executable: String, arguments: [String]) throws -> String {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    try process.run()
+    process.waitUntilExit()
+
+    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+    guard process.terminationStatus == 0 else {
+        let errorText = String(data: errorData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        throw DiagnosticsBundleError.archiveFailed(
+            errorText?.isEmpty == false ? errorText! : "Command failed: \(executable)"
+        )
+    }
+
+    return String(data: outputData, encoding: .utf8) ?? ""
+}
+
+private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private enum StubbedResponse {
+        case success(statusCode: Int, data: Data)
+        case failure(Error)
+    }
+    private static var responses: [URL: StubbedResponse] = [:]
+
+    static func reset() {
+        lock.lock()
+        responses.removeAll()
+        lock.unlock()
+    }
+
+    static func registerJSON(_ json: [String: Any], for url: URL, statusCode: Int = 200) {
+        let data = (try? JSONSerialization.data(withJSONObject: json, options: [])) ?? Data()
+        lock.lock()
+        responses[url] = .success(statusCode: statusCode, data: data)
+        lock.unlock()
+    }
+
+    static func registerData(_ data: Data, for url: URL, statusCode: Int = 200) {
+        lock.lock()
+        responses[url] = .success(statusCode: statusCode, data: data)
+        lock.unlock()
+    }
+
+    static func registerFailure(_ error: Error, for url: URL) {
+        lock.lock()
+        responses[url] = .failure(error)
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+
+        Self.lock.lock()
+        let stub = Self.responses[url]
+        Self.lock.unlock()
+
+        guard let stub else {
+            client?.urlProtocol(self, didFailWithError: URLError(.fileDoesNotExist))
+            return
+        }
+
+        switch stub {
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
+        case .success(let statusCode, let data):
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+@MainActor
+private final class RecordingNotificationService: NotificationSending {
+    private(set) var courtChangeEvents: [CourtChangeEvent] = []
+    private(set) var completedMatchEvents: [(matchLabel: String, winner: String, cameraId: Int)] = []
+
+    func sendCourtChangeAlert(_ event: CourtChangeEvent) async {
+        courtChangeEvents.append(event)
+    }
+
+    func sendMatchCompleteAlert(matchLabel: String, winner: String, cameraId: Int) async {
+        completedMatchEvents.append((matchLabel, winner, cameraId))
+    }
+}
+
+actor RecordingSignalRClient: SignalRClienting {
+    private var recordedConnectCalls: [ConfigStore.VBLCredentials] = []
+    private var recordedSubscriptions: [(tournamentId: Int, divisionId: Int)] = []
+    private var recordedDisconnectCount = 0
+
+    func connect(credentials: ConfigStore.VBLCredentials) {
+        recordedConnectCalls.append(credentials)
+    }
+
+    func disconnect() {
+        recordedDisconnectCount += 1
+    }
+
+    func subscribeToTournament(tournamentId: Int, divisionId: Int) async {
+        recordedSubscriptions.append((tournamentId, divisionId))
+    }
+
+    func connectCalls() -> [ConfigStore.VBLCredentials] {
+        recordedConnectCalls
+    }
+
+    func subscriptions() -> [(tournamentId: Int, divisionId: Int)] {
+        recordedSubscriptions
+    }
+
+    func disconnectCount() -> Int {
+        recordedDisconnectCount
+    }
+}
+
+private func reserveListeningSocket() throws -> (Int32, Int) {
+    let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
+    guard socketDescriptor >= 0 else {
+        throw POSIXError(.EIO)
+    }
+
+    var reuseAddr: Int32 = 1
+    setsockopt(socketDescriptor, SOL_SOCKET, SO_REUSEADDR, &reuseAddr, socklen_t(MemoryLayout<Int32>.size))
+
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.stride)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = in_port_t(0).bigEndian
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+
+    let bindResult = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            bind(socketDescriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.stride))
+        }
+    }
+    guard bindResult == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    guard listen(socketDescriptor, SOMAXCONN) == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    var boundAddress = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.stride)
+    let nameResult = withUnsafeMutablePointer(to: &boundAddress) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(socketDescriptor, $0, &length)
+        }
+    }
+    guard nameResult == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        close(socketDescriptor)
+        throw POSIXError(code)
+    }
+
+    return (socketDescriptor, Int(UInt16(bigEndian: boundAddress.sin_port)))
+}
+
+@MainActor
+private func waitUntil(
+    timeout: TimeInterval = 3.0,
+    pollIntervalNanoseconds: UInt64 = 50_000_000,
+    condition: @escaping @MainActor () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    }
+    return condition()
+}
+
+private func waitUntilAsync(
+    timeout: TimeInterval = 3.0,
+    pollIntervalNanoseconds: UInt64 = 50_000_000,
+    condition: @escaping () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+    }
+    return await condition()
+}
+
+private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: Any] {
+    [
+        "id": id,
+        "players": players.map { firstName, lastName in
+            [
+                "firstName": firstName,
+                "lastName": lastName
+            ]
+        }
+    ]
 }

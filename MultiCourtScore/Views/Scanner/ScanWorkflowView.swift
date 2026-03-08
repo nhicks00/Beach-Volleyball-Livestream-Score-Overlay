@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 // MARK: - Workflow Steps
 
@@ -39,7 +40,7 @@ enum ScanWorkflowStep: Int, CaseIterable {
 struct ScanWorkflowView: View {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
-    let onClose: (() -> Void)?
+    let onClose: ((String) -> Void)?
 
     @State private var currentStep: ScanWorkflowStep = .scanSources
     @State private var matchAssignments: [UUID: Int] = [:]
@@ -50,8 +51,11 @@ struct ScanWorkflowView: View {
     private var viewModel: ScannerViewModel { appViewModel.scannerViewModel }
     private var scanResults: [ScannerViewModel.VBLMatch] { viewModel.scanResults }
     private var groupedByCourt: [String: [ScannerViewModel.VBLMatch]] { viewModel.groupedByCourt }
+    private var overlapWarningText: String {
+        "Collapsed \(viewModel.overlappingMatchCount) overlapping match result\(viewModel.overlappingMatchCount == 1 ? "" : "s") from overlapping scan sources"
+    }
 
-    init(onClose: (() -> Void)? = nil) {
+    init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
     }
 
@@ -63,6 +67,9 @@ struct ScanWorkflowView: View {
             // Main content
             VStack(spacing: 0) {
                 stepHeader
+                if viewModel.overlappingMatchCount > 0 {
+                    overlapWarningBanner
+                }
                 stepContent
                 stepFooter
             }
@@ -76,7 +83,12 @@ struct ScanWorkflowView: View {
             maxHeight: .infinity
         )
         .background(AppColors.background)
-        .onExitCommand { closeWorkflow() }
+        .onExitCommand { closeWorkflow(reason: "escape") }
+        .background(
+            EscapeKeyMonitor {
+                closeWorkflow(reason: "escape")
+            }
+        )
         .onAppear {
             if !viewModel.scanResults.isEmpty {
                 currentStep = .selectLiveCourts
@@ -95,12 +107,13 @@ struct ScanWorkflowView: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(AppColors.textPrimary)
                 Spacer()
-                Button { closeWorkflow() } label: {
+                Button { closeWorkflow(reason: "close-button") } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(AppColors.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("scan.close.sidebar")
             }
             .padding(16)
 
@@ -191,7 +204,7 @@ struct ScanWorkflowView: View {
             }
             Spacer()
 
-            Button { closeWorkflow() } label: {
+            Button { closeWorkflow(reason: "close-button") } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(AppColors.textSecondary)
@@ -199,6 +212,7 @@ struct ScanWorkflowView: View {
                     .background(Circle().fill(AppColors.surfaceHover))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("scan.close")
             .help("Close (Esc)")
         }
         .padding(AppLayout.contentPadding)
@@ -207,6 +221,30 @@ struct ScanWorkflowView: View {
             Divider().overlay(AppColors.border),
             alignment: .bottom
         )
+    }
+
+    private var overlapWarningBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(AppColors.warning)
+
+            Text(overlapWarningText)
+                .font(AppTypography.caption)
+                .foregroundColor(AppColors.warning)
+
+            Spacer()
+        }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 10)
+        .background(AppColors.warning.opacity(0.12))
+        .overlay(
+            Divider().overlay(AppColors.warning.opacity(0.35)),
+            alignment: .bottom
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Overlapping scan results warning")
+        .accessibilityValue(overlapWarningText)
+        .accessibilityIdentifier("scanner.overlapWarning")
     }
 
     private var stepSubtitle: String {
@@ -269,6 +307,7 @@ struct ScanWorkflowView: View {
                     .font(AppTypography.callout)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("scanner.footer.back")
             }
 
             Spacer()
@@ -284,6 +323,7 @@ struct ScanWorkflowView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(AppColors.success)
                 .disabled(matchAssignments.values.filter { $0 > 0 }.isEmpty)
+                .accessibilityIdentifier("scanner.footer.import")
             } else if currentStep != .scanSources {
                 Button {
                     if let next = ScanWorkflowStep(rawValue: currentStep.rawValue + 1) {
@@ -307,6 +347,7 @@ struct ScanWorkflowView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AppColors.primary)
+                .accessibilityIdentifier("scanner.footer.next")
             }
         }
         .padding(.horizontal, AppLayout.contentPadding)
@@ -348,9 +389,9 @@ struct ScanWorkflowView: View {
         mappingStore.updateUnmappedCourts(from: selectedCourtNames)
     }
 
-    private func closeWorkflow() {
+    private func closeWorkflow(reason: String) {
         if let onClose {
-            onClose()
+            onClose(reason)
         } else {
             dismiss()
         }
@@ -382,10 +423,70 @@ struct ScanWorkflowView: View {
             let droppedCount = sortedMatches.filter { $0.apiURL == nil || $0.apiURL?.isEmpty == true }.count
             let matchItems = viewModel.createMatchItems(from: sortedMatches)
             print("[Import] Overlay \(overlayId): \(sortedMatches.count) matches → \(matchItems.count) items queued, \(droppedCount) dropped (no apiURL)")
-            appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
+
+            // Use merge when the court already has an active queue to avoid
+            // disrupting live polling/scoring.  Fresh (empty/idle) courts get
+            // a full replacement so activeIndex starts at 0.
+            let court = appViewModel.courts.first { $0.id == overlayId }
+            let hasActiveQueue = court.map { !$0.queue.isEmpty && $0.status != .idle } ?? false
+            if hasActiveQueue {
+                appViewModel.mergeQueue(overlayId, with: matchItems)
+            } else {
+                appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
+            }
         }
 
-        closeWorkflow()
+        closeWorkflow(reason: "import-complete")
+    }
+}
+
+private struct EscapeKeyMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEscape: onEscape)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onEscape = onEscape
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator {
+        var onEscape: () -> Void
+        private var monitor: Any?
+
+        init(onEscape: @escaping () -> Void) {
+            self.onEscape = onEscape
+        }
+
+        func start() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+                guard let self else { return event }
+                if event.keyCode == 53 {
+                    self.onEscape()
+                    return nil
+                }
+                return event
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
     }
 }
 
@@ -405,6 +506,7 @@ struct URLEntryStep: View {
                         subtitle: "\(viewModel.bracketURLs.filter { !$0.isEmpty }.count) entered",
                         urls: $viewModel.bracketURLs,
                         placeholder: "https://volleyballlife.com/.../brackets",
+                        identifierPrefix: "scanner.bracket",
                         onAddURL: { viewModel.bracketURLs.append("") }
                     )
 
@@ -414,6 +516,7 @@ struct URLEntryStep: View {
                         subtitle: "\(viewModel.poolURLs.filter { !$0.isEmpty }.count) entered",
                         urls: $viewModel.poolURLs,
                         placeholder: "https://volleyballlife.com/.../pools",
+                        identifierPrefix: "scanner.pool",
                         onAddURL: { viewModel.poolURLs.append("") }
                     )
                 }
@@ -431,6 +534,7 @@ struct URLInputCard: View {
     let subtitle: String
     @Binding var urls: [String]
     let placeholder: String
+    let identifierPrefix: String
     let onAddURL: () -> Void
 
     var body: some View {
@@ -445,18 +549,21 @@ struct URLInputCard: View {
                 Text(subtitle)
                     .font(AppTypography.caption)
                     .foregroundColor(AppColors.textMuted)
+                    .accessibilityIdentifier("\(identifierPrefix).count")
 
                 Button(action: onAddURL) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(AppColors.primary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("\(identifierPrefix).add")
             }
 
             ForEach(urls.indices, id: \.self) { index in
                 HStack(spacing: 8) {
                     TextField(placeholder, text: $urls[index])
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("\(identifierPrefix).url.\(index)")
 
                     if !urls[index].isEmpty {
                         Button {
@@ -466,6 +573,7 @@ struct URLInputCard: View {
                                 .foregroundColor(AppColors.error)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("\(identifierPrefix).clear.\(index)")
                     }
                 }
             }
@@ -561,6 +669,33 @@ struct ScanActionCard: View {
                 scanButton
             }
 
+            if viewModel.duplicateURLCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(AppColors.warning)
+
+                    Text("Ignoring \(viewModel.duplicateURLCount) duplicate URL\(viewModel.duplicateURLCount == 1 ? "" : "s")")
+                        .font(AppTypography.caption)
+                        .foregroundColor(AppColors.warning)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppLayout.smallCornerRadius)
+                        .fill(AppColors.warning.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppLayout.smallCornerRadius)
+                        .stroke(AppColors.warning.opacity(0.35), lineWidth: 1)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Duplicate URL warning")
+                .accessibilityValue("\(viewModel.duplicateURLCount) duplicate URL\(viewModel.duplicateURLCount == 1 ? "" : "s") ignored")
+                .accessibilityIdentifier("scanner.duplicateWarning")
+            }
+
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(AppTypography.caption)
@@ -608,6 +743,7 @@ struct ScanActionCard: View {
         }
         .buttonStyle(.plain)
         .disabled(!viewModel.canScan)
+        .accessibilityIdentifier("scanner.startScan")
     }
 }
 

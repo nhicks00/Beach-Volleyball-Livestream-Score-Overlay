@@ -40,6 +40,7 @@ class VBLMatch:
     type_detail: Optional[str] = None
     # Match format fields
     sets_to_win: int = 2  # Default to best-of-3 (2 sets to win)
+    sets_to_play: Optional[int] = None  # Non-None = "play exactly N sets" (pool play)
     points_per_set: int = 21  # Points needed to win a set
     point_cap: Optional[int] = None  # Point cap (e.g., 23), None means win by 2
     format_text: Optional[str] = None  # Raw format text from page
@@ -62,6 +63,7 @@ class VBLMatch:
             'match_type': self.match_type,
             'type_detail': self.type_detail,
             'setsToWin': self.sets_to_win,
+            'setsToPlay': self.sets_to_play,
             'pointsPerSet': self.points_per_set,
             'pointCap': self.point_cap,
             'formatText': self.format_text,

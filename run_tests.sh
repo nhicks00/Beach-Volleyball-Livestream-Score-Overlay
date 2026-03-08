@@ -47,7 +47,7 @@ run_python_unit_tests() {
         PYTHON="$VENV_PYTHON"
     fi
 
-    if $PYTHON -m pytest tests/test_parse_format.py tests/test_core.py tests/test_api_scraper.py -v 2>&1; then
+    if PYTHONPATH="$SCRAPERS_DIR" "$PYTHON" -m pytest tests/test_parse_format.py tests/test_core.py tests/test_api_scraper.py -v 2>&1; then
         echo -e "${GREEN}Python unit tests PASSED${NC}"
         return 0
     else
@@ -70,7 +70,7 @@ run_python_integration_tests() {
         return 1
     fi
 
-    if $VENV_PYTHON -m pytest tests/test_integration.py -v --timeout=120 2>&1; then
+    if PYTHONPATH="$SCRAPERS_DIR" "$VENV_PYTHON" -m pytest tests/test_integration.py -v -m slow 2>&1; then
         echo -e "${GREEN}Integration tests PASSED${NC}"
         return 0
     else
@@ -103,9 +103,9 @@ setup_venv() {
     echo -e "${GREEN}Venv created at $VENV_DIR${NC}"
 
     # Install dependencies
-    echo "Installing playwright..."
+    echo "Installing Python dependencies..."
     "$VENV_PYTHON" -m pip install --upgrade pip
-    "$VENV_PYTHON" -m pip install playwright pytest pytest-asyncio
+    "$VENV_PYTHON" -m pip install -r "$PROJECT_DIR/requirements.txt"
     "$VENV_PYTHON" -m playwright install chromium
 
     echo -e "${GREEN}Setup complete!${NC}"
