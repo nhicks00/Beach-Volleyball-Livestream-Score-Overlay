@@ -712,6 +712,10 @@ struct QueueMatchRow: View {
 
     @State private var isHovered = false
 
+    private var rowIdentifierPrefix: String {
+        "queueEditor.row.\(index)"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Drag handle
@@ -813,6 +817,7 @@ struct QueueMatchRow: View {
                 .menuStyle(.borderlessButton)
                 .frame(width: 56, alignment: .center)
                 .help("Move to another camera")
+                .accessibilityIdentifier("\(rowIdentifierPrefix).move")
             } else {
                 Spacer().frame(width: 56)
             }
@@ -826,6 +831,7 @@ struct QueueMatchRow: View {
                 .buttonStyle(.borderless)
                 .disabled(isFirst)
                 .foregroundColor(isFirst ? AppColors.textMuted : AppColors.textSecondary)
+                .accessibilityIdentifier("\(rowIdentifierPrefix).up")
 
                 Button { onMoveDown() } label: {
                     Image(systemName: "chevron.down")
@@ -834,6 +840,7 @@ struct QueueMatchRow: View {
                 .buttonStyle(.borderless)
                 .disabled(isLast)
                 .foregroundColor(isLast ? AppColors.textMuted : AppColors.textSecondary)
+                .accessibilityIdentifier("\(rowIdentifierPrefix).down")
 
                 Button { onDelete() } label: {
                     Image(systemName: "trash")
@@ -841,6 +848,7 @@ struct QueueMatchRow: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundColor(AppColors.error.opacity(0.8))
+                .accessibilityIdentifier("\(rowIdentifierPrefix).delete")
             }
             .frame(width: 100, alignment: .center)
         }
@@ -858,6 +866,7 @@ struct QueueMatchRow: View {
         .onTapGesture { onSelect() }
         .onHover { isHovered = $0 }
         .padding(.horizontal, 8)
+        .accessibilityIdentifier(rowIdentifierPrefix)
     }
 
     private func dayColor(for day: String) -> Color {
