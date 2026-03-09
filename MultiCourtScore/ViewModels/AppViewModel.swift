@@ -2932,6 +2932,64 @@ extension AppViewModel: SignalRDelegate {
 
     /// Shared downstream logic for applying a score snapshot update.
     /// Used by both pollOnce and SignalR mutation processing.
+    private func logCourtStatusTransition(
+        courtId: Int,
+        from previousStatus: CourtStatus,
+        to newStatus: CourtStatus,
+        snapshot: ScoreSnapshot,
+        matchItem: MatchItem,
+        isStale: Bool = false,
+        matchConcluded: Bool = false
+    ) {
+        guard previousStatus != newStatus else { return }
+
+        let matchup = describeMatchup(for: matchItem, snapshot: snapshot)
+        switch (previousStatus, newStatus) {
+        case (_, .live):
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "court \(courtId) transitioned to live: \(matchup)"
+            )
+        case (_, .finished):
+            let reason: String
+            if isStale && !matchConcluded {
+                reason = " due to stale scoring"
+            } else if matchConcluded {
+                reason = ""
+            } else {
+                reason = " after score update"
+            }
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "court \(courtId) transitioned to finished\(reason): \(matchup)"
+            )
+        case (_, .waiting):
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "court \(courtId) transitioned to waiting: \(matchup)"
+            )
+        case (_, .error):
+            runtimeLog.log(
+                .warning,
+                subsystem: "queue",
+                message: "court \(courtId) transitioned to error: \(matchup)"
+            )
+        default:
+            break
+        }
+    }
+
+    private func describeMatchup(for matchItem: MatchItem, snapshot: ScoreSnapshot? = nil) -> String {
+        let team1 = snapshot?.team1Name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let team2 = snapshot?.team2Name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTeam1 = matchItem.team1Name ?? (team1?.isEmpty == false ? team1 : nil) ?? "TBD"
+        let resolvedTeam2 = matchItem.team2Name ?? (team2?.isEmpty == false ? team2 : nil) ?? "TBD"
+        return "\(resolvedTeam1) vs \(resolvedTeam2)"
+    }
+
     private func applySnapshotUpdate(
         courtId: Int,
         snapshot: ScoreSnapshot,
@@ -2990,6 +3048,15 @@ extension AppViewModel: SignalRDelegate {
             if courts[idx].finishedAt == nil {
                 courts[idx].finishedAt = Date()
             }
+            logCourtStatusTransition(
+                courtId: courtId,
+                from: previousStatus,
+                to: .finished,
+                snapshot: snapshot,
+                matchItem: matchItem,
+                isStale: isStale,
+                matchConcluded: matchConcluded
+            )
 
             let didAdvance = await advanceQueueIfNeededAfterConclusion(
                 courtId: courtId,
@@ -3005,6 +3072,13 @@ extension AppViewModel: SignalRDelegate {
             courts[idx].status = newStatus
             courts[idx].lastSnapshot = snapshot
             courts[idx].finishedAt = nil
+            logCourtStatusTransition(
+                courtId: courtId,
+                from: previousStatus,
+                to: newStatus,
+                snapshot: snapshot,
+                matchItem: matchItem
+            )
         }
 
         courts[idx].lastPollTime = Date()
@@ -3058,11 +3132,20 @@ extension AppViewModel: SignalRDelegate {
             return false
         }
 
+        let nextMatch = courts[writeIdx].queue[targetIndex]
+        let previousCourtStatus = courts[writeIdx].status
         courts[writeIdx].activeIndex = targetIndex
         courts[writeIdx].lastSnapshot = nil
         courts[writeIdx].status = .waiting
         courts[writeIdx].liveSince = nil
         courts[writeIdx].finishedAt = nil
+        logCourtStatusTransition(
+            courtId: courtId,
+            from: previousCourtStatus,
+            to: .waiting,
+            snapshot: .empty(courtId: courtId),
+            matchItem: nextMatch
+        )
         observedActiveScoring[courtId] = false
         lastScoreChangeTime[courtId] = nil
         lastScoreSnapshot[courtId] = nil

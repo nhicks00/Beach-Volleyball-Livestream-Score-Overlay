@@ -3390,6 +3390,99 @@ struct ScannerViewModelTests {
 
 @MainActor
 @Suite(.serialized)
+struct SnapshotTransitionLoggingTests {
+
+    @Test func applySnapshotForTesting_logsTransitionToLive() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/live-transition/vmix?bracket=false",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 5,
+                team2Score: 4,
+                setHistory: [SetScore(setNumber: 1, team1Score: 5, team2Score: 4, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        #expect(recentEntries.contains("court 1 transitioned to live: Alice Smith / Beth Jones vs Cara Diaz / Dana Reed"))
+    }
+
+    @Test func applySnapshotForTesting_logsFinishedAndWaitingTransitionsWhenQueueAdvances() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        RuntimeLogStore.shared.clear()
+
+        let finishedMatch = makeMatchItem(
+            url: "https://example.com/matches/final-transition/vmix?bracket=false",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let nextMatch = makeMatchItem(
+            url: "https://example.com/matches/next-transition/vmix?bracket=false",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: nextMatch.apiURL
+        )
+
+        viewModel.appSettings.holdScoreDuration = 0
+        viewModel.replaceQueue(1, with: [finishedMatch, nextMatch], startIndex: 0)
+
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "In Progress",
+                team1Score: 18,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 18, team2Score: 14, isComplete: false)],
+                setsToWin: 1
+            )
+        )
+        _ = await viewModel.applySnapshotForTesting(
+            courtId: 1,
+            snapshot: makeSnapshot(
+                status: "Final",
+                team1Score: 21,
+                team2Score: 14,
+                setHistory: [SetScore(setNumber: 1, team1Score: 21, team2Score: 14, isComplete: true)],
+                setsToWin: 1
+            )
+        )
+
+        let recentEntries = RuntimeLogStore.shared.recentEntries(maxBytes: 16_000)
+        #expect(recentEntries.contains("court 1 transitioned to finished: Alice Smith / Beth Jones vs Cara Diaz / Dana Reed"))
+        #expect(recentEntries.contains("court 1 transitioned to waiting: Eva Long / Finn West vs Gina Shaw / Hale Young"))
+    }
+}
+
+@MainActor
+@Suite(.serialized)
 struct PollFailureLoggingTests {
 
     @Test func repeatedPollFailureLogging_suppressesDuplicatesUntilReminderWindow() async throws {
