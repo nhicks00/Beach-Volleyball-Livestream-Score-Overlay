@@ -1165,6 +1165,42 @@ struct QueueEditorSaveStateTests {
             )
         )
     }
+
+    @Test func makeQueueEditorCourtMoveImpact_warnsWhenMovingCurrentLiveMatch() {
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/editor-move-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let court = Court(
+            id: 1,
+            name: "Court 1",
+            queue: [activeMatch],
+            activeIndex: 0,
+            status: .live,
+            lastSnapshot: nil,
+            liveSince: nil,
+            finishedAt: nil,
+            lastPollTime: nil,
+            errorMessage: nil,
+            scoreboardLayout: nil
+        )
+        let row = QueueRow(
+            id: activeMatch.id,
+            label: activeMatch.label ?? "",
+            urlString: activeMatch.apiURL.absoluteString
+        )
+
+        let impact = makeQueueEditorCourtMoveImpact(court: court, row: row, targetCourtId: 2)
+
+        #expect(
+            impact == QueueEditorCourtMoveImpactModel(
+                message: "Moving the current match to Court 2 removes it from this live court and resets Court 1 to Waiting.",
+                targetCourtId: 2
+            )
+        )
+    }
 }
 
 @MainActor

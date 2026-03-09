@@ -30,6 +30,11 @@ struct QueueEditorSaveImpactModel: Equatable {
     let systemImageName: String
 }
 
+struct QueueEditorCourtMoveImpactModel: Equatable {
+    let message: String
+    let targetCourtId: Int
+}
+
 func makeQueueEditorSaveImpact(court: Court, rows: [QueueRow]) -> QueueEditorSaveImpactModel? {
     guard court.status.isPolling, let currentMatch = court.currentMatch else { return nil }
     guard let preservedIndex = rows.firstIndex(where: { $0.id == currentMatch.id }) else {
@@ -72,6 +77,16 @@ func makeQueueEditorSaveImpact(court: Court, rows: [QueueRow]) -> QueueEditorSav
     )
 }
 
+func makeQueueEditorCourtMoveImpact(court: Court, row: QueueRow, targetCourtId: Int) -> QueueEditorCourtMoveImpactModel? {
+    guard court.status.isPolling, let currentMatch = court.currentMatch else { return nil }
+    guard currentMatch.id == row.id else { return nil }
+
+    return QueueEditorCourtMoveImpactModel(
+        message: "Moving the current match to Court \(targetCourtId) removes it from this live court and resets Court \(court.id) to Waiting.",
+        targetCourtId: targetCourtId
+    )
+}
+
 struct QueueEditorView: View {
     @EnvironmentObject var appViewModel: AppViewModel
 
@@ -85,6 +100,9 @@ struct QueueEditorView: View {
     @State private var showSaveImpactConfirmation = false
     @State private var pendingSaveItems: [MatchItem] = []
     @State private var pendingSaveImpact: QueueEditorSaveImpactModel?
+    @State private var showCourtMoveConfirmation = false
+    @State private var pendingCourtMove: (index: Int, targetCourtId: Int)?
+    @State private var pendingCourtMoveImpact: QueueEditorCourtMoveImpactModel?
 
     private let runtimeLog = RuntimeLogStore.shared
 
@@ -167,6 +185,23 @@ struct QueueEditorView: View {
             }
         } message: { impact in
             Text("\(impact.message) Confirm only if you want this court to fall back to Waiting and rebuild from the edited queue.")
+        }
+        .alert("Confirm Court Move", isPresented: $showCourtMoveConfirmation, presenting: pendingCourtMoveImpact) { impact in
+            Button("Cancel", role: .cancel) {
+                pendingCourtMove = nil
+                pendingCourtMoveImpact = nil
+            }
+            Button("Move and Reset Court", role: .destructive) {
+                guard let pendingCourtMove else { return }
+                let impactMessage = impact.message
+                let move = pendingCourtMove
+                self.pendingCourtMove = nil
+                pendingCourtMoveImpact = nil
+                runtimeLog.log(.warning, subsystem: "operator", message: "confirmed move of current match from court \(courtId) to court \(impact.targetCourtId): \(impactMessage)")
+                performMoveRowToCourt(at: move.index, targetCourtId: move.targetCourtId)
+            }
+        } message: { impact in
+            Text("\(impact.message) Confirm only if you want this court to stop tracking the current on-air match and rebuild from the remaining queue.")
         }
     }
 
@@ -587,6 +622,21 @@ struct QueueEditorView: View {
     private func moveRowToCourt(at index: Int, targetCourtId: Int) {
         guard rows.indices.contains(index) else { return }
         let row = rows[index]
+        if let court,
+           let impact = makeQueueEditorCourtMoveImpact(court: court, row: row, targetCourtId: targetCourtId) {
+            pendingCourtMove = (index, targetCourtId)
+            pendingCourtMoveImpact = impact
+            showCourtMoveConfirmation = true
+            runtimeLog.log(.warning, subsystem: "operator", message: "moving current match from court \(courtId) to court \(targetCourtId) requires confirmation")
+            return
+        }
+
+        performMoveRowToCourt(at: index, targetCourtId: targetCourtId)
+    }
+
+    private func performMoveRowToCourt(at index: Int, targetCourtId: Int) {
+        guard rows.indices.contains(index) else { return }
+        let row = rows[index]
         guard let url = URL(string: row.normalizedURLString),
               url.scheme?.hasPrefix("http") == true else { return }
 
@@ -614,6 +664,7 @@ struct QueueEditorView: View {
 
         appViewModel.appendToQueue(targetCourtId, items: [item])
         deleteRow(at: index)
+        runtimeLog.log(.info, subsystem: "operator", message: "moved queue row from court \(courtId) to court \(targetCourtId)")
     }
 
     private func deleteRow(at index: Int) {
