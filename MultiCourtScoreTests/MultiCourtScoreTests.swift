@@ -1083,6 +1083,88 @@ struct QueueEditorSaveStateTests {
         #expect(court.currentMatch?.id == activeMatch.id)
         #expect(court.lastSnapshot?.status == "Pre-Match")
     }
+
+    @Test func makeQueueEditorSaveImpact_warnsWhenActiveMatchIsRemoved() {
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/active-removed",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let court = Court(
+            id: 1,
+            name: "Court 1",
+            queue: [activeMatch],
+            activeIndex: 0,
+            status: .waiting,
+            lastSnapshot: nil,
+            liveSince: nil,
+            finishedAt: nil,
+            lastPollTime: nil,
+            errorMessage: nil,
+            scoreboardLayout: nil
+        )
+
+        let impact = makeQueueEditorSaveImpact(court: court, rows: [])
+
+        #expect(
+            impact == QueueEditorSaveImpactModel(
+                message: "Saving removes the current match and resets this court to Waiting.",
+                tone: .error,
+                systemImageName: "exclamationmark.triangle.fill"
+            )
+        )
+    }
+
+    @Test func makeQueueEditorSaveImpact_reportsSafeReorderOfActiveMatch() {
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/editor-safe-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let activeMatch = makeMatchItem(
+            url: "https://example.com/matches/editor-safe-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let court = Court(
+            id: 1,
+            name: "Court 1",
+            queue: [firstMatch, activeMatch],
+            activeIndex: 1,
+            status: .live,
+            lastSnapshot: nil,
+            liveSince: nil,
+            finishedAt: nil,
+            lastPollTime: nil,
+            errorMessage: nil,
+            scoreboardLayout: nil
+        )
+        let rows = [
+            QueueRow(
+                id: activeMatch.id,
+                label: activeMatch.label ?? "",
+                urlString: activeMatch.apiURL.absoluteString
+            ),
+            QueueRow(
+                id: firstMatch.id,
+                label: firstMatch.label ?? "",
+                urlString: firstMatch.apiURL.absoluteString
+            )
+        ]
+
+        let impact = makeQueueEditorSaveImpact(court: court, rows: rows)
+
+        #expect(
+            impact == QueueEditorSaveImpactModel(
+                message: "Saving keeps the current match on air and moves it to slot 1.",
+                tone: .info,
+                systemImageName: "arrow.up.arrow.down.circle.fill"
+            )
+        )
+    }
 }
 
 @MainActor
@@ -3697,6 +3779,90 @@ struct SignalRStatusHealthTests {
         #expect(!SignalRStatus.connected.degradesHealthWhenEnabled)
         #expect(!SignalRStatus.reconnecting(attempt: 2).degradesHealthWhenEnabled)
         #expect(SignalRStatus.failed(reason: "Authentication failed").degradesHealthWhenEnabled)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct ScannerImportImpactTests {
+
+    private func makeScannerImpactMatch(
+        index: Int,
+        apiURL: String,
+        matchNumber: String,
+        court: String
+    ) throws -> ScannerViewModel.VBLMatch {
+        let payload: [String: Any] = [
+            "index": index,
+            "team1": "Team A",
+            "team2": "Team B",
+            "match_number": matchNumber,
+            "court": court,
+            "startTime": "9:40AM",
+            "startDate": "Fri",
+            "api_url": apiURL,
+            "match_type": "Pool Play",
+            "setsToWin": 1,
+            "setsToPlay": 1,
+            "pointsPerSet": 21,
+            "pointCap": 23,
+            "formatText": "1 set to 21, cap 23"
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        return try JSONDecoder().decode(ScannerViewModel.VBLMatch.self, from: data)
+    }
+
+    @Test func makeScannerImportImpact_distinguishesActiveMergesFromIdleReplacements() throws {
+        let activeCourt = Court(
+            id: 1,
+            name: "Court 1",
+            queue: [
+                makeMatchItem(
+                    url: "https://example.com/matches/scanner-active",
+                    team1: "Team A",
+                    team2: "Team B",
+                    matchNumber: "1"
+                )
+            ],
+            activeIndex: 0,
+            status: .waiting,
+            lastSnapshot: nil,
+            liveSince: nil,
+            finishedAt: nil,
+            lastPollTime: nil,
+            errorMessage: nil,
+            scoreboardLayout: nil
+        )
+        let idleCourt = Court.create(id: 2)
+        let activeAssignedMatch = try makeScannerImpactMatch(
+            index: 0,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/one/vmix",
+            matchNumber: "1",
+            court: "1"
+        )
+        let idleAssignedMatch = try makeScannerImpactMatch(
+            index: 1,
+            apiURL: "https://api.volleyballlife.com/api/v1.0/matches/two/vmix",
+            matchNumber: "2",
+            court: "2"
+        )
+
+        let impact = makeScannerImportImpact(
+            scanResults: [activeAssignedMatch, idleAssignedMatch],
+            assignments: [
+                activeAssignedMatch.id: 1,
+                idleAssignedMatch.id: 2
+            ],
+            courts: [activeCourt, idleCourt]
+        )
+
+        #expect(
+            impact == ScannerImportImpactModel(
+                message: "Import will merge into 1 active court and replace 1 idle queue.",
+                tone: .warning,
+                systemImageName: "arrow.triangle.merge"
+            )
+        )
     }
 }
 

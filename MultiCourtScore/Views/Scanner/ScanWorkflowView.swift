@@ -35,6 +35,54 @@ enum ScanWorkflowStep: Int, CaseIterable {
     }
 }
 
+struct ScannerImportImpactModel: Equatable {
+    let message: String
+    let tone: QueueEditorSaveImpactModel.Tone
+    let systemImageName: String
+}
+
+func makeScannerImportImpact(
+    scanResults: [ScannerViewModel.VBLMatch],
+    assignments: [UUID: Int],
+    courts: [Court]
+) -> ScannerImportImpactModel? {
+    let overlayIds = Set(
+        scanResults.compactMap { match -> Int? in
+            guard let overlayId = assignments[match.id], overlayId > 0 else { return nil }
+            return overlayId
+        }
+    )
+    guard !overlayIds.isEmpty else { return nil }
+
+    let activeMergeCount = overlayIds.filter { overlayId in
+        guard let court = courts.first(where: { $0.id == overlayId }) else { return false }
+        return !court.queue.isEmpty && court.status.isPolling
+    }.count
+    let replacementCount = overlayIds.count - activeMergeCount
+
+    if activeMergeCount > 0 && replacementCount > 0 {
+        return ScannerImportImpactModel(
+            message: "Import will merge into \(activeMergeCount) active court\(activeMergeCount == 1 ? "" : "s") and replace \(replacementCount) idle queue\(replacementCount == 1 ? "" : "s").",
+            tone: .warning,
+            systemImageName: "arrow.triangle.merge"
+        )
+    }
+
+    if activeMergeCount > 0 {
+        return ScannerImportImpactModel(
+            message: "Import will merge into \(activeMergeCount) active court\(activeMergeCount == 1 ? "" : "s"). Current matches stay on air while new items refresh in place.",
+            tone: .info,
+            systemImageName: "checkmark.circle.fill"
+        )
+    }
+
+    return ScannerImportImpactModel(
+        message: "Import will replace \(replacementCount) idle queue\(replacementCount == 1 ? "" : "s") and start them at the top of the new queue.",
+        tone: .info,
+        systemImageName: "square.and.arrow.down.fill"
+    )
+}
+
 // MARK: - Main View
 
 struct ScanWorkflowView: View {
@@ -54,6 +102,13 @@ struct ScanWorkflowView: View {
     private var overlapWarningText: String {
         "Collapsed \(viewModel.overlappingMatchCount) overlapping match result\(viewModel.overlappingMatchCount == 1 ? "" : "s") from overlapping scan sources"
     }
+    private var importImpact: ScannerImportImpactModel? {
+        makeScannerImportImpact(
+            scanResults: scanResults,
+            assignments: matchAssignments,
+            courts: appViewModel.courts
+        )
+    }
 
     init(onClose: ((String) -> Void)? = nil) {
         self.onClose = onClose
@@ -71,6 +126,9 @@ struct ScanWorkflowView: View {
                     overlapWarningBanner
                 }
                 stepContent
+                if currentStep == .queueManagement, let importImpact {
+                    importImpactBanner(importImpact)
+                }
                 stepFooter
             }
         }
@@ -95,6 +153,26 @@ struct ScanWorkflowView: View {
                 selectedCourts = Set(groupedByCourt.keys)
             }
         }
+    }
+
+    @ViewBuilder
+    private func importImpactBanner(_ impact: ScannerImportImpactModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: impact.systemImageName)
+                .foregroundColor(impact.tone.color)
+            Text(impact.message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(AppColors.textPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, AppLayout.contentPadding)
+        .padding(.vertical, 10)
+        .background(impact.tone.color.opacity(0.12))
+        .overlay(
+            Divider().overlay(impact.tone.color.opacity(0.35)),
+            alignment: .top
+        )
+        .accessibilityIdentifier("scanner.importImpact")
     }
 
     // MARK: - Sidebar
@@ -431,8 +509,10 @@ struct ScanWorkflowView: View {
             let hasActiveQueue = court.map { !$0.queue.isEmpty && $0.status != .idle } ?? false
             if hasActiveQueue {
                 appViewModel.mergeQueue(overlayId, with: matchItems)
+                RuntimeLogStore.shared.log(.info, subsystem: "operator", message: "scanner import merged \(matchItems.count) matches into active court \(overlayId)")
             } else {
                 appViewModel.replaceQueue(overlayId, with: matchItems, startIndex: 0)
+                RuntimeLogStore.shared.log(.info, subsystem: "operator", message: "scanner import replaced idle queue on court \(overlayId) with \(matchItems.count) matches")
             }
         }
 

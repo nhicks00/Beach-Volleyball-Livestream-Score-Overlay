@@ -7,6 +7,71 @@
 
 import SwiftUI
 
+struct QueueEditorSaveImpactModel: Equatable {
+    enum Tone: Equatable {
+        case info
+        case warning
+        case error
+
+        var color: Color {
+            switch self {
+            case .info:
+                return AppColors.info
+            case .warning:
+                return AppColors.warning
+            case .error:
+                return AppColors.error
+            }
+        }
+    }
+
+    let message: String
+    let tone: Tone
+    let systemImageName: String
+}
+
+func makeQueueEditorSaveImpact(court: Court, rows: [QueueRow]) -> QueueEditorSaveImpactModel? {
+    guard court.status.isPolling, let currentMatch = court.currentMatch else { return nil }
+    guard let preservedIndex = rows.firstIndex(where: { $0.id == currentMatch.id }) else {
+        return QueueEditorSaveImpactModel(
+            message: "Saving removes the current match and resets this court to Waiting.",
+            tone: .error,
+            systemImageName: "exclamationmark.triangle.fill"
+        )
+    }
+
+    guard let normalizedURL = URL(string: rows[preservedIndex].normalizedURLString),
+          normalizedURL.scheme?.hasPrefix("http") == true else {
+        return QueueEditorSaveImpactModel(
+            message: "Saving changes the current match endpoint and resets this court to Waiting.",
+            tone: .warning,
+            systemImageName: "arrow.trianglehead.2.clockwise.rotate.90"
+        )
+    }
+
+    guard normalizedURL == currentMatch.apiURL else {
+        return QueueEditorSaveImpactModel(
+            message: "Saving changes the current match endpoint and resets this court to Waiting.",
+            tone: .warning,
+            systemImageName: "arrow.trianglehead.2.clockwise.rotate.90"
+        )
+    }
+
+    if preservedIndex != court.activeIndex {
+        return QueueEditorSaveImpactModel(
+            message: "Saving keeps the current match on air and moves it to slot \(preservedIndex + 1).",
+            tone: .info,
+            systemImageName: "arrow.up.arrow.down.circle.fill"
+        )
+    }
+
+    return QueueEditorSaveImpactModel(
+        message: "Saving keeps the current match on air and refreshes the rest of the queue in place.",
+        tone: .info,
+        systemImageName: "checkmark.circle.fill"
+    )
+}
+
 struct QueueEditorView: View {
     @EnvironmentObject var appViewModel: AppViewModel
 
@@ -31,6 +96,11 @@ struct QueueEditorView: View {
         return currentURLs != savedURLs || rows.count != court.queue.count
     }
 
+    private var saveImpact: QueueEditorSaveImpactModel? {
+        guard let court else { return nil }
+        return makeQueueEditorSaveImpact(court: court, rows: rows)
+    }
+
     private func dismissSafely() {
         if hasUnsavedChanges {
             runtimeLog.log(.warning, subsystem: "operator", message: "attempted to close queue editor for court \(courtId) with unsaved changes")
@@ -45,6 +115,10 @@ struct QueueEditorView: View {
         VStack(spacing: 0) {
             // Header
             header
+
+            if let saveImpact {
+                saveImpactBanner(saveImpact)
+            }
 
             // Main content
             HSplitView {
@@ -75,6 +149,26 @@ struct QueueEditorView: View {
         } message: {
             Text("You have unsaved changes to this queue. Discard them?")
         }
+    }
+
+    @ViewBuilder
+    private func saveImpactBanner(_ impact: QueueEditorSaveImpactModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: impact.systemImageName)
+                .foregroundColor(impact.tone.color)
+            Text(impact.message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(AppColors.textPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(impact.tone.color.opacity(0.12))
+        .overlay(
+            Divider().overlay(impact.tone.color.opacity(0.35)),
+            alignment: .bottom
+        )
+        .accessibilityIdentifier("queueEditor.saveImpact")
     }
 
     // MARK: - Header
