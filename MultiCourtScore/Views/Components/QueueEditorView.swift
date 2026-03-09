@@ -82,6 +82,9 @@ struct QueueEditorView: View {
     @State private var errorMessage: String?
     @State private var selectedRowId: UUID?
     @State private var showDiscardAlert = false
+    @State private var showSaveImpactConfirmation = false
+    @State private var pendingSaveItems: [MatchItem] = []
+    @State private var pendingSaveImpact: QueueEditorSaveImpactModel?
 
     private let runtimeLog = RuntimeLogStore.shared
 
@@ -148,6 +151,22 @@ struct QueueEditorView: View {
             }
         } message: {
             Text("You have unsaved changes to this queue. Discard them?")
+        }
+        .alert("Confirm Live Queue Save", isPresented: $showSaveImpactConfirmation, presenting: pendingSaveImpact) { impact in
+            Button("Cancel", role: .cancel) {
+                pendingSaveItems = []
+                pendingSaveImpact = nil
+            }
+            Button("Save and Reset Court", role: .destructive) {
+                let items = pendingSaveItems
+                let impactMessage = impact.message
+                pendingSaveItems = []
+                pendingSaveImpact = nil
+                runtimeLog.log(.warning, subsystem: "operator", message: "confirmed queue editor save for court \(courtId): \(impactMessage)")
+                performSave(items)
+            }
+        } message: { impact in
+            Text("\(impact.message) Confirm only if you want this court to fall back to Waiting and rebuild from the edited queue.")
         }
     }
 
@@ -542,6 +561,18 @@ struct QueueEditorView: View {
         }
 
         errorMessage = nil
+        if let saveImpact, saveImpact.tone != .info {
+            pendingSaveItems = items
+            pendingSaveImpact = saveImpact
+            showSaveImpactConfirmation = true
+            runtimeLog.log(.warning, subsystem: "operator", message: "queue editor save for court \(courtId) requires confirmation: \(saveImpact.message)")
+            return
+        }
+
+        performSave(items)
+    }
+
+    private func performSave(_ items: [MatchItem]) {
         appViewModel.replaceQueuePreservingState(courtId, with: items)
         runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor for court \(courtId) with \(items.count) matches")
         onDismiss()
