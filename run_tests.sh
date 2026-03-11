@@ -67,7 +67,7 @@ run_python_integration_tests() {
         return 1
     fi
 
-    if ! $VENV_PYTHON -c "import playwright" 2>/dev/null; then
+    if ! "$VENV_PYTHON" -c "import playwright" 2>/dev/null; then
         echo -e "${YELLOW}Playwright not installed. Run: $0 --setup${NC}"
         return 1
     fi
