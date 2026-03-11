@@ -5288,3 +5288,240 @@ struct QueueIdentityContinuityTests {
     }
 
 }
+
+@Suite("SignalR Recovery Policy Tests", .serialized)
+@MainActor
+struct SignalRRecoveryPolicyTests {
+    @Test func signalRDidReceiveMutation_ignoresAmbiguousGameIdsAndReconcilesByPolling() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let courtOneMatch = makeMatchItem(
+            url: "https://example.com/matches/ambiguous-court-one",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            gameIds: [7001]
+        )
+        let courtTwoMatch = makeMatchItem(
+            url: "https://example.com/matches/ambiguous-court-two",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            gameIds: [7001]
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: courtOneMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: courtTwoMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [courtOneMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [courtTwoMatch], startIndex: 0)
+        viewModel.setPollingStateForTesting(courtId: 1, status: .waiting)
+        viewModel.setPollingStateForTesting(courtId: 2, status: .waiting)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        _ = await viewModel.applySnapshotForTesting(courtId: 2, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        viewModel.rebuildGameIdMapForTesting()
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 7001,
+                "home": 9,
+                "away": 8,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let courtOne = viewModel.court(for: 1),
+                  let courtTwo = viewModel.court(for: 2),
+                  let snapOne = courtOne.lastSnapshot,
+                  let snapTwo = courtTwo.lastSnapshot else {
+                return false
+            }
+            return courtOne.status == .waiting
+                && courtTwo.status == .waiting
+                && snapOne.status == "Pre-Match"
+                && snapTwo.status == "Pre-Match"
+                && snapOne.setHistory.allSatisfy { $0.team1Score == 0 && $0.team2Score == 0 }
+                && snapTwo.setHistory.allSatisfy { $0.team1Score == 0 && $0.team2Score == 0 }
+        })
+    }
+
+    @Test func signalRDidReceiveMutation_restoresRecentlyAdvancedMatchWhenFinalReopens() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let finishedPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/reopen-finished",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1",
+            setsToWin: 1,
+            gameIds: [7101]
+        )
+        let nextPoolMatch = makeMatchItem(
+            url: "https://example.com/matches/reopen-next",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2",
+            setsToWin: 1,
+            gameIds: [7102]
+        )
+
+        viewModel.replaceQueue(1, with: [finishedPoolMatch, nextPoolMatch], startIndex: 0)
+        _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+        viewModel.rebuildGameIdMapForTesting()
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 1, away: 0),
+            for: nextPoolMatch.apiURL
+        )
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 7101,
+                "home": 8,
+                "away": 7,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.status == "In Progress"
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 7101,
+                "home": 21,
+                "away": 16,
+                "number": 0,
+                "isFinal": true,
+                "_winner": "home"
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1) else { return false }
+            return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
+        })
+
+        viewModel.signalRDidReceiveMutation(
+            name: "UPDATE_GAME",
+            payload: [
+                "id": 7101,
+                "home": 22,
+                "away": 21,
+                "number": 0,
+                "isFinal": false
+            ]
+        )
+
+        #expect(await waitUntil {
+            guard let court = viewModel.court(for: 1),
+                  let snapshot = court.lastSnapshot else {
+                return false
+            }
+            return court.activeIndex == 0
+                && court.status == .live
+                && snapshot.status == "In Progress"
+                && snapshot.setHistory.first?.team1Score == 22
+                && snapshot.setHistory.first?.team2Score == 21
+                && snapshot.setHistory.first?.isComplete == false
+        })
+    }
+
+    @Test func signalRReconnect_clearsStaleMutationStateAndForcesReconcileWindow() async throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/reconnect-reconcile",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "3"
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        viewModel.setPollingStateForTesting(courtId: 1, status: .waiting)
+        viewModel.setSignalRMutationStateForTesting(courtId: 1, lastMutationAt: Date())
+        #expect(viewModel.hasSignalRMutationStateForTesting(courtId: 1))
+
+        viewModel.signalRStatusDidChange(.reconnecting(attempt: 1))
+        #expect(viewModel.hasSignalRMutationStateForTesting(courtId: 1) == false)
+
+        viewModel.signalRDidConnect()
+        #expect(viewModel.signalRReconcileAnchorForTesting(courtId: 1) == .distantPast)
+    }
+}
+
+@Suite("Startup Recovery Tests", .serialized)
+@MainActor
+struct StartupRecoveryTests {
+    @Test func loadConfiguration_discardsPersistedRuntimeStateAndKeepsQueuePosition() throws {
+        let (_, configStore, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let persistedMatch = makeMatchItem(
+            url: "https://example.com/matches/persisted-runtime",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "4"
+        )
+        let persistedCourt = Court(
+            id: 1,
+            name: "Court 1",
+            queue: [persistedMatch],
+            activeIndex: 0,
+            status: .live,
+            lastSnapshot: makeSnapshot(status: "In Progress", team1Score: 1, team2Score: 0, setsToWin: 1),
+            liveSince: Date().addingTimeInterval(-90),
+            finishedAt: Date().addingTimeInterval(-30),
+            lastPollTime: Date(),
+            errorMessage: "stale runtime error",
+            scoreboardLayout: nil
+        )
+
+        let data = try JSONEncoder().encode([persistedCourt])
+        try data.write(to: configStore.courtsConfigURL, options: .atomic)
+
+        let restored = AppViewModel(
+            runtimeMode: .live,
+            webSocketHub: .shared,
+            configStore: configStore,
+            apiClient: APIClient(),
+            notificationService: RecordingNotificationService()
+        )
+
+        let court = try #require(restored.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.queue.count == 1)
+        #expect(court.status == .idle)
+        #expect(court.lastSnapshot == nil)
+        #expect(court.liveSince == nil)
+        #expect(court.finishedAt == nil)
+        #expect(court.lastPollTime == nil)
+        #expect(court.errorMessage == nil)
+    }
+}

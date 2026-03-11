@@ -164,10 +164,16 @@ final class AppViewModel: ObservableObject {
     private var watchdogRecoveryCount = 0
     private var lastWatchdogRecoveryAt: Date?
     private var lastWatchdogRecoveryReason: String?
+    private struct RecentlyAdvancedMatchContext {
+        let match: MatchItem
+        let advancedAt: Date
+    }
 
     // SignalR game ID → court mapping
     private var gameIdToCourtMap: [Int: Int] = [:]       // gameId → courtId
+    private var ambiguousGameIdToCourtIds: [Int: Set<Int>] = [:]
     private var activeSubscriptions: [Int: Set<Int>] = [:] // tournamentId → set of divisionIds
+    private var recentlyAutoAdvancedMatches: [Int: RecentlyAdvancedMatchContext] = [:]
 
     // Inactivity tracking
     private var lastScoreSnapshot: [Int: (pts1: Int, pts2: Int, s1: Int, s2: Int)] = [:]
@@ -419,6 +425,7 @@ final class AppViewModel: ObservableObject {
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+        recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
         clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
@@ -447,6 +454,7 @@ final class AppViewModel: ObservableObject {
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+        recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
 
         guard !normalizedItems.isEmpty else {
             courts[idx].activeIndex = nil
@@ -732,6 +740,7 @@ final class AppViewModel: ObservableObject {
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+        recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -893,6 +902,14 @@ final class AppViewModel: ObservableObject {
         lastSignalRMutationAt.removeValue(forKey: courtId)
     }
 
+    func hasSignalRMutationStateForTesting(courtId: Int) -> Bool {
+        lastSignalRMutationAt[courtId] != nil
+    }
+
+    func signalRReconcileAnchorForTesting(courtId: Int) -> Date? {
+        lastSignalRReconcileAt[courtId]
+    }
+
     func signalRMutationFallbackSnapshotForTesting() -> (count: Int, courts: [Int]) {
         currentSignalRMutationFallbackSnapshot()
     }
@@ -962,6 +979,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].liveSince = nil
             courts[idx].lastSnapshot = nil
             observedActiveScoring[courtId] = false
+            recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
             saveConfigurationNow()
             runtimeLog.log(.info, subsystem: "operator", message: "advanced court \(courtId) from queue index \(activeIdx) to \(nextIndex)")
         }
@@ -983,6 +1001,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].lastSnapshot = nil
         observedActiveScoring[courtId] = false
+        recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "moved court \(courtId) back from queue index \(activeIdx) to \(activeIdx - 1)")
     }
@@ -2059,17 +2078,26 @@ final class AppViewModel: ObservableObject {
     /// Rebuild the gameId → courtId lookup from all active courts' match items.
     private func rebuildGameIdMap() {
         var newMap: [Int: Int] = [:]
+        var ambiguousMap: [Int: Set<Int>] = [:]
         for court in courts where court.status.isPolling {
             guard let activeIdx = court.activeIndex,
                   activeIdx < court.queue.count else { continue }
             let match = court.queue[activeIdx]
             if let gameIds = match.gameIds {
                 for gid in gameIds {
-                    newMap[gid] = court.id
+                    if let existingCourtId = newMap[gid], existingCourtId != court.id {
+                        ambiguousMap[gid, default: [existingCourtId]].insert(court.id)
+                        newMap.removeValue(forKey: gid)
+                    } else if ambiguousMap[gid] != nil {
+                        ambiguousMap[gid, default: []].insert(court.id)
+                    } else {
+                        newMap[gid] = court.id
+                    }
                 }
             }
         }
         gameIdToCourtMap = newMap
+        ambiguousGameIdToCourtIds = ambiguousMap
     }
 
     /// Build a lookup of matchId → (team1, team2) from hydrate JSON
@@ -2917,6 +2945,31 @@ final class AppViewModel: ObservableObject {
                 normalizedCourts[idx].queue = normalizedQueue
                 didNormalize = true
             }
+
+            let boundedActiveIndex: Int? = {
+                guard let activeIndex = normalizedCourts[idx].activeIndex else { return nil }
+                guard !normalizedCourts[idx].queue.isEmpty else { return nil }
+                return min(max(0, activeIndex), normalizedCourts[idx].queue.count - 1)
+            }()
+            if normalizedCourts[idx].activeIndex != boundedActiveIndex {
+                normalizedCourts[idx].activeIndex = boundedActiveIndex
+                didNormalize = true
+            }
+
+            if normalizedCourts[idx].status != .idle
+                || normalizedCourts[idx].lastSnapshot != nil
+                || normalizedCourts[idx].liveSince != nil
+                || normalizedCourts[idx].finishedAt != nil
+                || normalizedCourts[idx].lastPollTime != nil
+                || normalizedCourts[idx].errorMessage != nil {
+                normalizedCourts[idx].status = .idle
+                normalizedCourts[idx].lastSnapshot = nil
+                normalizedCourts[idx].liveSince = nil
+                normalizedCourts[idx].finishedAt = nil
+                normalizedCourts[idx].lastPollTime = nil
+                normalizedCourts[idx].errorMessage = nil
+                didNormalize = true
+            }
         }
 
         courts = normalizedCourts
@@ -3168,10 +3221,21 @@ final class AppViewModel: ObservableObject {
 extension AppViewModel: SignalRDelegate {
     func signalRStatusDidChange(_ status: SignalRStatus) {
         signalRStatus = status
+        guard status != .connected else { return }
+
+        for court in courts where court.status.isPolling {
+            lastSignalRMutationAt.removeValue(forKey: court.id)
+            lastSignalRMutationEpochMs.removeValue(forKey: court.id)
+            clearSignalRMutationFallbackState(for: court.id)
+            lastSignalRReconcileAt[court.id] = .distantPast
+        }
     }
 
     func signalRDidConnect() {
         signalRStatus = .connected
+        for court in courts where court.status.isPolling {
+            lastSignalRReconcileAt[court.id] = .distantPast
+        }
         syncSignalRSubscriptions(forceResubscribe: true)
     }
 
@@ -3207,6 +3271,21 @@ extension AppViewModel: SignalRDelegate {
         guard let dict = payload as? [String: Any],
               let gameId = dict["id"] as? Int else { return }
 
+        if let ambiguousCourtIds = ambiguousGameIdToCourtIds[gameId], !ambiguousCourtIds.isEmpty {
+            runtimeLog.log(
+                .warning,
+                subsystem: "signalr",
+                message: "received UPDATE_GAME for ambiguous gameId \(gameId) on courts \(ambiguousCourtIds.sorted())"
+            )
+            await reconcileSignalRAmbiguousGameId(gameId, candidateCourtIds: ambiguousCourtIds.sorted())
+            return
+        }
+
+        if let restoredCourtId = restoreRecentlyAdvancedMatchIfNeeded(gameId: gameId, payload: dict) {
+            processGameMutation(courtId: restoredCourtId, gameId: gameId, payload: dict)
+            return
+        }
+
         guard let courtId = gameIdToCourtMap[gameId] else {
             runtimeLog.log(
                 .warning,
@@ -3221,6 +3300,65 @@ extension AppViewModel: SignalRDelegate {
         }
 
         processGameMutation(courtId: courtId, gameId: gameId, payload: dict)
+    }
+
+    private func reconcileSignalRAmbiguousGameId(_ gameId: Int, candidateCourtIds: [Int]) async {
+        for courtId in candidateCourtIds {
+            lastSignalRMutationAt.removeValue(forKey: courtId)
+            lastSignalRMutationEpochMs.removeValue(forKey: courtId)
+            lastSignalRReconcileAt[courtId] = .distantPast
+            await pollOnce(courtId)
+        }
+        runtimeLog.log(
+            .info,
+            subsystem: "signalr",
+            message: "forced reconcile polls after ambiguous gameId \(gameId) on courts \(candidateCourtIds)"
+        )
+    }
+
+    private func restoreRecentlyAdvancedMatchIfNeeded(gameId: Int, payload: [String: Any], now: Date = Date()) -> Int? {
+        let isFinal = payload["isFinal"] as? Bool ?? false
+        guard !isFinal else { return nil }
+
+        for (courtId, context) in recentlyAutoAdvancedMatches {
+            let reopenWindow = max(appSettings.holdScoreDuration, 180)
+            guard now.timeIntervalSince(context.advancedAt) <= reopenWindow,
+                  context.match.gameIds?.contains(gameId) == true,
+                  let idx = courtIndex(for: courtId) else {
+                continue
+            }
+
+            if courts[idx].status == .live, observedActiveScoring[courtId] == true {
+                continue
+            }
+
+            guard let restoredIndex = courts[idx].queue.firstIndex(where: {
+                $0.id == context.match.id || matchesRepresentSameContest($0, context.match)
+            }) else {
+                continue
+            }
+
+            courts[idx].activeIndex = restoredIndex
+            courts[idx].status = .waiting
+            courts[idx].lastSnapshot = nil
+            courts[idx].liveSince = nil
+            courts[idx].finishedAt = nil
+            courts[idx].errorMessage = nil
+            observedActiveScoring[courtId] = false
+            smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+            smartSwitchedMatchID.removeValue(forKey: courtId)
+            pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+            rebuildGameIdMap()
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "restored recently advanced match on court \(courtId) after reopened gameId \(gameId)"
+            )
+            return courtId
+        }
+
+        return nil
     }
 
     private func resolveUnknownSignalRGameId(_ gameId: Int) async {
@@ -3605,6 +3743,7 @@ extension AppViewModel: SignalRDelegate {
             return false
         }
 
+        let finishedMatch = courts[writeIdx].queue[activeIdx]
         let nextMatch = courts[writeIdx].queue[targetIndex]
         let previousCourtStatus = courts[writeIdx].status
         courts[writeIdx].activeIndex = targetIndex
@@ -3612,6 +3751,10 @@ extension AppViewModel: SignalRDelegate {
         courts[writeIdx].status = .waiting
         courts[writeIdx].liveSince = nil
         courts[writeIdx].finishedAt = nil
+        recentlyAutoAdvancedMatches[courtId] = RecentlyAdvancedMatchContext(
+            match: finishedMatch,
+            advancedAt: Date()
+        )
         logCourtStatusTransition(
             courtId: courtId,
             from: previousCourtStatus,
