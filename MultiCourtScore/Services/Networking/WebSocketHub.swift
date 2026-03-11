@@ -1092,7 +1092,7 @@ body.layout-top-left .bubble-container {
   justify-content: center;
   margin: 0;
   z-index: 19;
-  height: 28px;
+  height: 32px;
   width: var(--trad-board-width, auto);
   overflow: visible;
 }
@@ -1123,7 +1123,7 @@ body.layout-bottom-left .bubble-container {
   justify-content: center;
   margin: 0;
   z-index: 19;
-  height: 28px;
+  height: 32px;
   width: var(--trad-board-width, auto);
   overflow: visible;
 }
@@ -1157,8 +1157,8 @@ body.layout-bottom-left .status-bubble {
 /* Trad-layout bubble bars: compact, centered, fit to board width */
 body.layout-top-left .bubble-bar,
 body.layout-bottom-left .bubble-bar {
-  padding: 0.2rem 0.4rem !important;
-  gap: 0.25rem !important;
+  padding: 0.28rem 0.6rem !important;
+  gap: 0.35rem !important;
   white-space: nowrap;
   overflow: hidden;
   width: 100%;
@@ -1174,8 +1174,8 @@ body.layout-bottom-left .bubble-bar span {
 }
 body.layout-top-left .bubble-bar svg,
 body.layout-bottom-left .bubble-bar svg {
-  width: 10px !important;
-  height: 10px !important;
+  width: 11px !important;
+  height: 11px !important;
   flex-shrink: 0;
 }
 
@@ -1198,8 +1198,8 @@ body.layout-bottom-left .bubble-bar svg {
   display: none;
   flex-direction: column;
   width: auto;
-  border-radius: 0.375rem;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 34px rgba(0,0,0,0.85);
   overflow: hidden;
   z-index: 20;
   position: relative;
@@ -1207,8 +1207,8 @@ body.layout-bottom-left .bubble-bar svg {
 .trad-row {
   display: flex;
   align-items: center;
-  height: 2.6rem;
-  padding: 0 0.5rem;
+  height: 2.95rem;
+  padding: 0 0.65rem;
   gap: 0;
   position: relative;
 }
@@ -1217,18 +1217,18 @@ body.layout-bottom-left .bubble-bar svg {
   background: rgba(255,255,255,0.1);
 }
 .trad-serve {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   opacity: 0;
-  margin-right: 0.25rem;
+  margin-right: 0.35rem;
 }
 .trad-serve.active { opacity: 1; }
 .trad-seed {
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 700;
   color: rgba(212,175,55,0.8);
   min-width: 0;
@@ -1239,15 +1239,18 @@ body.layout-bottom-left .bubble-bar svg {
   margin-right: 0.25rem;
 }
 .trad-name {
-  font-size: 0.95rem;
-  font-weight: 800;
+  font-size: 1.05rem;
+  font-weight: 850;
   text-transform: uppercase;
-  letter-spacing: -0.025em;
-  color: rgba(255,255,255,0.95);
-  font-style: italic;
+  letter-spacing: -0.015em;
+  color: rgba(255,255,255,0.98);
+  font-style: normal;
   white-space: nowrap;
-  padding-right: 0.6rem;
-  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  padding-right: 0.75rem;
+  flex-shrink: 1;
   /* Width set by JS to equalize both rows */
 }
 .trad-sets {
@@ -1257,13 +1260,13 @@ body.layout-bottom-left .bubble-bar svg {
   flex-shrink: 0;
 }
 .trad-set-cell {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  min-width: 1.8rem;
+  min-width: 1.95rem;
   text-align: center;
-  padding: 0 0.2rem;
-  color: rgba(255,255,255,0.4);
+  padding: 0 0.24rem;
+  color: rgba(255,255,255,0.48);
   border-left: 1px solid rgba(255,255,255,0.08);
 }
 .trad-set-cell.set-winner {
@@ -1274,20 +1277,20 @@ body.layout-bottom-left .bubble-bar svg {
   color: rgba(255,255,255,0.25);
 }
 .trad-current-score {
-  font-size: 1.3rem;
+  font-size: 1.48rem;
   font-weight: 900;
   background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   font-variant-numeric: tabular-nums;
-  font-style: italic;
+  font-style: normal;
   min-width: 0;
   text-align: center;
   border-left: 1px solid rgba(255,255,255,0.15);
-  padding: 0 0.35rem;
+  padding: 0 0.45rem;
   flex-shrink: 0;
-  line-height: 2.6rem;
+  line-height: 2.95rem;
   transition: transform 0.15s ease-out, opacity 0.15s ease-out;
 }
 .trad-trophy {
@@ -1671,16 +1674,24 @@ function cleanName(n) {
 
 function abbreviateName(teamName) {
   if (!teamName) return "";
+  const normalizedTeamName = cleanName(teamName);
+  if (!normalizedTeamName.includes("/")) {
+    const teamParts = normalizedTeamName.split(/\s+/);
+    if (teamParts.length <= 3) return normalizedTeamName;
+  }
   const players = teamName.split("/").map(p => p.trim());
   const abbreviated = players.map(player => {
-    const lower = player.toLowerCase();
+    const normalizedPlayer = cleanName(player);
+    const lower = normalizedPlayer.toLowerCase();
     if (lower.includes("winner") || lower.includes("loser") ||
         lower.includes("team ") || lower.includes("seed ") ||
         lower.includes("match ") || lower.includes("this match")) {
-      return player;
+      return normalizedPlayer;
     }
-    const parts = player.split(/\s+/);
-    if (parts.length < 2) return player;
+    const parts = normalizedPlayer.split(/\s+/);
+    if (parts.length < 2) return normalizedPlayer;
+    if (parts.length === 2) return parts[1];
+    if (normalizedPlayer.length > 18) return parts[0] + ' ' + parts[parts.length - 1];
     return parts[parts.length - 1];
   });
   return abbreviated.join(" / ");
