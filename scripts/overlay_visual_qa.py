@@ -125,6 +125,7 @@ class Scenario:
     next_match: dict[str, Any]
     wait_ms: int = POLL_SETTLE_MS
     sequence: list[tuple[dict[str, Any], dict[str, Any], int]] | None = None
+    expected_primary: tuple[str, str] | None = None
 
 
 def build_scenarios() -> list[Scenario]:
@@ -148,6 +149,22 @@ def build_scenarios() -> list[Scenario]:
         team1="Winner of Court Seven Semifinal / Alexandria Montgomery",
         team2="North Shore Elite / The Sandstorm Sisters",
         nextMatch="Winner of Match 42 vs Winner of Match 43",
+    )
+
+    shared_surnames = merge(
+        seed_live,
+        team1="Alexander Smith / Andrew Smith",
+        team2="Avery Smith / Cameron Smith",
+        nextMatch="Natalie Robertson / Nathaniel Robertson vs Megan Robertson / Mason Robertson",
+        matchNumber="13",
+    )
+
+    extreme_full_names = merge(
+        seed_live,
+        team1="Maximilian Alexander Montgomery / Bartholomew Theodore Kensington",
+        team2="Christopher Jonathan Worthington / Sebastian Elliot Hawthorne",
+        nextMatch="Winner of Court Seven Semifinal vs Loser of Match 24",
+        matchNumber="14",
     )
 
     return [
@@ -236,6 +253,7 @@ def build_scenarios() -> list[Scenario]:
             (1920, 1080),
             merge(long_names, layout="top-left"),
             next_payload("Winner of Match 42", "Winner of Match 43", "8"),
+            expected_primary=("Winner of Ct Seven SF / A. Montgomery", "N. Elite / T. Sisters"),
         ),
         Scenario(
             "bottom_left_01_live_social_on",
@@ -268,6 +286,7 @@ def build_scenarios() -> list[Scenario]:
             (1920, 1080),
             merge(long_names, layout="bottom-left", showSocialBar=False),
             next_payload("Winner of Match 42", "Winner of Match 43", "8"),
+            expected_primary=("Winner of Ct Seven SF / A. Montgomery", "N. Elite / T. Sisters"),
         ),
         Scenario(
             "center_11_layout_cycle_return",
@@ -288,6 +307,7 @@ def build_scenarios() -> list[Scenario]:
                 (merge(seed_live, layout="top-left", showSocialBar=False), next_payload("Charlie Pair", "Delta Pair", "4"), 1200),
                 (merge(seed_live, layout="center", showSocialBar=True, team1="Winner of Match 24 / Alexandria Montgomery", team2="North Shore Elite / The Sandstorm Sisters", nextMatch="Winner of Match 42 vs Winner of Match 43"), next_payload("Oscar Pair", "Papa Pair", "10"), 1700),
             ],
+            expected_primary=("M24 Winner / A. Montgomery", "N. Elite / T. Sisters"),
         ),
         Scenario(
             "center_12_720p_regression_live",
@@ -296,16 +316,54 @@ def build_scenarios() -> list[Scenario]:
             next_payload("Oscar Pair", "Papa Pair", "10"),
         ),
         Scenario(
+            "center_13_shared_surnames_stress",
+            (1920, 1080),
+            merge(shared_surnames, layout="center"),
+            next_payload("Natalie Robertson / Nathaniel Robertson", "Megan Robertson / Mason Robertson", "11"),
+            wait_ms=2600,
+            expected_primary=("Alexander / Andrew Smith", "Avery / Cameron Smith"),
+        ),
+        Scenario(
+            "center_14_transition_chain_stress",
+            (1920, 1080),
+            merge(extreme_full_names, layout="center", showSocialBar=False),
+            next_payload("Winner of Match 24", "Loser of Match 24", "12"),
+            wait_ms=2600,
+            sequence=[
+                (merge(seed_live, layout="center", status="Final", courtStatus="finished", score1=21, score2=18, setsA=2, setsB=1), next_payload("Winner of Match 24", "Loser of Match 24", "12"), 2300),
+                (merge(seed_center, layout="center", team1="Winner of Match 24 / Alexandria Montgomery", team2="North Shore Elite / The Sandstorm Sisters"), next_payload("Winner of Match 42", "Winner of Match 43", "13"), 1800),
+                (merge(extreme_full_names, layout="top-left", showSocialBar=True), next_payload("Winner of Match 24", "Loser of Match 24", "12"), 1400),
+                (merge(extreme_full_names, layout="bottom-left", showSocialBar=False), next_payload("Winner of Match 24", "Loser of Match 24", "12"), 1400),
+            ],
+            expected_primary=("M. Montgomery / B. Kensington", "C. Worthington / S. Hawthorne"),
+        ),
+        Scenario(
             "top_left_05_720p_regression",
             (1280, 720),
             merge(seed_live, layout="top-left"),
             next_payload("Oscar Pair", "Papa Pair", "10"),
         ),
         Scenario(
+            "top_left_06_shared_surnames_stress",
+            (1920, 1080),
+            merge(shared_surnames, layout="top-left", showSocialBar=False),
+            next_payload("Natalie Robertson / Nathaniel Robertson", "Megan Robertson / Mason Robertson", "11"),
+            wait_ms=2600,
+            expected_primary=("Alexander / Andrew Smith", "Avery / Cameron Smith"),
+        ),
+        Scenario(
             "bottom_left_05_720p_regression",
             (1280, 720),
             merge(seed_live, layout="bottom-left"),
             next_payload("Oscar Pair", "Papa Pair", "10"),
+        ),
+        Scenario(
+            "bottom_left_06_extreme_full_names",
+            (1920, 1080),
+            merge(extreme_full_names, layout="bottom-left", showSocialBar=False),
+            next_payload("Winner of Match 24", "Loser of Match 24", "12"),
+            wait_ms=2600,
+            expected_primary=("M. Montgomery / B. Kensington", "C. Worthington / S. Hawthorne"),
         ),
     ]
 
@@ -322,6 +380,47 @@ def ensure_output_dir() -> Path:
     out_dir = OUTPUT_ROOT / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
+
+
+def primary_selectors(layout: str) -> tuple[str, str]:
+    if layout == "center":
+        return "#t1", "#t2"
+    return "#trad-t1", "#trad-t2"
+
+
+def closeup_selector(layout: str) -> str:
+    return "#scorebug" if layout == "center" else "#trad-board"
+
+
+def current_primary_text(page: Any, layout: str) -> list[str]:
+    selectors = primary_selectors(layout)
+    return page.evaluate(
+        """(selectors) => selectors.map((selector) => {
+            const el = document.querySelector(selector);
+            return el ? (el.textContent || '').trim() : '';
+        })""",
+        list(selectors),
+    )
+
+
+def wait_for_scenario_state(page: Any, scenario: Scenario) -> None:
+    layout = scenario.score.get("layout", "center")
+    timeout = max(5000, scenario.wait_ms + 2500)
+    page.wait_for_function(
+        "(layout) => document.body.classList.contains('layout-' + layout)",
+        arg=layout,
+        timeout=timeout,
+    )
+    if scenario.expected_primary:
+        selectors = primary_selectors(layout)
+        page.wait_for_function(
+            """(payload) => payload.selectors.every((selector, index) => {
+                const el = document.querySelector(selector);
+                return el && (el.textContent || '').trim() === payload.expected[index];
+            })""",
+            arg={"selectors": list(selectors), "expected": list(scenario.expected_primary)},
+            timeout=timeout,
+        )
 
 
 def main() -> int:
@@ -360,16 +459,30 @@ def main() -> int:
                 STATE.update(score=scenario.score, next_match_data=scenario.next_match)
                 time.sleep(scenario.wait_ms / 1000)
 
+                scenario_failure: str | None = None
+                try:
+                    wait_for_scenario_state(page, scenario)
+                except Exception as exc:  # noqa: BLE001
+                    scenario_failure = str(exc)
+                    failures.append(f"{scenario.name}:{scenario_failure}")
+
                 shot_path = out_dir / f"{scenario.name}.png"
+                closeup_path = out_dir / f"{scenario.name}__close.png"
                 page.screenshot(path=str(shot_path), full_page=True)
+                page.locator(closeup_selector(scenario.score.get("layout", "center"))).screenshot(path=str(closeup_path))
+                primary_text = current_primary_text(page, scenario.score.get("layout", "center"))
                 results.append(
                     {
                         "name": scenario.name,
                         "viewport": list(scenario.viewport),
                         "screenshot": str(shot_path),
+                        "closeup": str(closeup_path),
                         "layout": scenario.score.get("layout"),
                         "status": scenario.score.get("status"),
                         "courtStatus": scenario.score.get("courtStatus"),
+                        "expectedPrimary": list(scenario.expected_primary) if scenario.expected_primary else None,
+                        "actualPrimary": primary_text,
+                        "failure": scenario_failure,
                     }
                 )
 

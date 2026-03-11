@@ -558,6 +558,7 @@ body.layout-bottom-left .bubble-bar svg {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .center-team-copy.right {
@@ -567,6 +568,7 @@ body.layout-bottom-left .bubble-bar svg {
 .center-team-name {
   display: block;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -583,6 +585,18 @@ body.layout-bottom-left .bubble-bar svg {
 
 .intermission-vs {
   font-style: normal !important;
+}
+
+#scoring-content > *,
+#intermission-content,
+#int-team1,
+#int-team2,
+#int-vs,
+.score-container,
+.bubble-bar {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* ===== TRADITIONAL SCOREBOARD ===== */
@@ -641,6 +655,7 @@ body.layout-bottom-left .bubble-bar svg {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  max-width: clamp(9rem, 18vw, 17.5rem);
   padding-right: 0.75rem;
   flex-shrink: 1;
   /* Width set by JS to equalize both rows */
@@ -743,7 +758,7 @@ body.layout-bottom-left .bubble-bar svg {
     <!-- Scoring Content Layer -->
     <div id="scoring-content">
       <!-- Left Team Section -->
-      <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
+      <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.15rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
         <div id="confetti-left" class="confetti-container">
           <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
           <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
@@ -776,7 +791,7 @@ body.layout-bottom-left .bubble-bar svg {
       <div class="center-divider" style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2); flex-shrink: 0;"></div>
 
       <!-- Set Indicator -->
-      <div id="set-indicator" style="padding: 0 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 70px; flex-shrink: 0;">
+      <div id="set-indicator" style="padding: 0 1.2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 64px; flex-shrink: 0;">
         <span id="set-label" style="font-size: 10px; font-weight: 900; color: rgba(212,175,55,0.8); text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2px;">SET</span>
         <span id="set-num" style="font-size: 1.25rem; font-weight: 900; color: rgba(255,255,255,0.9); line-height: 1;">1</span>
       </div>
@@ -784,7 +799,7 @@ body.layout-bottom-left .bubble-bar svg {
       <div class="center-divider" style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2); flex-shrink: 0;"></div>
 
       <!-- Right Team Section -->
-      <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
+      <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.15rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
         <div id="confetti-right" class="confetti-container">
           <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
           <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
@@ -1065,7 +1080,7 @@ function cleanName(n) {
   return (n || "").replace(/\s*\(.*?\)\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 }
 
-function abbreviateName(teamName) {
+function abbreviateName(teamName, opposingTeamName) {
   if (!teamName) return "";
   const normalizedTeamName = cleanName(teamName);
   if (!normalizedTeamName.includes("/")) {
@@ -1073,23 +1088,63 @@ function abbreviateName(teamName) {
     if (compactPlaceholder !== normalizedTeamName) return compactPlaceholder;
     const teamParts = normalizedTeamName.split(/\s+/);
     if (teamParts.length <= 3) return normalizedTeamName;
+    if (normalizedTeamName.length <= 26) return normalizedTeamName;
+    return compactWords(normalizedTeamName);
   }
-  const players = teamName.split("/").map(p => p.trim());
-  const abbreviated = players.map(player => {
-    const normalizedPlayer = cleanName(player);
-    const lower = normalizedPlayer.toLowerCase();
-    if (lower.includes("winner") || lower.includes("loser") ||
-        lower.includes("team ") || lower.includes("seed ") ||
-        lower.includes("match ") || lower.includes("this match")) {
-      return abbreviatePlaceholderName(normalizedPlayer);
-    }
-    const parts = normalizedPlayer.split(/\s+/);
-    if (parts.length < 2) return normalizedPlayer;
-    if (parts.length === 2) return parts[1];
-    if (normalizedPlayer.length > 18) return parts[0] + ' ' + parts[parts.length - 1];
-    return parts[parts.length - 1];
+  const players = normalizedTeamName.split("/").map(p => p.trim()).filter(Boolean);
+  const parsedPlayers = players.map(parsePlayerLabel);
+  const parsedOpponents = cleanName(opposingTeamName || '').includes("/")
+    ? cleanName(opposingTeamName).split("/").map(p => p.trim()).filter(Boolean).map(parsePlayerLabel)
+    : [];
+  const surnameCounts = {};
+  const initialCounts = {};
+  const opponentInitialCounts = {};
+
+  parsedPlayers.forEach(player => {
+    if (!player.lastName) return;
+    const surnameKey = player.lastName.toLowerCase();
+    const initialKey = surnameKey + '|' + player.firstName.charAt(0).toLowerCase();
+    surnameCounts[surnameKey] = (surnameCounts[surnameKey] || 0) + 1;
+    initialCounts[initialKey] = (initialCounts[initialKey] || 0) + 1;
   });
-  return abbreviated.join(" / ");
+
+  parsedOpponents.forEach(player => {
+    if (!player.lastName) return;
+    const surnameKey = player.lastName.toLowerCase();
+    const initialKey = surnameKey + '|' + player.firstName.charAt(0).toLowerCase();
+    opponentInitialCounts[initialKey] = (opponentInitialCounts[initialKey] || 0) + 1;
+  });
+
+  const sharedTeamLastName =
+    parsedPlayers.length > 1 &&
+    parsedPlayers.every(player => !player.placeholder && player.lastName && player.lastName.toLowerCase() === parsedPlayers[0].lastName.toLowerCase())
+      ? parsedPlayers[0].lastName
+      : '';
+
+  if (sharedTeamLastName) {
+    return parsedPlayers.map(player => player.firstName || player.display).join(" / ") + ' ' + sharedTeamLastName;
+  }
+
+  return parsedPlayers.map(player => {
+    if (player.placeholder) return player.placeholder;
+    if (!player.lastName) return player.display;
+
+    const surnameKey = player.lastName.toLowerCase();
+    const initialKey = surnameKey + '|' + player.firstName.charAt(0).toLowerCase();
+    const initialCollisionAcrossSides = (opponentInitialCounts[initialKey] || 0) > 0;
+    if (((surnameCounts[surnameKey] || 0) > 1 && (initialCounts[initialKey] || 0) > 1) || initialCollisionAcrossSides) {
+      return player.firstName + ' ' + player.lastName;
+    }
+
+    return player.firstName.charAt(0).toUpperCase() + '. ' + player.lastName;
+  }).join(" / ");
+}
+
+function buildTeamDisplayPair(team1, team2) {
+  return {
+    team1: abbreviateName(team1, team2),
+    team2: abbreviateName(team2, team1),
+  };
 }
 
 function abbreviatePlaceholderName(name) {
@@ -1101,12 +1156,64 @@ function abbreviatePlaceholderName(name) {
   if (match) return 'This Match ' + titleCaseWord(match[1]);
   match = normalized.match(/^Match\s+(\d+)\s+(Winner|Loser)$/i);
   if (match) return 'M' + match[1] + ' ' + titleCaseWord(match[2]);
-  return normalized;
+  return compactBracketLabel(normalized);
 }
 
 function titleCaseWord(word) {
   if (!word) return '';
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+function parsePlayerLabel(playerLabel) {
+  const normalizedPlayer = cleanName(playerLabel);
+  const lower = normalizedPlayer.toLowerCase();
+  if (lower.includes("winner") || lower.includes("loser") ||
+      lower.includes("team ") || lower.includes("seed ") ||
+      lower.includes("match ") || lower.includes("this match")) {
+    return {
+      display: normalizedPlayer,
+      placeholder: abbreviatePlaceholderName(normalizedPlayer),
+      firstName: '',
+      lastName: ''
+    };
+  }
+
+  const parts = normalizedPlayer.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) {
+    return {
+      display: normalizedPlayer,
+      placeholder: '',
+      firstName: normalizedPlayer,
+      lastName: ''
+    };
+  }
+
+  return {
+    display: normalizedPlayer,
+    placeholder: '',
+    firstName: parts[0],
+    lastName: parts[parts.length - 1]
+  };
+}
+
+function compactWords(label) {
+  const words = cleanName(label).split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return label;
+  return words.map(function(word, index) {
+    if (index === words.length - 1) return word;
+    return word.charAt(0).toUpperCase() + '.';
+  }).join(' ');
+}
+
+function compactBracketLabel(label) {
+  if (!label) return '';
+  return label
+    .replace(/\bQuarterfinals?\b/gi, 'QF')
+    .replace(/\bQuarterfinal\b/gi, 'QF')
+    .replace(/\bSemifinals?\b/gi, 'SF')
+    .replace(/\bSemifinal\b/gi, 'SF')
+    .replace(/\bChampionship\b/gi, 'Final')
+    .replace(/\bCourt\s+([A-Za-z]+|\d+)\b/gi, 'Ct $1');
 }
 
 /* Replace "Match N" with "this match" when N is the current match */
@@ -1115,6 +1222,61 @@ function localizeMatchRef(text) {
   // Match patterns like "Winner of Match 5", "Loser of Match 12", "Match 5 Winner"
   var re = new RegExp('(Match\\s+)' + currentMatchNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
   return text.replace(re, 'this match');
+}
+
+function resetFittedText(el) {
+  if (!el) return;
+  if (!el.dataset.baseFontSize) el.dataset.baseFontSize = window.getComputedStyle(el).fontSize;
+  if (!el.dataset.baseLetterSpacing) el.dataset.baseLetterSpacing = window.getComputedStyle(el).letterSpacing;
+  el.style.fontSize = el.dataset.baseFontSize;
+  el.style.letterSpacing = el.dataset.baseLetterSpacing;
+}
+
+function fitTextToBox(el, minPx) {
+  if (!el) return;
+  resetFittedText(el);
+  var size = parseFloat(window.getComputedStyle(el).fontSize);
+  if (!size) return;
+
+  var available = el.clientWidth;
+  if (!available && el.parentElement) available = el.parentElement.clientWidth;
+  if (available <= 0) return;
+
+  void el.offsetWidth;
+  while (el.scrollWidth > available && size > minPx) {
+    size -= 0.5;
+    el.style.fontSize = size + 'px';
+    void el.offsetWidth;
+  }
+
+  if (el.scrollWidth > available) {
+    el.style.letterSpacing = '-0.055em';
+    void el.offsetWidth;
+    while (el.scrollWidth > available && size > Math.max(minPx - 1.5, 8)) {
+      size -= 0.5;
+      el.style.fontSize = size + 'px';
+      void el.offsetWidth;
+    }
+  }
+}
+
+function fitCenterTeamNames() {
+  fitTextToBox(t1El, 10.5);
+  fitTextToBox(t2El, 10.5);
+}
+
+function fitIntermissionTeamNames() {
+  fitTextToBox(intTeam1, 14);
+  fitTextToBox(intTeam2, 14);
+}
+
+function getMaxTradNameWidth() {
+  return Math.max(150, Math.min(Math.round(window.innerWidth * 0.18), 280));
+}
+
+function fitTradTeamNames() {
+  fitTextToBox(tradT1, 10);
+  fitTextToBox(tradT2, 10);
 }
 
 /* Set Pips */
@@ -1142,7 +1304,8 @@ function showNextMatchBar(nextMatchText) {
     const localized = localizeMatchRef(nextMatchText);
     const parts = localized.split(/\s+vs\.?\s+/i);
     if (parts.length >= 2) {
-      nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
+      const display = buildTeamDisplayPair(parts[0], parts[1]);
+      nextTeamsEl.innerHTML = display.team1 + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + display.team2;
     } else {
       nextTeamsEl.textContent = abbreviateName(localized);
     }
@@ -1183,7 +1346,8 @@ function showNextMatchBarPersistent(nextMatchText) {
     const localized = localizeMatchRef(nextMatchText);
     const parts = localized.split(/\s+vs\.?\s+/i);
     if (parts.length >= 2) {
-      nextTeamsEl.innerHTML = abbreviateName(parts[0]) + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + abbreviateName(parts[1]);
+      const display = buildTeamDisplayPair(parts[0], parts[1]);
+      nextTeamsEl.innerHTML = display.team1 + ' <span style="color: rgba(255,255,255,0.4); font-style: italic; margin: 0 4px; font-weight: 900;">vs</span> ' + display.team2;
     } else {
       nextTeamsEl.textContent = abbreviateName(localized);
     }
@@ -1237,8 +1401,10 @@ function applyData(d) {
   const setsToWin = d.setsToWin || 2;
 
   // Team names
-  if (t1El) t1El.textContent = abbreviateName(cleanName(d.team1)) || 'Team 1';
-  if (t2El) t2El.textContent = abbreviateName(cleanName(d.team2)) || 'Team 2';
+  const displayNames = buildTeamDisplayPair(d.team1 || '', d.team2 || '');
+  if (t1El) t1El.textContent = displayNames.team1 || 'Team 1';
+  if (t2El) t2El.textContent = displayNames.team2 || 'Team 2';
+  fitCenterTeamNames();
 
   // Team seeds (show on outside of team names)
   if (seed1El) seed1El.textContent = d.seed1 || '';
@@ -1455,15 +1621,16 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   const combinedScore = (newData.score1 || 0) + (newData.score2 || 0);
   const courtStatus = (newData.courtStatus || '').toLowerCase();
   const shouldEndInIntermission = combinedScore === 0 || courtStatus === 'waiting' || courtStatus === 'idle';
+  const displayNames = buildTeamDisplayPair(newTeam1, newTeam2);
   
   // Pre-set the intermission team names (hidden)
   if (intTeam1) {
-    intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
+    intTeam1.textContent = displayNames.team1 || 'TBD';
     intTeam1.style.transform = 'translateX(30px)';
     intTeam1.style.opacity = '0';
   }
   if (intTeam2) {
-    intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+    intTeam2.textContent = displayNames.team2 || 'TBD';
     intTeam2.style.transform = 'translateX(-30px)';
     intTeam2.style.opacity = '0';
   }
@@ -1603,6 +1770,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
 
 // Show intermission immediately (no animation, used on first load)
 function showIntermissionImmediate(team1, team2) {
+  const displayNames = buildTeamDisplayPair(team1, team2);
   // Hide scoring content
   if (scoringContent) {
     scoringContent.style.opacity = '0';
@@ -1611,12 +1779,12 @@ function showIntermissionImmediate(team1, team2) {
 
   // Update and show intermission content
   if (intTeam1) {
-    intTeam1.textContent = abbreviateName(cleanName(team1)) || 'TBD';
+    intTeam1.textContent = displayNames.team1 || 'TBD';
     intTeam1.style.transform = 'translateX(0)';
     intTeam1.style.opacity = '1';
   }
   if (intTeam2) {
-    intTeam2.textContent = abbreviateName(cleanName(team2)) || 'TBD';
+    intTeam2.textContent = displayNames.team2 || 'TBD';
     intTeam2.style.transform = 'translateX(0)';
     intTeam2.style.opacity = '1';
   }
@@ -1668,11 +1836,12 @@ function setIntermissionWidth() {
   const team2Width = intTeam2.offsetWidth;
   
   // Use the LARGER width for BOTH containers (symmetric layout)
-  const maxTeamWidth = Math.max(team1Width, team2Width);
+  const maxTeamWidth = Math.min(Math.max(team1Width, team2Width), Math.max(180, Math.round(window.innerWidth * 0.26)));
   
   // Set both containers to equal width
   if (intTeam1Container) intTeam1Container.style.width = maxTeamWidth + 'px';
   if (intTeam2Container) intTeam2Container.style.width = maxTeamWidth + 'px';
+  fitIntermissionTeamNames();
   
   // Re-measure total content width with equal containers
   const contentWidth = intermissionContent.offsetWidth;
@@ -1697,15 +1866,16 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 
   // Clear celebration before transitioning
   clearCelebration();
+  const displayNames = buildTeamDisplayPair(nextTeam1, nextTeam2);
 
   // Pre-set the intermission team names (hidden)
   if (intTeam1) {
-    intTeam1.textContent = abbreviateName(cleanName(nextTeam1)) || 'TBD';
+    intTeam1.textContent = displayNames.team1 || 'TBD';
     intTeam1.style.transform = 'translateX(30px)';
     intTeam1.style.opacity = '0';
   }
   if (intTeam2) {
-    intTeam2.textContent = abbreviateName(cleanName(nextTeam2)) || 'TBD';
+    intTeam2.textContent = displayNames.team2 || 'TBD';
     intTeam2.style.transform = 'translateX(-30px)';
     intTeam2.style.opacity = '0';
   }
@@ -1919,6 +2089,7 @@ function applyLayoutTransition(newLayout) {
         if (intStatusBar && intStatusBar.classList.contains('visible')) fitBubbleToBoard(intStatusBar);
       } else if (overlayState === 'intermission') {
         setIntermissionWidth();
+        fitIntermissionTeamNames();
       }
 
       // Fade back in
@@ -1974,8 +2145,9 @@ function applyTradData(d) {
   var score2 = d.score2 || 0;
 
   // Team names
-  var name1 = abbreviateName(cleanName(d.team1)) || 'Team 1';
-  var name2 = abbreviateName(cleanName(d.team2)) || 'Team 2';
+  var displayNames = buildTeamDisplayPair(d.team1 || '', d.team2 || '');
+  var name1 = displayNames.team1 || 'Team 1';
+  var name2 = displayNames.team2 || 'Team 2';
   if (tradT1) tradT1.textContent = name1;
   if (tradT2) tradT2.textContent = name2;
 
@@ -2046,8 +2218,10 @@ function equalizeTradNameWidths(force) {
   var w1 = tradT1.offsetWidth;
   var w2 = tradT2.offsetWidth;
   var maxW = Math.max(w1, w2);
-  tradT1.style.minWidth = maxW + 'px';
-  tradT2.style.minWidth = maxW + 'px';
+  var targetWidth = Math.min(maxW, getMaxTradNameWidth());
+  tradT1.style.minWidth = targetWidth + 'px';
+  tradT2.style.minWidth = targetWidth + 'px';
+  fitTradTeamNames();
 }
 
 function rebuildSetColumns(d) {
@@ -2272,8 +2446,9 @@ async function tick() {
           
           setTimeout(function() {
             // Update team names while faded out
-            if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
-            if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+            const displayNames = buildTeamDisplayPair(newTeam1, newTeam2);
+            if (intTeam1) intTeam1.textContent = displayNames.team1 || 'TBD';
+            if (intTeam2) intTeam2.textContent = displayNames.team2 || 'TBD';
             setIntermissionWidth();
             
             // Fade back in
@@ -2286,8 +2461,10 @@ async function tick() {
           }, 300);
         } else {
           // Fallback if no content element
-          if (intTeam1) intTeam1.textContent = abbreviateName(cleanName(newTeam1)) || 'TBD';
-          if (intTeam2) intTeam2.textContent = abbreviateName(cleanName(newTeam2)) || 'TBD';
+          const displayNames = buildTeamDisplayPair(newTeam1, newTeam2);
+          if (intTeam1) intTeam1.textContent = displayNames.team1 || 'TBD';
+          if (intTeam2) intTeam2.textContent = displayNames.team2 || 'TBD';
+          fitIntermissionTeamNames();
           endTransition();
         }
         return;
