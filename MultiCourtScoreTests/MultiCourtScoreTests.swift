@@ -5069,3 +5069,89 @@ struct QueueArbitrationPolicyTests {
         #expect(court.currentMatch?.id == earlierLiveCandidate.id)
     }
 }
+
+@Suite("Queue Recovery Safety Tests")
+@MainActor
+struct QueueRecoverySafetyTests {
+    @Test func runImmediatePollCycle_doesNotSwitchToMatchClaimedByAnotherCourt() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = await makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let courtOneCurrent = makeMatchItem(
+            url: "https://example.com/matches/cross-court-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let sharedLiveURL = URL(string: "https://example.com/matches/cross-court-shared-live")!
+        let courtOneCandidate = makeMatchItem(
+            url: sharedLiveURL.absoluteString,
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let courtTwoCurrent = makeMatchItem(
+            url: sharedLiveURL.absoluteString,
+            team1: "Ivy North / June South",
+            team2: "Kirk East / Lane West",
+            matchNumber: "9"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: courtOneCurrent.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 7, away: 6),
+            for: sharedLiveURL
+        )
+
+        viewModel.replaceQueue(1, with: [courtOneCurrent, courtOneCandidate], startIndex: 0)
+        viewModel.replaceQueue(2, with: [courtTwoCurrent], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(await viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.currentMatch?.id == courtOneCurrent.id)
+    }
+
+    @Test func runImmediatePollCycle_preservesRestoredManualSelectionWhenNoLiveEvidenceExists() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = await makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/restored-first",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let restoredActiveMatch = makeMatchItem(
+            url: "https://example.com/matches/restored-active",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: restoredActiveMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, restoredActiveMatch], startIndex: 1)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(await viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.currentMatch?.id == restoredActiveMatch.id)
+    }
+}

@@ -1735,6 +1735,21 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func isMatchURLClaimedByAnotherCourt(_ candidateMatch: MatchItem, for courtId: Int) -> Bool {
+        for court in courts where court.id != courtId {
+            guard let activeIdx = court.activeIndex,
+                  court.queue.indices.contains(activeIdx) else {
+                continue
+            }
+
+            let activeMatch = court.queue[activeIdx]
+            if activeMatch.apiURL == candidateMatch.apiURL {
+                return true
+            }
+        }
+        return false
+    }
+
     private func smartSwitchCandidateStrength(for snapshot: ScoreSnapshot) -> Int? {
         guard isMatchActive(snapshot) else { return nil }
 
@@ -1783,6 +1798,7 @@ final class AppViewModel: ObservableObject {
         let result: (index: Int, strength: Int)? = await withTaskGroup(of: (Int, Int?).self) { group in
             for (queueIdx, match) in queue.enumerated() {
                 guard queueIdx != activeIdx else { continue }
+                guard !isMatchURLClaimedByAnotherCourt(match, for: courtId) else { continue }
                 group.addTask { [scoreCache] in
                     guard let data = try? await scoreCache.get(match.apiURL) else {
                         return (queueIdx, nil)
