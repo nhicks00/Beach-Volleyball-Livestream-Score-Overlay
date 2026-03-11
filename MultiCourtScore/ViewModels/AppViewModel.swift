@@ -351,6 +351,44 @@ final class AppViewModel: ObservableObject {
     var pollingCourts: [Court] {
         return courts.filter { $0.status.isPolling }
     }
+
+    private func normalizedIdentityComponent(_ value: String?) -> String? {
+        value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " / ", with: "/")
+            .nilIfEmpty()
+    }
+
+    private func stableMatchIdentityKey(
+        team1: String?,
+        team2: String?,
+        matchNumber: String?,
+        divisionId: Int?
+    ) -> String? {
+        guard let name1 = normalizedIdentityComponent(team1),
+              let name2 = normalizedIdentityComponent(team2) else {
+            return nil
+        }
+
+        let orderedTeams = [name1, name2].sorted().joined(separator: "|")
+        let matchPart = normalizedIdentityComponent(matchNumber) ?? "no-match-number"
+        let divisionPart = divisionId.map(String.init) ?? "no-division"
+        return "\(divisionPart)|\(matchPart)|\(orderedTeams)"
+    }
+
+    private func stableMatchIdentityKey(for match: MatchItem) -> String? {
+        stableMatchIdentityKey(
+            team1: match.team1Name,
+            team2: match.team2Name,
+            matchNumber: match.matchNumber,
+            divisionId: match.divisionId
+        )
+    }
+
+    private func matchesRepresentSameContest(_ lhs: MatchItem, _ rhs: MatchItem) -> Bool {
+        stableMatchIdentityKey(for: lhs) == stableMatchIdentityKey(for: rhs)
+    }
     
     // MARK: - Court Management
     
@@ -425,7 +463,9 @@ final class AppViewModel: ObservableObject {
         }
 
         if let previousActiveMatch,
-           let preservedIndex = normalizedItems.firstIndex(where: { $0.id == previousActiveMatch.id }) {
+           let preservedIndex = normalizedItems.firstIndex(where: {
+               $0.id == previousActiveMatch.id || matchesRepresentSameContest($0, previousActiveMatch)
+           }) {
             courts[idx].activeIndex = preservedIndex
 
             if normalizedItems[preservedIndex].apiURL != previousActiveMatch.apiURL {
@@ -1743,7 +1783,7 @@ final class AppViewModel: ObservableObject {
             }
 
             let activeMatch = court.queue[activeIdx]
-            if activeMatch.apiURL == candidateMatch.apiURL {
+            if activeMatch.apiURL == candidateMatch.apiURL || matchesRepresentSameContest(activeMatch, candidateMatch) {
                 return true
             }
         }
@@ -2803,19 +2843,30 @@ final class AppViewModel: ObservableObject {
     
     private func normalizeDictFormat(_ dict: [String: Any], courtId: Int, currentMatch: MatchItem?) -> ScoreSnapshot {
         let score = dict["score"] as? [String: Any]
-        let home = score?["home"] as? Int ?? 0
-        let away = score?["away"] as? Int ?? 0
+        var home = score?["home"] as? Int ?? 0
+        var away = score?["away"] as? Int ?? 0
         
-        let name1 = (dict["team1_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+        var name1 = (dict["team1_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? (dict["homeTeam"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? (dict["team1Name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? currentMatch?.team1Name
             ?? "Team A"
-        let name2 = (dict["team2_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+        var name2 = (dict["team2_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? (dict["awayTeam"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? (dict["team2Name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? currentMatch?.team2Name
             ?? "Team B"
+        var team1Seed = (dict["seed1"] as? String) ?? currentMatch?.team1Seed
+        var team2Seed = (dict["seed2"] as? String) ?? currentMatch?.team2Seed
+
+        if let currentMatch,
+           normalizedIdentityComponent(name1) == normalizedIdentityComponent(currentMatch.team2Name),
+           normalizedIdentityComponent(name2) == normalizedIdentityComponent(currentMatch.team1Name) {
+            name1 = currentMatch.team1Name ?? name1
+            name2 = currentMatch.team2Name ?? name2
+            swap(&home, &away)
+            swap(&team1Seed, &team2Seed)
+        }
         
         let statusStr = (dict["status"] as? String) ?? "Pre-Match"
         let setNum = (dict["setNumber"] as? Int) ?? 1
@@ -2834,8 +2885,8 @@ final class AppViewModel: ObservableObject {
             setNumber: setNum,
             team1Name: name1,
             team2Name: name2,
-            team1Seed: (dict["seed1"] as? String) ?? currentMatch?.team1Seed,
-            team2Seed: (dict["seed2"] as? String) ?? currentMatch?.team2Seed,
+            team1Seed: team1Seed,
+            team2Seed: team2Seed,
             scheduledTime: (dict["time"] as? String) ?? currentMatch?.scheduledTime,
             matchNumber: (dict["matchNumber"] as? String) ?? currentMatch?.matchNumber,
             courtNumber: (dict["court"] as? String) ?? currentMatch?.courtNumber,
