@@ -415,18 +415,20 @@ body.layout-top-left .bubble-container {
   z-index: 19;
   height: 28px;
   width: var(--trad-board-width, auto);
+  overflow: visible;
 }
 body.layout-top-left .bubble-bar {
   top: 0;
-  left: 50%;
+  left: 0;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
+  transform-origin: left center;
 }
 body.layout-top-left .bubble-bar.hidden-up {
-  transform: translateX(-50%) translateY(-120%) translateZ(0);
+  transform: translateX(0) translateY(-120%) translateZ(0);
 }
 body.layout-top-left .bubble-bar.visible {
-  transform: translateX(-50%) translateY(0) translateZ(0);
+  transform: translateX(0) translateY(0) translateZ(0);
 }
 
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
@@ -444,20 +446,22 @@ body.layout-bottom-left .bubble-container {
   z-index: 19;
   height: 28px;
   width: var(--trad-board-width, auto);
+  overflow: visible;
 }
 /* Invert bubble direction for bottom-left: pop UP */
 body.layout-bottom-left .bubble-bar {
   top: auto;
   bottom: 0;
-  left: 50%;
+  left: 0;
   max-width: calc(100% - 2px);
   box-sizing: border-box;
+  transform-origin: left center;
 }
 body.layout-bottom-left .bubble-bar.hidden-up {
-  transform: translateX(-50%) translateY(120%) translateZ(0);
+  transform: translateX(0) translateY(120%) translateZ(0);
 }
 body.layout-bottom-left .bubble-bar.visible {
-  transform: translateX(-50%) translateY(0) translateZ(0);
+  transform: translateX(0) translateY(0) translateZ(0);
 }
 /* Invert border-radius for upward bubbles */
 body.layout-bottom-left .bubble-bar {

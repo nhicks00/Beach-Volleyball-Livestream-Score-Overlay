@@ -1322,7 +1322,7 @@ struct QueuePollingEdgeCaseTests {
         )
 
         StubURLProtocol.registerJSON(
-            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            makeScoreDict(status: "Final", home: 21, away: 18),
             for: firstMatch.apiURL
         )
         StubURLProtocol.registerJSON(
@@ -1335,8 +1335,10 @@ struct QueuePollingEdgeCaseTests {
 
         let court = try #require(viewModel.court(for: 1))
         #expect(court.activeIndex == 1)
-        #expect(court.status == .waiting)
-        #expect(court.lastSnapshot == nil)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.team1Name == secondMatch.team1Name)
+        #expect(snapshot.team2Name == secondMatch.team2Name)
     }
 
     @Test func runImmediatePollCycle_revertsToEarlierMatchWhenLaterLiveScoreWasAccidental() async throws {
@@ -1379,7 +1381,7 @@ struct QueuePollingEdgeCaseTests {
             for: secondMatch.apiURL
         )
         StubURLProtocol.registerJSON(
-            makeScoreDict(status: "In Progress", home: 6, away: 4),
+            makeScoreDict(status: "In Progress", home: 8, away: 4),
             for: thirdMatch.apiURL
         )
 
@@ -4267,103 +4269,109 @@ struct ScannerImportImpactTests {
 struct OverlayServerLifecycleTests {
 
     @Test func startServices_surfacesConfigErrorWhenPortIsUnavailable() async throws {
-        await stopSharedOverlayServer()
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer { cleanup() }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
 
-        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
-        defer { close(lockedSocket) }
+            let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+            defer { close(lockedSocket) }
 
-        viewModel.appSettings.serverPort = occupiedPort
-        viewModel.startServices()
+            viewModel.appSettings.serverPort = occupiedPort
+            viewModel.startServices()
 
-        let didSurfaceError = await waitUntil {
-            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+            let didSurfaceError = await waitUntil {
+                configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+            }
+
+            #expect(didSurfaceError)
+            #expect(!viewModel.serverRunning)
+            let configError = try #require(configErrorMessage(from: viewModel.error))
+            #expect(configError.contains("Port \(occupiedPort) unavailable"))
+            #expect(configError.contains("Another app or MultiCourtScore instance"))
+
+            viewModel.stopServices()
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
-
-        #expect(didSurfaceError)
-        #expect(!viewModel.serverRunning)
-        let configError = try #require(configErrorMessage(from: viewModel.error))
-        #expect(configError.contains("Port \(occupiedPort) unavailable"))
-        #expect(configError.contains("Another app or MultiCourtScore instance"))
-
-        viewModel.stopServices()
-        try? await Task.sleep(nanoseconds: 100_000_000)
     }
 
     @Test func startAllPolling_doesNotStartQueuesWhenOverlayServerFailsToStart() async throws {
-        await stopSharedOverlayServer()
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer { cleanup() }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
 
-        let (lockedSocket, occupiedPort) = try reserveListeningSocket()
-        defer { close(lockedSocket) }
+            let (lockedSocket, occupiedPort) = try reserveListeningSocket()
+            defer { close(lockedSocket) }
 
-        viewModel.appSettings.serverPort = occupiedPort
-        viewModel.replaceQueue(1, with: [
-            makeMatchItem(
-                url: "https://example.com/match/occupied-port",
-                team1: "Team A",
-                team2: "Team B",
-                matchNumber: "1"
-            )
-        ])
+            viewModel.appSettings.serverPort = occupiedPort
+            viewModel.replaceQueue(1, with: [
+                makeMatchItem(
+                    url: "https://example.com/match/occupied-port",
+                    team1: "Team A",
+                    team2: "Team B",
+                    matchNumber: "1"
+                )
+            ])
 
-        viewModel.startAllPolling()
+            viewModel.startAllPolling()
 
-        let didSurfaceError = await waitUntil {
-            configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+            let didSurfaceError = await waitUntil {
+                configErrorMessage(from: viewModel.error)?.contains("Port \(occupiedPort) unavailable") == true
+            }
+
+            #expect(didSurfaceError)
+            #expect(!viewModel.serverRunning)
+
+            let court = try #require(viewModel.court(for: 1))
+            #expect(court.status == .idle)
+            #expect(court.lastPollTime == nil)
+            #expect(court.errorMessage == nil)
         }
-
-        #expect(didSurfaceError)
-        #expect(!viewModel.serverRunning)
-
-        let court = try #require(viewModel.court(for: 1))
-        #expect(court.status == .idle)
-        #expect(court.lastPollTime == nil)
-        #expect(court.errorMessage == nil)
     }
 
     @Test func start_servesHealthEndpointOnFreePort() async throws {
-        await stopSharedOverlayServer()
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer { cleanup() }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
 
-        let freePort = try reserveFreePort()
-        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+            let freePort = try reserveFreePort()
+            await WebSocketHub.shared.start(with: viewModel, port: freePort)
 
-        #expect(WebSocketHub.shared.isRunning)
-        #expect(WebSocketHub.shared.startupError == nil)
+            #expect(WebSocketHub.shared.isRunning)
+            #expect(WebSocketHub.shared.startupError == nil)
 
-        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/health"))
-        let didRespond = await waitUntilAsync {
-            do {
-                let (_, response) = try await URLSession.shared.data(from: url)
-                return (response as? HTTPURLResponse)?.statusCode == 200
-            } catch {
-                return false
+            let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/health"))
+            let didRespond = await waitUntilAsync(timeout: 8.0) {
+                do {
+                    let (_, response) = try await URLSession.shared.data(from: url)
+                    return (response as? HTTPURLResponse)?.statusCode == 200
+                } catch {
+                    return false
+                }
             }
+            #expect(didRespond)
+
+            let (data, response) = try await URLSession.shared.data(from: url)
+            let httpResponse = try #require(response as? HTTPURLResponse)
+            #expect(httpResponse.statusCode == 200)
+
+            let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            #expect(json["status"] as? String == "ok")
+            #expect(json["serverStatus"] as? String == "running")
+            #expect(json["port"] as? Int == freePort)
+            #expect(json["signalRStatus"] as? String == SignalRStatus.disabled.displayLabel)
+            #expect(json["signalREnabled"] as? Bool == false)
+            let courts = try #require(json["courts"] as? [[String: Any]])
+            #expect(courts.count == viewModel.courts.count)
+
+            await stopSharedOverlayServer()
+            #expect(!WebSocketHub.shared.isRunning)
         }
-        #expect(didRespond)
-
-        let (data, response) = try await URLSession.shared.data(from: url)
-        let httpResponse = try #require(response as? HTTPURLResponse)
-        #expect(httpResponse.statusCode == 200)
-
-        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(json["status"] as? String == "ok")
-        #expect(json["serverStatus"] as? String == "running")
-        #expect(json["port"] as? Int == freePort)
-        #expect(json["signalRStatus"] as? String == SignalRStatus.disabled.displayLabel)
-        #expect(json["signalREnabled"] as? Bool == false)
-        let courts = try #require(json["courts"] as? [[String: Any]])
-        #expect(courts.count == viewModel.courts.count)
-
-        await stopSharedOverlayServer()
-        #expect(!WebSocketHub.shared.isRunning)
     }
 
     @Test func watchdog_restartsOverlayServerWhenPollingIsActiveAndServerStops() async throws {
@@ -4408,27 +4416,29 @@ struct OverlayServerLifecycleTests {
     }
 
     @Test func debugLogs_returnsRecentRuntimeEntries() async throws {
-        await stopSharedOverlayServer()
+        try await withSharedOverlayServerTestScope {
+            await stopSharedOverlayServer()
 
-        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
-        defer { cleanup() }
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+            defer { cleanup() }
 
-        RuntimeLogStore.shared.clear()
+            RuntimeLogStore.shared.clear()
 
-        let freePort = try reserveFreePort()
-        await WebSocketHub.shared.start(with: viewModel, port: freePort)
+            let freePort = try reserveFreePort()
+            await WebSocketHub.shared.start(with: viewModel, port: freePort)
 
-        let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/debug/logs"))
-        let (data, response) = try await URLSession.shared.data(from: url)
-        let httpResponse = try #require(response as? HTTPURLResponse)
-        #expect(httpResponse.statusCode == 200)
+            let url = try #require(URL(string: "http://127.0.0.1:\(freePort)/debug/logs"))
+            let (data, response) = try await URLSession.shared.data(from: url)
+            let httpResponse = try #require(response as? HTTPURLResponse)
+            #expect(httpResponse.statusCode == 200)
 
-        let body = String(decoding: data, as: UTF8.self)
-        #expect(body.contains("Path:"))
-        #expect(body.contains("[overlay-server]"))
-        #expect(body.contains("running at http://localhost"))
+            let body = String(decoding: data, as: UTF8.self)
+            #expect(body.contains("Path:"))
+            #expect(body.contains("[overlay-server]"))
+            #expect(body.contains("running at http://localhost"))
 
-        await stopSharedOverlayServer()
+            await stopSharedOverlayServer()
+        }
     }
 }
 
@@ -4982,12 +4992,18 @@ struct QueueArbitrationPolicyTests {
         #expect(court.currentMatch?.id == firstMatch.id)
     }
 
-    @Test func runImmediatePollCycle_switchesToLaterMatchAfterWeakEvidencePersists() async throws {
+    @Test func runImmediatePollCycle_manualSelectionIgnoresWeakAutoSwitchCandidate() async throws {
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
         let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
         defer { cleanup() }
 
+        let priorMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-repeat-prior",
+            team1: "Uma Gray / Vera Lake",
+            team2: "Wren Hart / Xena Hale",
+            matchNumber: "0"
+        )
         let firstMatch = makeMatchItem(
             url: "https://example.com/matches/arbitration-repeat-current",
             team1: "Alice Smith / Beth Jones",
@@ -5003,23 +5019,26 @@ struct QueueArbitrationPolicyTests {
 
         StubURLProtocol.registerJSON(
             makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: priorMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
             for: firstMatch.apiURL
         )
         StubURLProtocol.registerJSON(
-            makeScoreDict(status: "Pre-Match", home: 1, away: 0),
+            makeScoreDict(status: "In Progress", home: 1, away: 0),
             for: laterMatch.apiURL
         )
 
         viewModel.weakSmartSwitchConfirmationWindow = 0.05
-        viewModel.replaceQueue(1, with: [firstMatch, laterMatch], startIndex: 0)
+        viewModel.replaceQueue(1, with: [priorMatch, firstMatch, laterMatch], startIndex: 1)
 
         await viewModel.runImmediatePollCycleForTesting(courtId: 1)
-        try await Task.sleep(nanoseconds: 75_000_000)
         await viewModel.runImmediatePollCycleForTesting(courtId: 1)
 
         let court = try #require(viewModel.court(for: 1))
         #expect(court.activeIndex == 1)
-        #expect(court.currentMatch?.id == laterMatch.id)
+        #expect(court.currentMatch?.id == firstMatch.id)
     }
 
     @Test func runImmediatePollCycle_prefersEarliestConfidentLiveCandidateWhenMultipleQueuedMatchesAppearActive() async throws {
@@ -5048,7 +5067,7 @@ struct QueueArbitrationPolicyTests {
         )
 
         StubURLProtocol.registerJSON(
-            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            makeScoreDict(status: "Final", home: 21, away: 18),
             for: currentMatch.apiURL
         )
         StubURLProtocol.registerJSON(
@@ -5067,6 +5086,190 @@ struct QueueArbitrationPolicyTests {
         let court = try #require(viewModel.court(for: 1))
         #expect(court.activeIndex == 1)
         #expect(court.currentMatch?.id == earlierLiveCandidate.id)
+    }
+
+    @Test func runImmediatePollCycle_holdsQueueHeadWhenLaterLiveEvidenceIsWeak() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-weak-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let laterMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-weak-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 1, away: 0),
+            for: laterMatch.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 0.05
+        viewModel.replaceQueue(1, with: [firstMatch, laterMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.currentMatch?.id == firstMatch.id)
+    }
+
+    @Test func runImmediatePollCycle_switchesToLaterMatchAfterConfirmedBypassWhenQueueHeadNeverScores() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-confirm-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let laterMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-confirm-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 3, away: 2),
+            for: laterMatch.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 0.05
+        viewModel.replaceQueue(1, with: [firstMatch, laterMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        let firstCourt = try #require(viewModel.court(for: 1))
+        #expect(firstCourt.activeIndex == 0)
+
+        try await Task.sleep(nanoseconds: 90_000_000)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let secondCourt = try #require(viewModel.court(for: 1))
+        #expect(secondCourt.activeIndex == 1)
+        #expect(secondCourt.currentMatch?.id == laterMatch.id)
+    }
+
+    @Test func runImmediatePollCycle_holdsAmbiguousBypassWhenAnotherCourtAlreadyHasCredibleLiveClaim() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let courtOneCurrent = makeMatchItem(
+            url: "https://example.com/matches/arbitration-ambiguous-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let courtOneLater = makeMatchItem(
+            url: "https://example.com/matches/arbitration-ambiguous-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let courtTwoLive = makeMatchItem(
+            url: "https://example.com/matches/arbitration-ambiguous-other-court",
+            team1: "Ivy North / June South",
+            team2: "Kirk East / Lane West",
+            matchNumber: "7"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: courtOneCurrent.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 3, away: 2),
+            for: courtOneLater.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 7, away: 6),
+            for: courtTwoLive.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 0.25
+        viewModel.replaceQueue(1, with: [courtOneCurrent, courtOneLater], startIndex: 0)
+        viewModel.replaceQueue(2, with: [courtTwoLive], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 2)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let firstCourt = try #require(viewModel.court(for: 1))
+        #expect(firstCourt.activeIndex == 0)
+        #expect(firstCourt.currentMatch?.id == courtOneCurrent.id)
+    }
+
+    @Test func runImmediatePollCycle_revertsLaterLiveBypassWhenLaterScoringDisappears() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-revert-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let laterMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-bypass-revert-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: laterMatch.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 0.05
+        viewModel.replaceQueue(1, with: [firstMatch, laterMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let switchedCourt = try #require(viewModel.court(for: 1))
+        #expect(switchedCourt.activeIndex == 1)
+        #expect(switchedCourt.currentMatch?.id == laterMatch.id)
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: laterMatch.apiURL
+        )
+        await viewModel.clearScoreCacheForTesting()
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let revertedCourt = try #require(viewModel.court(for: 1))
+        #expect(revertedCourt.activeIndex == 0)
+        #expect(revertedCourt.currentMatch?.id == firstMatch.id)
     }
 }
 

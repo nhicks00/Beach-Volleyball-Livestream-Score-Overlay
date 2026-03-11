@@ -39,6 +39,7 @@ vbl_session.json
 .vscode/
 scraper_venv/
 .playwright-cli/
+output/playwright/overlay-visual/
 .claude/settings.local.json
 default.profraw
 signalr_mutations_captured.json

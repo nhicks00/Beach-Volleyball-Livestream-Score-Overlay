@@ -154,6 +154,16 @@ final class AppViewModel: ObservableObject {
     private var smartSwitchFallbackOriginIndex: [Int: Int] = [:]
     private var smartSwitchedMatchID: [Int: UUID] = [:]
     private var pendingSmartSwitchCandidate: [Int: (queueIndex: Int, firstSeenAt: Date)] = [:]
+    private enum QueueArbitrationReason: String {
+        case manual = "manual"
+        case queueDefault = "queue-default"
+        case smartSwitch = "smart-switch"
+        case laterLiveBypass = "later-live-bypass"
+        case reopenRecovery = "reopen-recovery"
+        case ambiguousHold = "ambiguous-hold"
+    }
+    private var queueArbitrationReasonByCourt: [Int: QueueArbitrationReason] = [:]
+    private var lastQueueArbitrationNoteByCourt: [Int: String] = [:]
     private var lastSignalRReconcileAt: [Int: Date] = [:]
     private var lastSignalRMutationAt: [Int: Date] = [:]
     private var lastSignalRMutationEpochMs: [Int: Int64] = [:]
@@ -211,7 +221,6 @@ final class AppViewModel: ObservableObject {
         self.signalRCredentialsProvider = { configStore.loadCredentials() }
         self.signalRClientFactory = { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
-        self.webSocketHub.appViewModel = self
 
         loadConfiguration()
         ensureAllCourtsExist()
@@ -238,7 +247,6 @@ final class AppViewModel: ObservableObject {
         self.signalRCredentialsProvider = signalRCredentialsProvider ?? { configStore.loadCredentials() }
         self.signalRClientFactory = signalRClientFactory ?? { delegate in VBLSignalRClient(delegate: delegate) }
         self.appSettings = configStore.loadSettings()
-        self.webSocketHub.appViewModel = self
         
         loadConfiguration()
         ensureAllCourtsExist()
@@ -274,6 +282,7 @@ final class AppViewModel: ObservableObject {
         }
 
         if webSocketHub.isRunning {
+            webSocketHub.appViewModel = self
             serverRunning = true
             if webSocketHub.startupError == nil {
                 error = nil
@@ -426,6 +435,8 @@ final class AppViewModel: ObservableObject {
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+        queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: courts[idx].activeIndex)
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
         clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
@@ -455,6 +466,7 @@ final class AppViewModel: ObservableObject {
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
 
         guard !normalizedItems.isEmpty else {
             courts[idx].activeIndex = nil
@@ -465,6 +477,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].errorMessage = nil
             observedActiveScoring[courtId] = false
             clearSuppressionLogState(for: courtId)
+            queueArbitrationReasonByCourt.removeValue(forKey: courtId)
             saveConfigurationNow()
             runtimeLog.log(.info, subsystem: "operator", message: "saved queue editor changes for court \(courtId); queue emptied")
             return
@@ -495,6 +508,7 @@ final class AppViewModel: ObservableObject {
             observedActiveScoring[courtId] = false
         }
 
+        queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: courts[idx].activeIndex)
         clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(
@@ -629,6 +643,8 @@ final class AppViewModel: ObservableObject {
         smartSwitchFallbackOriginIndex.removeAll()
         smartSwitchedMatchID.removeAll()
         pendingSmartSwitchCandidate.removeAll()
+        queueArbitrationReasonByCourt.removeAll()
+        lastQueueArbitrationNoteByCourt.removeAll()
         for i in courts.indices {
             let courtId = courts[i].id
             courts[i].queue = []
@@ -741,6 +757,8 @@ final class AppViewModel: ObservableObject {
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+        queueArbitrationReasonByCourt.removeValue(forKey: courtId)
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -980,6 +998,8 @@ final class AppViewModel: ObservableObject {
             courts[idx].lastSnapshot = nil
             observedActiveScoring[courtId] = false
             recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+            queueArbitrationReasonByCourt[courtId] = .manual
+            lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
             saveConfigurationNow()
             runtimeLog.log(.info, subsystem: "operator", message: "advanced court \(courtId) from queue index \(activeIdx) to \(nextIndex)")
         }
@@ -1002,6 +1022,8 @@ final class AppViewModel: ObservableObject {
         courts[idx].lastSnapshot = nil
         observedActiveScoring[courtId] = false
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
+        queueArbitrationReasonByCourt[courtId] = .manual
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "moved court \(courtId) back from queue index \(activeIdx) to \(activeIdx - 1)")
     }
@@ -1023,6 +1045,7 @@ final class AppViewModel: ObservableObject {
         date: Date = Date()
     ) -> String {
         let timestamp = ISO8601DateFormatter().string(from: date)
+        webSocketHub.appViewModel = self
         let healthSnapshot = webSocketHub.currentHealthSnapshot(port: appSettings.serverPort)
         let courtSnapshots = currentCourtDiagnosticsSnapshots(referenceDate: date)
 
@@ -1809,6 +1832,34 @@ final class AppViewModel: ObservableObject {
         return false
     }
 
+    private func defaultQueueArbitrationReason(for activeIndex: Int?) -> QueueArbitrationReason {
+        guard let activeIndex else { return .queueDefault }
+        return activeIndex == 0 ? .queueDefault : .manual
+    }
+
+    private func currentQueueArbitrationReason(for courtId: Int, activeIndex: Int?) -> QueueArbitrationReason {
+        queueArbitrationReasonByCourt[courtId] ?? defaultQueueArbitrationReason(for: activeIndex)
+    }
+
+    private func noteQueueArbitration(_ courtId: Int, reason: QueueArbitrationReason, message: String) {
+        let fingerprint = "\(reason.rawValue):\(message)"
+        guard lastQueueArbitrationNoteByCourt[courtId] != fingerprint else { return }
+        lastQueueArbitrationNoteByCourt[courtId] = fingerprint
+        runtimeLog.log(.info, subsystem: "queue", message: message)
+    }
+
+    private func otherCourtsHaveCredibleLiveClaims(excluding courtId: Int) -> Bool {
+        for court in courts where court.id != courtId {
+            if court.status == .live || observedActiveScoring[court.id] == true {
+                return true
+            }
+            if let snapshot = court.lastSnapshot, isMatchActive(snapshot) {
+                return true
+            }
+        }
+        return false
+    }
+
     private func smartSwitchCandidateStrength(for snapshot: ScoreSnapshot) -> Int? {
         guard isMatchActive(snapshot) else { return nil }
 
@@ -1821,7 +1872,11 @@ final class AppViewModel: ObservableObject {
         let hasCompletedSet = snapshot.setHistory.contains(where: \.isComplete)
         let hasMultiSetEvidence = snapshot.setNumber > 1 || snapshot.setHistory.count > 1
 
-        return (hasExplicitLiveStatus || hasCompletedSet || hasMultiSetEvidence || totalPoints >= 4) ? 2 : 1
+        if hasCompletedSet || hasMultiSetEvidence || totalPoints >= 12 {
+            return 3
+        }
+
+        return (hasExplicitLiveStatus || totalPoints >= 4) ? 2 : 1
     }
     
     /// Smart Queue Switch: Check if current match is 0-0 but another queue match has active scoring.
@@ -1829,15 +1884,60 @@ final class AppViewModel: ObservableObject {
     private func checkForSmartQueueSwitch(courtId: Int, currentSnapshot: ScoreSnapshot) async -> Bool {
         guard let idx = courtIndex(for: courtId) else { return false }
         guard let activeIdx = courts[idx].activeIndex else { return false }
+        let currentReason = currentQueueArbitrationReason(for: courtId, activeIndex: activeIdx)
+        let bypassEligible =
+            activeIdx == 0
+            && !isMatchActive(currentSnapshot)
+            && !(observedActiveScoring[courtId] ?? false)
+        let competingLiveClaims = otherCourtsHaveCredibleLiveClaims(excluding: courtId)
+        let currentHasResidualEvidence =
+            (currentSnapshot.team1Score + currentSnapshot.team2Score) > 0
+            || !currentSnapshot.setHistory.isEmpty
+
+        if let fallbackStart = smartSwitchFallbackOriginIndex[courtId],
+           activeIdx > 0,
+           !isMatchActive(currentSnapshot),
+           !currentHasResidualEvidence,
+           let currentIdx = courtIndex(for: courtId) {
+            let canonicalIdx = await firstNonFinalQueueIndex(courtId: courtId, startingAt: fallbackStart)
+            if canonicalIdx < activeIdx,
+               canonicalIdx < courts[currentIdx].queue.count {
+                let revertReason: QueueArbitrationReason = .laterLiveBypass
+                noteQueueArbitration(
+                    courtId,
+                    reason: revertReason,
+                    message: "later live bypass reverted on court \(courtId); returned from queue index \(activeIdx) to \(canonicalIdx)"
+                )
+                smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+                smartSwitchedMatchID.removeValue(forKey: courtId)
+                pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: canonicalIdx)
+                courts[currentIdx].activeIndex = canonicalIdx
+                courts[currentIdx].lastSnapshot = nil
+                courts[currentIdx].status = .waiting
+                courts[currentIdx].liveSince = nil
+                courts[currentIdx].finishedAt = nil
+                observedActiveScoring[courtId] = false
+                lastScoreChangeTime[courtId] = nil
+                lastScoreSnapshot[courtId] = nil
+                lastServeTeam.removeValue(forKey: courtId)
+                return true
+            }
+        }
 
         // Only smart-switch if the current match is not actively in progress.
         guard !isMatchActive(currentSnapshot) else {
             pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            if currentReason == .ambiguousHold {
+                queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: activeIdx)
+            }
             return false
         }
 
         // Don't switch if we've been live on this match (liveSince set)
-        if courts[idx].liveSince != nil {
+        if courts[idx].liveSince != nil,
+           currentReason != .laterLiveBypass,
+           smartSwitchFallbackOriginIndex[courtId] == nil {
             pendingSmartSwitchCandidate.removeValue(forKey: courtId)
             return false
         }
@@ -1884,24 +1984,123 @@ final class AppViewModel: ObservableObject {
         }
 
         if let candidate = result {
-            if candidate.strength == 1 {
-                let now = Date()
-                if let pending = pendingSmartSwitchCandidate[courtId],
-                   pending.queueIndex == candidate.index,
-                   now.timeIntervalSince(pending.firstSeenAt) >= weakSmartSwitchConfirmationWindow {
+            let now = Date()
+
+            if bypassEligible {
+                if candidate.strength <= 1 {
                     pendingSmartSwitchCandidate.removeValue(forKey: courtId)
-                } else {
-                    let firstSeenAt = pendingSmartSwitchCandidate[courtId]?.queueIndex == candidate.index
-                        ? pendingSmartSwitchCandidate[courtId]!.firstSeenAt
-                        : now
-                    pendingSmartSwitchCandidate[courtId] = (queueIndex: candidate.index, firstSeenAt: firstSeenAt)
+                    queueArbitrationReasonByCourt[courtId] = competingLiveClaims ? .ambiguousHold : .queueDefault
+                    noteQueueArbitration(
+                        courtId,
+                        reason: queueArbitrationReasonByCourt[courtId] ?? .queueDefault,
+                        message: "no-score queue head held on court \(courtId); later match evidence at index \(candidate.index) is too weak"
+                    )
                     return false
                 }
+
+                if candidate.strength == 2 {
+                    let confirmationWindow = weakSmartSwitchConfirmationWindow * (competingLiveClaims ? 2.0 : 1.5)
+                    if let pending = pendingSmartSwitchCandidate[courtId],
+                       pending.queueIndex == candidate.index,
+                       now.timeIntervalSince(pending.firstSeenAt) >= confirmationWindow {
+                        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                    } else {
+                        let firstSeenAt = pendingSmartSwitchCandidate[courtId]?.queueIndex == candidate.index
+                            ? pendingSmartSwitchCandidate[courtId]!.firstSeenAt
+                            : now
+                        pendingSmartSwitchCandidate[courtId] = (queueIndex: candidate.index, firstSeenAt: firstSeenAt)
+                        queueArbitrationReasonByCourt[courtId] = competingLiveClaims ? .ambiguousHold : .queueDefault
+                        noteQueueArbitration(
+                            courtId,
+                            reason: queueArbitrationReasonByCourt[courtId] ?? .queueDefault,
+                            message: competingLiveClaims
+                                ? "ambiguous hold on court \(courtId); waiting for stronger later-live evidence at index \(candidate.index)"
+                                : "no-score queue head held on court \(courtId); waiting to confirm later live evidence at index \(candidate.index)"
+                        )
+                        return false
+                    }
+                } else {
+                    pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                }
             } else {
-                pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                if currentReason == .manual && candidate.strength < 3 {
+                    pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                    noteQueueArbitration(
+                        courtId,
+                        reason: .manual,
+                        message: "manual selection held on court \(courtId); ignored weak auto-switch candidate at index \(candidate.index)"
+                    )
+                    return false
+                }
+
+                if candidate.strength == 1 {
+                    if let pending = pendingSmartSwitchCandidate[courtId],
+                       pending.queueIndex == candidate.index,
+                       now.timeIntervalSince(pending.firstSeenAt) >= weakSmartSwitchConfirmationWindow {
+                        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                    } else {
+                        let firstSeenAt = pendingSmartSwitchCandidate[courtId]?.queueIndex == candidate.index
+                            ? pendingSmartSwitchCandidate[courtId]!.firstSeenAt
+                            : now
+                        pendingSmartSwitchCandidate[courtId] = (queueIndex: candidate.index, firstSeenAt: firstSeenAt)
+                        return false
+                    }
+                } else {
+                    pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                }
             }
         } else {
+            if smartSwitchFallbackOriginIndex[courtId] != nil,
+               let currentIdx = courtIndex(for: courtId),
+               let fallbackStart = smartSwitchFallbackOriginIndex[courtId] {
+                let canonicalIdx = await firstNonFinalQueueIndex(courtId: courtId, startingAt: fallbackStart)
+                guard canonicalIdx < activeIdx,
+                      canonicalIdx < courts[currentIdx].queue.count else {
+                    pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                    if bypassEligible {
+                        queueArbitrationReasonByCourt[courtId] = .queueDefault
+                        noteQueueArbitration(
+                            courtId,
+                            reason: .queueDefault,
+                            message: "no-score queue head held on court \(courtId); no later live evidence"
+                        )
+                    } else if currentReason == .ambiguousHold {
+                        queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: activeIdx)
+                    }
+                    return false
+                }
+                let revertReason: QueueArbitrationReason = .laterLiveBypass
+                noteQueueArbitration(
+                    courtId,
+                    reason: revertReason,
+                    message: "later live bypass reverted on court \(courtId); returned from queue index \(activeIdx) to \(canonicalIdx)"
+                )
+                smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+                smartSwitchedMatchID.removeValue(forKey: courtId)
+                pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: canonicalIdx)
+                courts[currentIdx].activeIndex = canonicalIdx
+                courts[currentIdx].lastSnapshot = nil
+                courts[currentIdx].status = .waiting
+                courts[currentIdx].liveSince = nil
+                courts[currentIdx].finishedAt = nil
+                observedActiveScoring[courtId] = false
+                lastScoreChangeTime[courtId] = nil
+                lastScoreSnapshot[courtId] = nil
+                lastServeTeam.removeValue(forKey: courtId)
+                return true
+            }
             pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            if bypassEligible {
+                queueArbitrationReasonByCourt[courtId] = .queueDefault
+                noteQueueArbitration(
+                    courtId,
+                    reason: .queueDefault,
+                    message: "no-score queue head held on court \(courtId); no later live evidence"
+                )
+            } else if currentReason == .ambiguousHold {
+                queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: activeIdx)
+            }
         }
 
         if let switchIdx = result?.index,
@@ -1909,10 +2108,14 @@ final class AppViewModel: ObservableObject {
            switchIdx < courts[currentIdx].queue.count {
             smartSwitchFallbackOriginIndex[courtId] = smartSwitchFallbackOriginIndex[courtId] ?? activeIdx
             smartSwitchedMatchID[courtId] = courts[currentIdx].queue[switchIdx].id
-            runtimeLog.log(
-                .info,
-                subsystem: "queue",
-                message: "smart-switched court \(courtId) from queue index \(activeIdx) to live match at index \(switchIdx)"
+            let switchReason: QueueArbitrationReason = bypassEligible ? .laterLiveBypass : .smartSwitch
+            queueArbitrationReasonByCourt[courtId] = switchReason
+            noteQueueArbitration(
+                courtId,
+                reason: switchReason,
+                message: bypassEligible
+                    ? "later live bypass accepted on court \(courtId); switched from queue index \(activeIdx) to \(switchIdx)"
+                    : "smart-switched court \(courtId) from queue index \(activeIdx) to live match at index \(switchIdx)"
             )
             courts[currentIdx].activeIndex = switchIdx
             courts[currentIdx].lastSnapshot = nil
@@ -1940,14 +2143,18 @@ final class AppViewModel: ObservableObject {
             return false
         }
 
-        runtimeLog.log(
-            .info,
-            subsystem: "queue",
-            message: "smart-switch reverted court \(courtId) from queue index \(activeIdx) to queue index \(canonicalIdx)"
+        let revertReason: QueueArbitrationReason = queueArbitrationReasonByCourt[courtId] == .laterLiveBypass ? .laterLiveBypass : .smartSwitch
+        noteQueueArbitration(
+            courtId,
+            reason: revertReason,
+            message: revertReason == .laterLiveBypass
+                ? "later live bypass reverted on court \(courtId); returned from queue index \(activeIdx) to \(canonicalIdx)"
+                : "smart-switch reverted court \(courtId) from queue index \(activeIdx) to queue index \(canonicalIdx)"
         )
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+        queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: canonicalIdx)
         courts[currentIdx].activeIndex = canonicalIdx
         courts[currentIdx].lastSnapshot = nil
         courts[currentIdx].status = .waiting
@@ -3350,6 +3557,8 @@ extension AppViewModel: SignalRDelegate {
             pendingSmartSwitchCandidate.removeValue(forKey: courtId)
             recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
             rebuildGameIdMap()
+            queueArbitrationReasonByCourt[courtId] = .reopenRecovery
+            lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
             runtimeLog.log(
                 .info,
                 subsystem: "queue",
@@ -3755,6 +3964,8 @@ extension AppViewModel: SignalRDelegate {
             match: finishedMatch,
             advancedAt: Date()
         )
+        queueArbitrationReasonByCourt[courtId] = .queueDefault
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
         logCourtStatusTransition(
             courtId: courtId,
             from: previousCourtStatus,
