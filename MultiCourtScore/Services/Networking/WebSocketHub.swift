@@ -1293,7 +1293,7 @@ body.layout-bottom-left .bubble-bar svg {
   display: flex;
   align-items: center;
   height: 2.95rem;
-  padding: 0 0.65rem;
+  padding: 0 0 0 0.65rem;
   gap: 0;
   position: relative;
 }
@@ -1383,6 +1383,16 @@ body.layout-bottom-left .bubble-bar svg {
   line-height: 1;
   transition: transform 0.15s ease-out, opacity 0.15s ease-out;
 }
+.trad-score-shell {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  border-left: 1px solid rgba(255,255,255,0.15);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.012) 100%);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
 .trad-score-cell {
   width: 3.05rem;
   min-width: 3.05rem;
@@ -1390,22 +1400,26 @@ body.layout-bottom-left .bubble-bar svg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-left: 1px solid rgba(255,255,255,0.15);
-  background: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.01) 100%);
   box-sizing: border-box;
   flex-shrink: 0;
 }
 .trad-trophy {
   font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
   flex-shrink: 0;
   width: 0;
   overflow: hidden;
-  transition: width 0.5s ease, margin 0.5s ease;
-  margin-left: 0;
+  transition: width 0.5s ease, margin 0.5s ease, opacity 0.25s ease;
+  margin: 0;
+  opacity: 0;
 }
 .trad-trophy.visible {
   width: 22px;
-  margin-left: 0.25rem;
+  margin: 0 0.45rem 0 0.1rem;
+  opacity: 1;
 }
 
 /* Confetti for traditional board */
@@ -1558,8 +1572,7 @@ body.layout-bottom-left .bubble-bar svg {
       <span id="trad-seed1" class="trad-seed"></span>
       <span id="trad-t1" class="trad-name">Team 1</span>
       <div id="trad-sets1" class="trad-sets"></div>
-      <span class="trad-score-cell"><span id="trad-sc1" class="trad-current-score score-text">0</span></span>
-      <span id="trad-trophy1" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
+      <span class="trad-score-shell"><span class="trad-score-cell"><span id="trad-sc1" class="trad-current-score score-text">0</span></span><span id="trad-trophy1" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span></span>
     </div>
     <div class="trad-divider"></div>
     <div id="trad-row2" class="trad-row">
@@ -1574,8 +1587,7 @@ body.layout-bottom-left .bubble-bar svg {
       <span id="trad-seed2" class="trad-seed"></span>
       <span id="trad-t2" class="trad-name">Team 2</span>
       <div id="trad-sets2" class="trad-sets"></div>
-      <span class="trad-score-cell"><span id="trad-sc2" class="trad-current-score score-text">0</span></span>
-      <span id="trad-trophy2" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
+      <span class="trad-score-shell"><span class="trad-score-cell"><span id="trad-sc2" class="trad-current-score score-text">0</span></span><span id="trad-trophy2" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span></span>
     </div>
     <!-- Bottom accent line -->
     <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); z-index: 30;"></div>
