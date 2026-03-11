@@ -453,6 +453,19 @@ def build_animation_cases() -> list[AnimationCase]:
             expected_final_primary=("Kilo Pair", "Lima Pair"),
             metric_selectors=["#trad-board", "#int-status-bar"],
         ),
+        AnimationCase(
+            "top_left_to_bottom_left_social_reentry",
+            (1920, 1080),
+            merge(seed_live, layout="top-left", showSocialBar=True, nextMatch="Charlie Pair vs Delta Pair", matchNumber="41"),
+            next_payload("Charlie Pair", "Delta Pair", "41"),
+            merge(seed_live, layout="bottom-left", showSocialBar=True, nextMatch="Charlie Pair vs Delta Pair", matchNumber="41"),
+            next_payload("Charlie Pair", "Delta Pair", "41"),
+            initial_wait_ms=2000,
+            frame_offsets_ms=ANIMATION_FRAME_OFFSETS_MS + [3200],
+            expected_initial_primary=("Alpha Pair", "Bravo Pair"),
+            expected_final_primary=("Alpha Pair", "Bravo Pair"),
+            metric_selectors=["#trad-board", "#social-bar"],
+        ),
     ]
 
 

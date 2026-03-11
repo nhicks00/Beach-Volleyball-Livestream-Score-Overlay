@@ -2064,10 +2064,32 @@ function applyLayoutTransition(newLayout) {
     return;
   }
   if (newLayout === currentLayout) return;
+  var previousLayout = currentLayout;
+  var shouldRetriggerTradBubbleEntrance = previousLayout !== 'center' && newLayout !== 'center';
+  var visibleTradBubbles = shouldRetriggerTradBubbleEntrance ? {
+    social: socialBar.classList.contains('visible'),
+    next: nextBar.classList.contains('visible'),
+    status: !!(intStatusBar && intStatusBar.classList.contains('visible'))
+  } : null;
   layoutTransitionInProgress = true;
   queuedLayout = null;
 
   var wrapper = document.getElementById('overlay-wrapper');
+
+  if (visibleTradBubbles) {
+    if (visibleTradBubbles.social) {
+      socialBar.classList.remove('visible');
+      socialBar.classList.add('hidden-up');
+    }
+    if (visibleTradBubbles.next) {
+      nextBar.classList.remove('visible');
+      nextBar.classList.add('hidden-up');
+    }
+    if (visibleTradBubbles.status && intStatusBar) {
+      intStatusBar.classList.remove('visible');
+      intStatusBar.classList.add('hidden-up');
+    }
+  }
 
   // Phase 1: Fade out (350ms CSS transition)
   if (wrapper) wrapper.classList.add('layout-fading');
@@ -2123,12 +2145,37 @@ function applyLayoutTransition(newLayout) {
       // Fade back in
       requestAnimationFrame(function() {
         if (wrapper) wrapper.classList.remove('layout-fading');
-        layoutTransitionInProgress = false;
-        console.log('[Overlay] Layout transition complete:', newLayout);
-        if (queuedLayout && queuedLayout !== currentLayout) {
-          var pendingLayout = queuedLayout;
-          queuedLayout = null;
-          applyLayoutTransition(pendingLayout);
+        var finishLayoutTransition = function() {
+          layoutTransitionInProgress = false;
+          console.log('[Overlay] Layout transition complete:', newLayout);
+          if (queuedLayout && queuedLayout !== currentLayout) {
+            var pendingLayout = queuedLayout;
+            queuedLayout = null;
+            applyLayoutTransition(pendingLayout);
+          }
+        };
+
+        if (visibleTradBubbles) {
+          requestAnimationFrame(function() {
+            if (visibleTradBubbles.social) {
+              fitBubbleToBoard(socialBar);
+              socialBar.classList.remove('hidden-up');
+              socialBar.classList.add('visible');
+            }
+            if (visibleTradBubbles.next) {
+              fitBubbleToBoard(nextBar);
+              nextBar.classList.remove('hidden-up');
+              nextBar.classList.add('visible');
+            }
+            if (visibleTradBubbles.status && intStatusBar) {
+              fitBubbleToBoard(intStatusBar);
+              intStatusBar.classList.remove('hidden-up');
+              intStatusBar.classList.add('visible');
+            }
+            finishLayoutTransition();
+          });
+        } else {
+          finishLayoutTransition();
         }
       });
     });
