@@ -17,6 +17,7 @@ OUTPUT_ROOT = ROOT / "output" / "playwright" / "overlay-visual"
 HOST = "127.0.0.1"
 PORT = 8765
 POLL_SETTLE_MS = 1700
+ANIMATION_FRAME_OFFSETS_MS = [0, 80, 160, 260, 420, 620, 900, 1300, 1900, 2500]
 FAIL_CONSOLE_PATTERNS = [
     "Safety: forcing transitionInProgress=false",
     "Animation safety timer",
@@ -126,6 +127,23 @@ class Scenario:
     wait_ms: int = POLL_SETTLE_MS
     sequence: list[tuple[dict[str, Any], dict[str, Any], int]] | None = None
     expected_primary: tuple[str, str] | None = None
+
+
+@dataclass
+class AnimationCase:
+    name: str
+    viewport: tuple[int, int]
+    initial_score: dict[str, Any]
+    initial_next_match: dict[str, Any]
+    transition_score: dict[str, Any]
+    transition_next_match: dict[str, Any]
+    initial_wait_ms: int = 1800
+    frame_offsets_ms: list[int] | None = None
+    pre_steps: list[tuple[dict[str, Any], dict[str, Any], int]] | None = None
+    expected_initial_primary: tuple[str, str] | None = None
+    expected_final_primary: tuple[str, str] | None = None
+    focus_selector: str = "#overlay-wrapper"
+    metric_selectors: list[str] | None = None
 
 
 def build_scenarios() -> list[Scenario]:
@@ -368,6 +386,76 @@ def build_scenarios() -> list[Scenario]:
     ]
 
 
+def build_animation_cases() -> list[AnimationCase]:
+    seed_center = base_score()
+    seed_live = merge(
+        seed_center,
+        status="In Progress",
+        courtStatus="live",
+        score1=7,
+        score2=6,
+        serve="team1",
+        setsA=1,
+        setsB=1,
+        set=3,
+        setHistory=["21-18", "19-21"],
+        nextMatch="Charlie Pair vs Delta Pair",
+    )
+
+    long_names = merge(
+        seed_live,
+        team1="Winner of Match 24 / Alexandria Montgomery",
+        team2="North Shore Elite / The Sandstorm Sisters",
+        nextMatch="Winner of Match 42 vs Winner of Match 43",
+        matchNumber="24",
+    )
+
+    return [
+        AnimationCase(
+            "top_left_next_bar_score_growth_09_to_10",
+            (1920, 1080),
+            merge(seed_live, layout="top-left", showSocialBar=False, score1=9, score2=5, nextMatch="India Pair vs Juliet Pair", matchNumber="21"),
+            next_payload("India Pair", "Juliet Pair", "21"),
+            merge(seed_live, layout="top-left", showSocialBar=False, score1=10, score2=5, nextMatch="India Pair vs Juliet Pair", matchNumber="21"),
+            next_payload("India Pair", "Juliet Pair", "21"),
+            initial_wait_ms=2400,
+            frame_offsets_ms=ANIMATION_FRAME_OFFSETS_MS,
+            expected_initial_primary=("Alpha Pair", "Bravo Pair"),
+            expected_final_primary=("Alpha Pair", "Bravo Pair"),
+            metric_selectors=["#trad-board", "#next-bar"],
+        ),
+        AnimationCase(
+            "center_return_after_corner_cycle",
+            (1920, 1080),
+            merge(long_names, layout="bottom-left", showSocialBar=False),
+            next_payload("Oscar Pair", "Papa Pair", "10"),
+            merge(long_names, layout="center", showSocialBar=True),
+            next_payload("Oscar Pair", "Papa Pair", "10"),
+            initial_wait_ms=1700,
+            pre_steps=[
+                (merge(long_names, layout="top-left", showSocialBar=True), next_payload("Oscar Pair", "Papa Pair", "10"), 1600),
+            ],
+            frame_offsets_ms=ANIMATION_FRAME_OFFSETS_MS,
+            expected_initial_primary=("M24 Winner / A. Montgomery", "N. Elite / T. Sisters"),
+            expected_final_primary=("M24 Winner / A. Montgomery", "N. Elite / T. Sisters"),
+            metric_selectors=["#scorebug", "#trad-board"],
+        ),
+        AnimationCase(
+            "bottom_left_match_change_to_intermission",
+            (1920, 1080),
+            merge(seed_live, layout="bottom-left", status="Final", courtStatus="finished", score1=21, score2=18, setsA=2, setsB=1, nextMatch="Kilo Pair vs Lima Pair", matchNumber="31"),
+            next_payload("Kilo Pair", "Lima Pair", "31"),
+            merge(seed_center, layout="bottom-left", team1="Kilo Pair", team2="Lima Pair", nextMatch="", matchNumber="32"),
+            next_payload("Mike Pair", "November Pair", "33"),
+            initial_wait_ms=2400,
+            frame_offsets_ms=ANIMATION_FRAME_OFFSETS_MS + [3200],
+            expected_initial_primary=("Alpha Pair", "Bravo Pair"),
+            expected_final_primary=("Kilo Pair", "Lima Pair"),
+            metric_selectors=["#trad-board", "#int-status-bar"],
+        ),
+    ]
+
+
 def run_server() -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((HOST, PORT), OverlayHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -380,6 +468,18 @@ def ensure_output_dir() -> Path:
     out_dir = OUTPUT_ROOT / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
+
+
+def normalize_rect(rect: dict[str, Any] | None) -> dict[str, float | bool] | None:
+    if rect is None:
+        return None
+    return {
+        "x": round(rect.get("x", 0), 2),
+        "y": round(rect.get("y", 0), 2),
+        "width": round(rect.get("width", 0), 2),
+        "height": round(rect.get("height", 0), 2),
+        "visible": bool(rect.get("visible", False)),
+    }
 
 
 def primary_selectors(layout: str) -> tuple[str, str]:
@@ -423,19 +523,146 @@ def wait_for_scenario_state(page: Any, scenario: Scenario) -> None:
         )
 
 
+def wait_for_primary_text(page: Any, layout: str, expected_primary: tuple[str, str], timeout: int = 7000) -> None:
+    selectors = primary_selectors(layout)
+    page.wait_for_function(
+        """(payload) => payload.selectors.every((selector, index) => {
+            const el = document.querySelector(selector);
+            return el && (el.textContent || '').trim() === payload.expected[index];
+        })""",
+        arg={"selectors": list(selectors), "expected": list(expected_primary)},
+        timeout=timeout,
+    )
+
+
+def capture_animation_metrics(page: Any, selectors: list[str]) -> dict[str, Any]:
+    metrics = page.evaluate(
+        """(selectors) => {
+            const readRect = (selector) => {
+                const el = document.querySelector(selector);
+                if (!el) return null;
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    visible: style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.01 && rect.width > 0 && rect.height > 0
+                };
+            };
+            const result = {};
+            selectors.forEach((selector) => {
+                result[selector] = readRect(selector);
+            });
+            return {
+                overlayState: window.overlayState || null,
+                layoutClasses: document.body.className,
+                results: result
+            };
+        }""",
+        selectors,
+    )
+    return {
+        "overlayState": metrics["overlayState"],
+        "layoutClasses": metrics["layoutClasses"],
+        "results": {selector: normalize_rect(rect) for selector, rect in metrics["results"].items()},
+    }
+
+
+def run_animation_case(page: Any, out_dir: Path, case: AnimationCase) -> dict[str, Any]:
+    page.set_viewport_size({"width": case.viewport[0], "height": case.viewport[1]})
+    if case.pre_steps:
+        for score_step, next_step, wait_ms in case.pre_steps:
+            STATE.update(score=score_step, next_match_data=next_step)
+            time.sleep(wait_ms / 1000)
+
+    STATE.update(score=case.initial_score, next_match_data=case.initial_next_match)
+    time.sleep(case.initial_wait_ms / 1000)
+    initial_layout = case.initial_score.get("layout", "center")
+    page.wait_for_function(
+        "(layout) => document.body.classList.contains('layout-' + layout)",
+        arg=initial_layout,
+        timeout=max(7000, case.initial_wait_ms + 2500),
+    )
+    initial_expected_primary = case.expected_initial_primary or (
+        str(case.initial_score.get("team1", "")).strip(),
+        str(case.initial_score.get("team2", "")).strip(),
+    )
+    wait_for_primary_text(page, initial_layout, initial_expected_primary, timeout=max(7000, case.initial_wait_ms + 2500))
+
+    anim_dir = out_dir / "animations" / case.name
+    anim_dir.mkdir(parents=True, exist_ok=True)
+
+    initial_path = anim_dir / "initial.png"
+    page.screenshot(path=str(initial_path), full_page=True)
+    initial_primary = current_primary_text(page, initial_layout)
+    initial_metrics = capture_animation_metrics(page, case.metric_selectors or [case.focus_selector])
+
+    STATE.update(score=case.transition_score, next_match_data=case.transition_next_match)
+    frame_offsets = case.frame_offsets_ms or ANIMATION_FRAME_OFFSETS_MS
+    started = time.perf_counter()
+    frames: list[dict[str, Any]] = []
+    for offset in frame_offsets:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if offset > elapsed_ms:
+            time.sleep((offset - elapsed_ms) / 1000)
+        frame_path = anim_dir / f"{offset:04d}ms.png"
+        page.screenshot(path=str(frame_path), full_page=True)
+        frames.append(
+            {
+                "offsetMs": offset,
+                "screenshot": str(frame_path),
+                "primary": current_primary_text(page, case.transition_score.get("layout", "center")),
+                "metrics": capture_animation_metrics(page, case.metric_selectors or [case.focus_selector]),
+            }
+        )
+
+    settled_failure = None
+    if case.expected_final_primary:
+        try:
+            wait_for_primary_text(page, case.transition_score.get("layout", "center"), case.expected_final_primary, timeout=9000)
+        except Exception as exc:  # noqa: BLE001
+            settled_failure = str(exc)
+
+    settled_path = anim_dir / "settled.png"
+    page.screenshot(path=str(settled_path), full_page=True)
+    return {
+        "name": case.name,
+        "viewport": list(case.viewport),
+        "focusSelector": case.focus_selector,
+        "initialScreenshot": str(initial_path),
+        "initialPrimary": initial_primary,
+        "initialExpectedPrimary": list(initial_expected_primary),
+        "initialMetrics": initial_metrics,
+        "expectedFinalPrimary": list(case.expected_final_primary) if case.expected_final_primary else None,
+        "settledScreenshot": str(settled_path),
+        "settledPrimary": current_primary_text(page, case.transition_score.get("layout", "center")),
+        "settledFailure": settled_failure,
+        "frames": frames,
+    }
+
+
 def main() -> int:
     out_dir = ensure_output_dir()
     scenarios = build_scenarios()
+    animation_cases = build_animation_cases()
     server = run_server()
     console_messages: list[str] = []
     failures: list[str] = []
     report_path = out_dir / "report.json"
     trace_path = out_dir / "trace.zip"
+    video_dir = out_dir / "videos"
+    video_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                record_video_dir=str(video_dir),
+                record_video_size={"width": 1280, "height": 720},
+            )
             context.tracing.start(screenshots=True, snapshots=True, sources=True)
             page = context.new_page()
 
@@ -450,6 +677,7 @@ def main() -> int:
             time.sleep(POLL_SETTLE_MS / 1000)
 
             results: list[dict[str, Any]] = []
+            animation_results: list[dict[str, Any]] = []
             for scenario in scenarios:
                 page.set_viewport_size({"width": scenario.viewport[0], "height": scenario.viewport[1]})
                 if scenario.sequence:
@@ -486,15 +714,23 @@ def main() -> int:
                     }
                 )
 
+            for animation_case in animation_cases:
+                animation_result = run_animation_case(page, out_dir, animation_case)
+                if animation_result["settledFailure"]:
+                    failures.append(f"{animation_case.name}:{animation_result['settledFailure']}")
+                animation_results.append(animation_result)
+
             context.tracing.stop(path=str(trace_path))
             browser.close()
 
         report = {
             "url": f"http://{HOST}:{PORT}/overlay.html",
             "trace": str(trace_path),
+            "videos": [str(path) for path in sorted(video_dir.glob("*.webm"))],
             "failures": failures,
             "consoleMessages": console_messages,
             "scenarios": results,
+            "animationCases": animation_results,
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"Wrote visual QA artifacts to {out_dir}")
