@@ -151,6 +151,8 @@ final class AppViewModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var watchdogTimer: Timer?
     private var lastSmartSwitchCheck: [Int: Date] = [:]
+    private var smartSwitchFallbackOriginIndex: [Int: Int] = [:]
+    private var smartSwitchedMatchID: [Int: UUID] = [:]
     private var lastSignalRReconcileAt: [Int: Date] = [:]
     private var lastSignalRMutationAt: [Int: Date] = [:]
     private var lastSignalRMutationEpochMs: [Int: Int64] = [:]
@@ -374,6 +376,8 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].finishedAt = nil
         observedActiveScoring[courtId] = false
+        smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+        smartSwitchedMatchID.removeValue(forKey: courtId)
         clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
@@ -399,6 +403,8 @@ final class AppViewModel: ObservableObject {
         let previousWasPolling = previousCourt.status.isPolling
 
         courts[idx].queue = normalizedItems
+        smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+        smartSwitchedMatchID.removeValue(forKey: courtId)
 
         guard !normalizedItems.isEmpty else {
             courts[idx].activeIndex = nil
@@ -568,6 +574,8 @@ final class AppViewModel: ObservableObject {
         signalRMutationFallbackAttemptsByCourt.removeAll()
         lastSignalRUnknownGameRefreshAt.removeAll()
         lastSmartSwitchCheck.removeAll()
+        smartSwitchFallbackOriginIndex.removeAll()
+        smartSwitchedMatchID.removeAll()
         for i in courts.indices {
             let courtId = courts[i].id
             courts[i].queue = []
@@ -579,6 +587,8 @@ final class AppViewModel: ObservableObject {
             courts[i].lastPollTime = nil
             courts[i].errorMessage = nil
             observedActiveScoring.removeValue(forKey: courtId)
+            smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+            smartSwitchedMatchID.removeValue(forKey: courtId)
             lastScoreChangeTime.removeValue(forKey: courtId)
             lastScoreSnapshot.removeValue(forKey: courtId)
             lastServeTeam.removeValue(forKey: courtId)
@@ -673,6 +683,8 @@ final class AppViewModel: ObservableObject {
         lastSignalRMutationAt.removeValue(forKey: courtId)
         lastSignalRMutationEpochMs.removeValue(forKey: courtId)
         clearSignalRMutationFallbackState(for: courtId)
+        smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+        smartSwitchedMatchID.removeValue(forKey: courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -1728,8 +1740,13 @@ final class AppViewModel: ObservableObject {
         // Don't switch if we've been live on this match (liveSince set)
         if courts[idx].liveSince != nil { return false }
 
-        // Throttle: only check every 30 seconds per court
-        if Date().timeIntervalSince(lastSmartSwitchCheck[courtId] ?? .distantPast) < 30 { return false }
+        // The default queue head can be scanned less often, but once we have
+        // smart-switched away from it we need to re-evaluate every cycle so an
+        // accidental later score cannot pin the wrong match on air.
+        if activeIdx == 0,
+           Date().timeIntervalSince(lastSmartSwitchCheck[courtId] ?? .distantPast) < 30 {
+            return false
+        }
         lastSmartSwitchCheck[courtId] = Date()
 
         // Scan queue in parallel for any match with active scoring
@@ -1752,21 +1769,58 @@ final class AppViewModel: ObservableObject {
             return nil
         }
 
-        guard let switchIdx = result,
+        if let switchIdx = result,
+           let currentIdx = courtIndex(for: courtId),
+           switchIdx < courts[currentIdx].queue.count {
+            smartSwitchFallbackOriginIndex[courtId] = smartSwitchFallbackOriginIndex[courtId] ?? activeIdx
+            smartSwitchedMatchID[courtId] = courts[currentIdx].queue[switchIdx].id
+            runtimeLog.log(
+                .info,
+                subsystem: "queue",
+                message: "smart-switched court \(courtId) from queue index \(activeIdx) to live match at index \(switchIdx)"
+            )
+            courts[currentIdx].activeIndex = switchIdx
+            courts[currentIdx].lastSnapshot = nil
+            courts[currentIdx].status = .waiting
+            courts[currentIdx].liveSince = nil
+            courts[currentIdx].finishedAt = nil
+            observedActiveScoring[courtId] = false
+            lastScoreChangeTime[courtId] = nil
+            lastScoreSnapshot[courtId] = nil
+            lastServeTeam.removeValue(forKey: courtId)
+            return true
+        }
+
+        guard activeIdx > 0,
+              let fallbackStart = smartSwitchFallbackOriginIndex[courtId],
               let currentIdx = courtIndex(for: courtId),
-              switchIdx < courts[currentIdx].queue.count else {
+              activeIdx < courts[currentIdx].queue.count,
+              smartSwitchedMatchID[courtId] == courts[currentIdx].queue[activeIdx].id else {
+            return false
+        }
+
+        let canonicalIdx = await firstNonFinalQueueIndex(courtId: courtId, startingAt: fallbackStart)
+        guard canonicalIdx < activeIdx,
+              canonicalIdx < courts[currentIdx].queue.count else {
             return false
         }
 
         runtimeLog.log(
             .info,
             subsystem: "queue",
-            message: "smart-switched court \(courtId) from queue index \(activeIdx) to live match at index \(switchIdx)"
+            message: "smart-switch reverted court \(courtId) from queue index \(activeIdx) to queue index \(canonicalIdx)"
         )
-        courts[currentIdx].activeIndex = switchIdx
+        smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
+        smartSwitchedMatchID.removeValue(forKey: courtId)
+        courts[currentIdx].activeIndex = canonicalIdx
         courts[currentIdx].lastSnapshot = nil
         courts[currentIdx].status = .waiting
+        courts[currentIdx].liveSince = nil
+        courts[currentIdx].finishedAt = nil
         observedActiveScoring[courtId] = false
+        lastScoreChangeTime[courtId] = nil
+        lastScoreSnapshot[courtId] = nil
+        lastServeTeam.removeValue(forKey: courtId)
         return true
     }
 
@@ -2675,8 +2729,16 @@ final class AppViewModel: ObservableObject {
         let home = score?["home"] as? Int ?? 0
         let away = score?["away"] as? Int ?? 0
         
-        let name1 = (dict["team1_text"] as? String) ?? (dict["homeTeam"] as? String) ?? (dict["team1Name"] as? String) ?? "Team A"
-        let name2 = (dict["team2_text"] as? String) ?? (dict["awayTeam"] as? String) ?? (dict["team2Name"] as? String) ?? "Team B"
+        let name1 = (dict["team1_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? (dict["homeTeam"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? (dict["team1Name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? currentMatch?.team1Name
+            ?? "Team A"
+        let name2 = (dict["team2_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? (dict["awayTeam"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? (dict["team2Name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
+            ?? currentMatch?.team2Name
+            ?? "Team B"
         
         let statusStr = (dict["status"] as? String) ?? "Pre-Match"
         let setNum = (dict["setNumber"] as? Int) ?? 1

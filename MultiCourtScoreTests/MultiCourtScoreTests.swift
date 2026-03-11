@@ -1267,6 +1267,37 @@ struct ClearAllQueuesTests {
 @Suite(.serialized)
 struct QueuePollingEdgeCaseTests {
 
+    @Test func runImmediatePollCycle_keepsQueuedTeamsVisibleWhenCurrentMatchHasNoLiveScoringYet() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let match = makeMatchItem(
+            url: "https://example.com/matches/no-live-scoring",
+            team1: "Nathan Hicks / Reid Malone",
+            team2: "Opponents One / Opponents Two",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: match.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [match], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.team1Name == match.team1Name)
+        #expect(snapshot.team2Name == match.team2Name)
+    }
+
     @Test func runImmediatePollCycle_switchesToLaterLiveMatchWhenCurrentMatchHasNotStarted() async throws {
         let session = makeStubSession()
         let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
@@ -1306,6 +1337,161 @@ struct QueuePollingEdgeCaseTests {
         #expect(court.activeIndex == 1)
         #expect(court.status == .waiting)
         #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_revertsToEarlierMatchWhenLaterLiveScoreWasAccidental() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/revert-first",
+            team1: "First Match Team One",
+            team2: "First Match Team Two",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/revert-second",
+            team1: "Second Match Team One",
+            team2: "Second Match Team Two",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let thirdMatch = makeMatchItem(
+            url: "https://example.com/matches/revert-third",
+            team1: "Third Match Team One",
+            team2: "Third Match Team Two",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: secondMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 6, away: 4),
+            for: thirdMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch, thirdMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        var court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 2)
+        #expect(court.status == .waiting)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: secondMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: thirdMatch.apiURL
+        )
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+    }
+
+    @Test func runImmediatePollCycle_switchesBackToEarlierLiveMatchAfterLaterAccidentalSwitchResets() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/reset-first",
+            team1: "First Match Team One",
+            team2: "First Match Team Two",
+            matchNumber: "1",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let secondMatch = makeMatchItem(
+            url: "https://example.com/matches/reset-second",
+            team1: "Second Match Team One",
+            team2: "Second Match Team Two",
+            matchNumber: "2",
+            setsToWin: 1,
+            pointCap: 23
+        )
+        let thirdMatch = makeMatchItem(
+            url: "https://example.com/matches/reset-third",
+            team1: "Third Match Team One",
+            team2: "Third Match Team Two",
+            matchNumber: "3",
+            setsToWin: 1,
+            pointCap: 23
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: secondMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 8, away: 7),
+            for: thirdMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [firstMatch, secondMatch, thirdMatch], startIndex: 0)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        var court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 2)
+
+        await viewModel.clearScoreCacheForTesting()
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 5, away: 3),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: secondMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: thirdMatch.apiURL
+        )
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .waiting)
+        #expect(court.lastSnapshot == nil)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.status == .live)
+        let snapshot = try #require(court.lastSnapshot)
+        #expect(snapshot.status == "In Progress")
+        #expect(snapshot.setHistory.last?.team1Score == 5)
+        #expect(snapshot.setHistory.last?.team2Score == 3)
     }
 
     @Test func runImmediatePollCycle_keepsCurrentMatchWhenItIsAlreadyLive() async throws {
