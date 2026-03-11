@@ -684,6 +684,8 @@ body.layout-bottom-left .bubble-bar svg {
   color: rgba(255,255,255,0.25);
 }
 .trad-current-score {
+  width: 100%;
+  height: 100%;
   font-size: 1.48rem;
   font-weight: 900;
   background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%);
@@ -691,18 +693,28 @@ body.layout-bottom-left .bubble-bar svg {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
   font-style: normal;
   min-width: 0;
-  width: 2.55rem;
   text-align: center;
-  border-left: 1px solid rgba(255,255,255,0.15);
-  padding: 0 0.45rem;
-  flex-shrink: 0;
+  letter-spacing: -0.025em;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+}
+.trad-score-cell {
+  width: 3.05rem;
+  min-width: 3.05rem;
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 2.95rem;
-  transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+  border-left: 1px solid rgba(255,255,255,0.15);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.01) 100%);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 .trad-trophy {
   font-size: 1.1rem;
@@ -867,7 +879,7 @@ body.layout-bottom-left .bubble-bar svg {
       <span id="trad-seed1" class="trad-seed"></span>
       <span id="trad-t1" class="trad-name">Team 1</span>
       <div id="trad-sets1" class="trad-sets"></div>
-      <span id="trad-sc1" class="trad-current-score score-text">0</span>
+      <span class="trad-score-cell"><span id="trad-sc1" class="trad-current-score score-text">0</span></span>
       <span id="trad-trophy1" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
     </div>
     <div class="trad-divider"></div>
@@ -883,7 +895,7 @@ body.layout-bottom-left .bubble-bar svg {
       <span id="trad-seed2" class="trad-seed"></span>
       <span id="trad-t2" class="trad-name">Team 2</span>
       <div id="trad-sets2" class="trad-sets"></div>
-      <span id="trad-sc2" class="trad-current-score score-text">0</span>
+      <span class="trad-score-cell"><span id="trad-sc2" class="trad-current-score score-text">0</span></span>
       <span id="trad-trophy2" class="trophy-icon trad-trophy"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
     </div>
     <!-- Bottom accent line -->

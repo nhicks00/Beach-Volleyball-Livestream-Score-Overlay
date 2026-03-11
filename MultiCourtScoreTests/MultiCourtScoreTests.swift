@@ -2292,6 +2292,8 @@ struct SignalRMutationQueueTests {
             viewModel.replaceQueue(1, with: [match], startIndex: 0)
             _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
 
+            let freePort = try reserveFreePort()
+            viewModel.appSettings.serverPort = freePort
             _ = await viewModel.ensureServicesRunning()
             viewModel.appSettings.signalREnabled = true
             viewModel.signalRStatusDidChange(.connected)
