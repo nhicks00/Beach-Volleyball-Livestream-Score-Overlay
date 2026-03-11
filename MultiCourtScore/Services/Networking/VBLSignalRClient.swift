@@ -112,6 +112,7 @@ protocol SignalRClienting: Actor {
     func connect(credentials: ConfigStore.VBLCredentials)
     func disconnect()
     func subscribeToTournament(tournamentId: Int, divisionId: Int) async
+    func unsubscribeFromTournament(_ tournamentId: Int) async
 }
 
 actor VBLSignalRClient {
@@ -133,6 +134,7 @@ actor VBLSignalRClient {
     private var reconnectTask: Task<Void, Never>?
     private var isRunning = false
     private var reconnectAttempt = 0
+    private var subscribedTournamentDivisions: [Int: Set<Int>] = [:]
 
     // MARK: - Init
 
@@ -159,6 +161,7 @@ actor VBLSignalRClient {
         reconnectTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        subscribedTournamentDivisions.removeAll()
         jwtToken = nil
         cookies = []
         updateStatus(.disabled)
@@ -168,6 +171,9 @@ actor VBLSignalRClient {
     func subscribeToTournament(tournamentId: Int, divisionId: Int) async {
         guard let task = webSocketTask else {
             print("[SignalR] Cannot subscribe — not connected")
+            return
+        }
+        if subscribedTournamentDivisions[tournamentId, default: []].contains(divisionId) {
             return
         }
         let message: [String: Any] = [
@@ -181,8 +187,38 @@ actor VBLSignalRClient {
         do {
             try await task.send(.string(frame))
             print("[SignalR] Subscribed to tournament \(tournamentId), division \(divisionId)")
+            subscribedTournamentDivisions[tournamentId, default: []].insert(divisionId)
         } catch {
             print("[SignalR] Subscribe failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Unsubscribe from a tournament channel. VBL's SignalR method includes a typo in the method name:
+    /// "UnsubsribeToTournament" (missing the second 's').
+    func unsubscribeFromTournament(_ tournamentId: Int) async {
+        guard let task = webSocketTask else {
+            print("[SignalR] Cannot unsubscribe — not connected")
+            subscribedTournamentDivisions[tournamentId] = nil
+            return
+        }
+        guard subscribedTournamentDivisions[tournamentId] != nil else {
+            return
+        }
+
+        let message: [String: Any] = [
+            "type": 1,
+            "target": "UnsubsribeToTournament",
+            "arguments": [tournamentId]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let str = String(data: data, encoding: .utf8) else { return }
+        let frame = str + Self.recordSeparator
+        do {
+            try await task.send(.string(frame))
+            print("[SignalR] Unsubscribed from tournament \(tournamentId)")
+            subscribedTournamentDivisions[tournamentId] = nil
+        } catch {
+            print("[SignalR] Unsubscribe failed: \(error.localizedDescription)")
         }
     }
 
@@ -209,6 +245,7 @@ actor VBLSignalRClient {
 
             // Step 4: Start receive + ping loops
             reconnectAttempt = 0
+            subscribedTournamentDivisions.removeAll()
             updateStatus(.connected)
             startReceiveLoop()
             startPingLoop()
@@ -468,6 +505,7 @@ actor VBLSignalRClient {
         pingTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        subscribedTournamentDivisions.removeAll()
 
         reconnectAttempt += 1
         let delay = min(
@@ -497,6 +535,7 @@ actor VBLSignalRClient {
         pingTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        subscribedTournamentDivisions.removeAll()
 
         reconnectAttempt = 0
         await internalConnect()

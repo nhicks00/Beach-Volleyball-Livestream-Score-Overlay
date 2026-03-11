@@ -151,6 +151,10 @@ final class AppViewModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var watchdogTimer: Timer?
     private var lastSmartSwitchCheck: [Int: Date] = [:]
+    private var lastSignalRReconcileAt: [Int: Date] = [:]
+    private var lastSignalRMutationAt: [Int: Date] = [:]
+    private var lastSignalRMutationEpochMs: [Int: Int64] = [:]
+    private var lastSignalRUnknownGameRefreshAt: [Int: Date] = [:]
     private var watchdogRecoveryCount = 0
     private var lastWatchdogRecoveryAt: Date?
     private var lastWatchdogRecoveryReason: String?
@@ -553,6 +557,10 @@ final class AppViewModel: ObservableObject {
         gameIdToCourtMap.removeAll()
         lastQueueRefreshTimes.removeAll()
         lastHydrateRefresh.removeAll()
+        lastSignalRReconcileAt.removeAll()
+        lastSignalRMutationAt.removeAll()
+        lastSignalRMutationEpochMs.removeAll()
+        lastSignalRUnknownGameRefreshAt.removeAll()
         lastSmartSwitchCheck.removeAll()
         for i in courts.indices {
             let courtId = courts[i].id
@@ -618,6 +626,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].status = .waiting
             courts[idx].liveSince = nil
         }
+        lastSignalRReconcileAt[courtId] = Date().addingTimeInterval(-NetworkConstants.signalRReconcilePollInterval)
         observedActiveScoring[courtId] = false
         courts[idx].errorMessage = nil
         
@@ -642,6 +651,7 @@ final class AppViewModel: ObservableObject {
 
         rebuildGameIdMap()
         saveConfigurationNow()
+        syncSignalRSubscriptions()
         runtimeLog.log(.info, subsystem: "polling", message: "started polling for court \(courtId)")
         runtimeLog.log(.info, subsystem: "operator", message: "started polling for court \(courtId)")
     }
@@ -653,12 +663,16 @@ final class AppViewModel: ObservableObject {
         observedActiveScoring.removeValue(forKey: courtId)
         lastScoreChangeTime.removeValue(forKey: courtId)
         lastScoreSnapshot.removeValue(forKey: courtId)
-        
+        lastSignalRReconcileAt.removeValue(forKey: courtId)
+        lastSignalRMutationAt.removeValue(forKey: courtId)
+        lastSignalRMutationEpochMs.removeValue(forKey: courtId)
+
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
             courts[idx].liveSince = nil
         }
         scheduleSave()
+        syncSignalRSubscriptions()
         runtimeLog.log(.info, subsystem: "polling", message: "stopped polling for court \(courtId)")
         runtimeLog.log(.info, subsystem: "operator", message: "stopped polling for court \(courtId)")
     }
@@ -1251,6 +1265,11 @@ final class AppViewModel: ObservableObject {
         }
         
         let matchItem = courts[idx].queue[activeIdx]
+
+        if shouldUseSignalRPrimary(for: courtId) && shouldSkipScorePollForSignalR(courtId: courtId) {
+            await runSignalRReconciliationMaintenance(for: courtId)
+            return
+        }
         
         do {
             let data = try await scoreCache.get(matchItem.apiURL)
@@ -1324,6 +1343,7 @@ final class AppViewModel: ObservableObject {
             }
             clearPlaceholderSuppressionLogState(for: courtId)
             clearPollFailureLogState(for: courtId)
+            lastSignalRReconcileAt[courtId] = Date()
             // Only save if meaningful state changed (not just lastPollTime)
 
         } catch {
@@ -1362,7 +1382,57 @@ final class AppViewModel: ObservableObject {
                     )
                 }
             }
+            lastSignalRReconcileAt[courtId] = Date()
         }
+    }
+
+    private func shouldUseSignalRPrimary(for courtId: Int) -> Bool {
+        let isSignalRReady = signalRStatus == .connected && appSettings.signalREnabled
+        if !isSignalRReady { return false }
+        return webSocketHub.isRunning && !(webSocketHub.startupError ?? "").contains("failed")
+    }
+    
+    private func shouldSkipScorePollForSignalR(courtId: Int, now: Date = Date()) -> Bool {
+        let reconcileInterval = NetworkConstants.signalRReconcilePollInterval
+        let lastReconcile = lastSignalRReconcileAt[courtId] ?? .distantPast
+
+        if now.timeIntervalSince(lastReconcile) < reconcileInterval {
+            return true
+        }
+
+        guard let lastMutationAt = lastSignalRMutationAt[courtId] else { return false }
+        return now.timeIntervalSince(lastMutationAt) < reconcileInterval
+    }
+    
+    private func runSignalRReconciliationMaintenance(for courtId: Int) async {
+        guard let idx = courtIndex(for: courtId),
+              courts[idx].status != .idle else { return }
+        
+        let now = Date()
+        lastSignalRReconcileAt[courtId] = now
+        
+        // Keep polling loop healthy for UI/health metrics while trusting SignalR for scoring.
+        if let writeIdx = courtIndex(for: courtId) {
+            courts[writeIdx].lastPollTime = now
+            courts[writeIdx].errorMessage = nil
+        }
+        
+        // Avoid unnecessary network load; run queued metadata updates every 15s.
+        let lastRefresh = lastQueueRefreshTimes[courtId] ?? .distantPast
+        if now.timeIntervalSince(lastRefresh) > 15 {
+            await refreshQueueMetadata(for: courtId)
+            lastQueueRefreshTimes[courtId] = now
+        }
+        
+        if now.timeIntervalSince(lastCourtChangeCheck) > 60 {
+            await checkForCourtChanges()
+            lastCourtChangeCheck = now
+        }
+
+        await refreshHydrateIfNeeded(for: courtId)
+        
+        clearPollFailureLogState(for: courtId)
+        clearPlaceholderSuppressionLogState(for: courtId)
     }
 
     private func scannerLogExportText() -> String {
@@ -1650,7 +1720,7 @@ final class AppViewModel: ObservableObject {
     /// Periodically re-fetch the division hydrate endpoint to resolve TBD bracket team names.
     /// The hydrate endpoint returns the full division tree including resolved bracket slots,
     /// which updates faster than individual vMix endpoints.
-    private func refreshHydrateIfNeeded(for courtId: Int) async {
+    private func refreshHydrateIfNeeded(for courtId: Int, force: Bool = false) async {
         guard let idx = courtIndex(for: courtId) else { return }
 
         // Collect unique division IDs from all queued matches
@@ -1661,47 +1731,14 @@ final class AppViewModel: ObservableObject {
 
         for divId in divisionIds {
             let lastRefresh = lastHydrateRefresh[divId] ?? .distantPast
-            guard Date().timeIntervalSince(lastRefresh) > Self.hydrateRefreshInterval else { continue }
+            guard force || Date().timeIntervalSince(lastRefresh) > Self.hydrateRefreshInterval else { continue }
 
             guard let url = URL(string: "\(hydrateBase)/\(divId)/hydrate") else { continue }
 
             do {
                 let data = try await scoreCache.get(url)
                 guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-
-                // Build team lookup from hydrate response
-                let teamLookup = Self.buildTeamLookup(from: json)
-                let gameIdLookup = Self.buildGameIdLookup(from: json)
-
-                guard !teamLookup.isEmpty || !gameIdLookup.isEmpty else { continue }
-
-                // Update queued matches with resolved team names and game IDs
-                guard let writeIdx = courtIndex(for: courtId) else { return }
-                var updated = false
-                for i in 0..<courts[writeIdx].queue.count {
-                    let match = courts[writeIdx].queue[i]
-                    guard match.divisionId == divId else { continue }
-
-                    if let matchIdStr = extractMatchId(from: match.apiURL) {
-                        // Resolve team names from bracket entries
-                        if let resolved = teamLookup[matchIdStr] {
-                            if let t1 = resolved.team1, match.team1Name != t1 {
-                                courts[writeIdx].queue[i].team1Name = t1
-                                updated = true
-                            }
-                            if let t2 = resolved.team2, match.team2Name != t2 {
-                                courts[writeIdx].queue[i].team2Name = t2
-                                updated = true
-                            }
-                        }
-
-                        // Store game IDs for SignalR mutation mapping
-                        if let gids = gameIdLookup[matchIdStr], match.gameIds != gids {
-                            courts[writeIdx].queue[i].gameIds = gids
-                            updated = true
-                        }
-                    }
-                }
+                let updated = applyHydrateLookup(courtId: courtId, divisionId: divId, hydrateJSON: json)
                 if updated {
                     rebuildGameIdMap()
                     scheduleSave()
@@ -1711,6 +1748,42 @@ final class AppViewModel: ObservableObject {
                 // Silently ignore — this is a best-effort optimization
             }
         }
+    }
+
+    private func applyHydrateLookup(
+        courtId: Int,
+        divisionId: Int,
+        hydrateJSON: [String: Any]
+    ) -> Bool {
+        let teamLookup = Self.buildTeamLookup(from: hydrateJSON)
+        let gameIdLookup = Self.buildGameIdLookup(from: hydrateJSON)
+        guard !teamLookup.isEmpty || !gameIdLookup.isEmpty else { return false }
+        guard let writeIdx = courtIndex(for: courtId) else { return false }
+
+        var updated = false
+        for i in 0..<courts[writeIdx].queue.count {
+            let match = courts[writeIdx].queue[i]
+            guard match.divisionId == divisionId else { continue }
+
+            if let matchIdStr = extractMatchId(from: match.apiURL) {
+                if let resolved = teamLookup[matchIdStr] {
+                    if let t1 = resolved.team1, match.team1Name != t1 {
+                        courts[writeIdx].queue[i].team1Name = t1
+                        updated = true
+                    }
+                    if let t2 = resolved.team2, match.team2Name != t2 {
+                        courts[writeIdx].queue[i].team2Name = t2
+                        updated = true
+                    }
+                }
+
+                if let gids = gameIdLookup[matchIdStr], match.gameIds != gids {
+                    courts[writeIdx].queue[i].gameIds = gids
+                    updated = true
+                }
+            }
+        }
+        return updated
     }
 
     /// Build a lookup of matchIdString → [gameId] from hydrate JSON.
@@ -2630,11 +2703,59 @@ final class AppViewModel: ObservableObject {
 
     private func stopSignalR() {
         guard let client = signalRClient else { return }
+        let tournaments = Array(activeSubscriptions.keys)
+        activeSubscriptions.removeAll()
         Task {
+            for tournamentId in tournaments {
+                await client.unsubscribeFromTournament(tournamentId)
+            }
             await client.disconnect()
         }
         signalRClient = nil
         signalRStatus = .disabled
+    }
+
+    private func syncSignalRSubscriptions(forceResubscribe: Bool = false) {
+        Task { @MainActor [weak self] in
+            await self?.refreshSignalRSubscriptions(forceResubscribe: forceResubscribe)
+        }
+    }
+
+    private func refreshSignalRSubscriptions(forceResubscribe: Bool = false) async {
+        guard appSettings.signalREnabled,
+              signalRStatus == .connected,
+              let client = signalRClient else { return }
+
+        var desired: [Int: Set<Int>] = [:]
+        for court in courts where court.status.isPolling {
+            for match in court.queue {
+                guard let tournamentId = match.tournamentId, let divisionId = match.divisionId else { continue }
+                desired[tournamentId, default: []].insert(divisionId)
+            }
+        }
+
+        let previous = activeSubscriptions
+        if !forceResubscribe && desired == previous { return }
+
+        let tournamentsToUnsubscribe = forceResubscribe
+            ? Set(previous.keys)
+            : Set(previous.keys).filter { desired[$0] != previous[$0] }
+        for tournamentId in tournamentsToUnsubscribe {
+            await client.unsubscribeFromTournament(tournamentId)
+        }
+
+        for (tournamentId, desiredDivisions) in desired {
+            let shouldRefreshTournament = forceResubscribe || previous[tournamentId] != desiredDivisions
+            guard shouldRefreshTournament else { continue }
+            for divisionId in desiredDivisions {
+                await client.subscribeToTournament(tournamentId: tournamentId, divisionId: divisionId)
+            }
+        }
+
+        activeSubscriptions = desired
+        if desired.isEmpty {
+            runtimeLog.log(.info, subsystem: "signalr", message: "SignalR subscriptions cleared (no polling courts).")
+        }
     }
 
     func setSignalREnabled(_ enabled: Bool) {
@@ -2776,7 +2897,7 @@ extension AppViewModel: SignalRDelegate {
     }
 
     func signalRDidConnect() {
-        subscribeToAllActiveTournaments()
+        syncSignalRSubscriptions(forceResubscribe: true)
     }
 
     func signalRDidReceiveMutation(name: String, payload: Any) {
@@ -2789,51 +2910,127 @@ extension AppViewModel: SignalRDelegate {
             payloadStr = "\(payload)"
         }
         scannerViewModel.addSignalRLog("[SignalR] '\(name)': \(payloadStr)")
+        
+        Task { @MainActor [weak self] in
+            await self?.handleSignalRMutation(name: name, payload: payload)
+        }
+    }
 
-        // Process score mutations
-        guard name == "UPDATE_GAME",
-              let dict = payload as? [String: Any],
+    private func handleSignalRMutation(name: String, payload: Any) async {
+        switch name {
+        case "UPDATE_GAME":
+            await handleSignalRGameMutation(payload: payload)
+        case "UPDATE_DIVISION":
+            guard let payloadDict = payload as? [String: Any] else { return }
+            processDivisionMutation(payloadDict)
+        default:
+            break
+        }
+    }
+
+    private func handleSignalRGameMutation(payload: Any) async {
+        guard let dict = payload as? [String: Any],
               let gameId = dict["id"] as? Int else { return }
 
         guard let courtId = gameIdToCourtMap[gameId] else {
-            runtimeLog.log(.warning, subsystem: "signalr", message: "received UPDATE_GAME for unknown gameId \(gameId)")
+            runtimeLog.log(
+                .warning,
+                subsystem: "signalr",
+                message: "received UPDATE_GAME for unknown gameId \(gameId)"
+            )
+            await resolveUnknownSignalRGameId(gameId)
+            if let resolvedCourtId = gameIdToCourtMap[gameId] {
+                processGameMutation(courtId: resolvedCourtId, gameId: gameId, payload: dict)
+            }
             return
         }
 
         processGameMutation(courtId: courtId, gameId: gameId, payload: dict)
     }
 
+    private func resolveUnknownSignalRGameId(_ gameId: Int) async {
+        let now = Date()
+        let lastRefresh = lastSignalRUnknownGameRefreshAt[gameId] ?? .distantPast
+        guard now.timeIntervalSince(lastRefresh) > 5 else { return }
+        lastSignalRUnknownGameRefreshAt[gameId] = now
+
+        for court in courts where court.status.isPolling {
+            await refreshHydrateIfNeeded(for: court.id, force: true)
+        }
+        rebuildGameIdMap()
+        syncSignalRSubscriptions()
+        runtimeLog.log(
+            .info,
+            subsystem: "signalr",
+            message: "refreshed hydrates after unknown gameId \(gameId)"
+        )
+    }
+
+    private func handleSignalRMutationEpochMs(from payload: [String: Any]) -> Int64? {
+        if let value = payload["dtModified"] as? Int64 { return value }
+        if let value = payload["dtModified"] as? Int { return Int64(value) }
+        if let value = payload["dtModified"] as? Double { return Int64(value) }
+        if let value = payload["dtModified"] as? String { return Int64(value) }
+        return nil
+    }
+
+    private func processDivisionMutation(_ payload: [String: Any]) {
+        guard let divisionId = extractSignalRDivisionId(from: payload) else {
+            runtimeLog.log(.warning, subsystem: "signalr", message: "received UPDATE_DIVISION without divisionId")
+            return
+        }
+
+        var updatedCourts: [Int] = []
+        for court in courts where court.status.isPolling {
+            let wasUpdated = applyHydrateLookup(
+                courtId: court.id,
+                divisionId: divisionId,
+                hydrateJSON: payload
+            )
+            if wasUpdated {
+                updatedCourts.append(court.id)
+            }
+        }
+
+        if !updatedCourts.isEmpty {
+            rebuildGameIdMap()
+            scheduleSave()
+            runtimeLog.log(
+                .info,
+                subsystem: "signalr",
+                message: "received UPDATE_DIVISION for division \(divisionId), updated courts \(updatedCourts)"
+            )
+        }
+    }
+
+    private func extractSignalRDivisionId(from payload: [String: Any]) -> Int? {
+        if let divisionId = payload["divisionId"] as? Int { return divisionId }
+        if let divisionId = payload["id"] as? Int { return divisionId }
+        if let division = payload["division"] as? [String: Any], let divisionId = division["id"] as? Int {
+            return divisionId
+        }
+        return nil
+    }
+
     // MARK: - SignalR Subscription Management
 
     private func subscribeToAllActiveTournaments() {
-        guard let client = signalRClient else { return }
-
-        // Collect unique (tournamentId, divisionId) pairs from all polling courts
-        var pairs: Set<String> = []
-        var subscriptions: [(Int, Int)] = []
-
-        for court in courts where court.status.isPolling {
-            for match in court.queue {
-                guard let tId = match.tournamentId, let dId = match.divisionId else { continue }
-                let key = "\(tId)-\(dId)"
-                if pairs.insert(key).inserted {
-                    subscriptions.append((tId, dId))
-                }
-            }
-        }
-
-        activeSubscriptions.removeAll()
-        for (tId, dId) in subscriptions {
-            activeSubscriptions[tId, default: []].insert(dId)
-            Task {
-                await client.subscribeToTournament(tournamentId: tId, divisionId: dId)
-            }
-        }
+        syncSignalRSubscriptions()
     }
 
     // MARK: - Mutation Processing
 
     private func processGameMutation(courtId: Int, gameId: Int, payload: [String: Any]) {
+        if let mutationEpochMs = handleSignalRMutationEpochMs(from: payload),
+           let lastEpoch = lastSignalRMutationEpochMs[courtId],
+           mutationEpochMs <= lastEpoch {
+            return
+        }
+        if let mutationEpochMs = handleSignalRMutationEpochMs(from: payload) {
+            lastSignalRMutationEpochMs[courtId] = mutationEpochMs
+        }
+        lastSignalRMutationAt[courtId] = Date()
+
         guard let idx = courtIndex(for: courtId),
               let activeIdx = courts[idx].activeIndex,
               activeIdx < courts[idx].queue.count else { return }
