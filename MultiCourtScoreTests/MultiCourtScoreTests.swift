@@ -4940,3 +4940,132 @@ private func makeHydrateTeam(id: Int, players: [(String, String)]) -> [String: A
         }
     ]
 }
+
+@Suite("Queue Arbitration Policy Tests")
+@MainActor
+struct QueueArbitrationPolicyTests {
+    @Test func runImmediatePollCycle_doesNotSwitchToLaterMatchOnSinglePointAccident() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let accidentalLaterMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-accidental-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 1, away: 0),
+            for: accidentalLaterMatch.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 60
+        viewModel.replaceQueue(1, with: [firstMatch, accidentalLaterMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 0)
+        #expect(court.currentMatch?.id == firstMatch.id)
+    }
+
+    @Test func runImmediatePollCycle_switchesToLaterMatchAfterWeakEvidencePersists() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let firstMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-repeat-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let laterMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-repeat-later",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: firstMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 1, away: 0),
+            for: laterMatch.apiURL
+        )
+
+        viewModel.weakSmartSwitchConfirmationWindow = 0.05
+        viewModel.replaceQueue(1, with: [firstMatch, laterMatch], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+        try await Task.sleep(nanoseconds: 75_000_000)
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.currentMatch?.id == laterMatch.id)
+    }
+
+    @Test func runImmediatePollCycle_prefersEarliestConfidentLiveCandidateWhenMultipleQueuedMatchesAppearActive() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+        defer { cleanup() }
+
+        let currentMatch = makeMatchItem(
+            url: "https://example.com/matches/arbitration-earliest-current",
+            team1: "Alice Smith / Beth Jones",
+            team2: "Cara Diaz / Dana Reed",
+            matchNumber: "1"
+        )
+        let earlierLiveCandidate = makeMatchItem(
+            url: "https://example.com/matches/arbitration-earliest-second",
+            team1: "Eva Long / Finn West",
+            team2: "Gina Shaw / Hale Young",
+            matchNumber: "2"
+        )
+        let laterLiveCandidate = makeMatchItem(
+            url: "https://example.com/matches/arbitration-earliest-third",
+            team1: "Ivy North / June South",
+            team2: "Kirk East / Lane West",
+            matchNumber: "3"
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "Pre-Match", home: 0, away: 0),
+            for: currentMatch.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 3, away: 2),
+            for: earlierLiveCandidate.apiURL
+        )
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 6, away: 5),
+            for: laterLiveCandidate.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [currentMatch, earlierLiveCandidate, laterLiveCandidate], startIndex: 0)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let court = try #require(viewModel.court(for: 1))
+        #expect(court.activeIndex == 1)
+        #expect(court.currentMatch?.id == earlierLiveCandidate.id)
+    }
+}

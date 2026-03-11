@@ -153,6 +153,7 @@ final class AppViewModel: ObservableObject {
     private var lastSmartSwitchCheck: [Int: Date] = [:]
     private var smartSwitchFallbackOriginIndex: [Int: Int] = [:]
     private var smartSwitchedMatchID: [Int: UUID] = [:]
+    private var pendingSmartSwitchCandidate: [Int: (queueIndex: Int, firstSeenAt: Date)] = [:]
     private var lastSignalRReconcileAt: [Int: Date] = [:]
     private var lastSignalRMutationAt: [Int: Date] = [:]
     private var lastSignalRMutationEpochMs: [Int: Int64] = [:]
@@ -178,6 +179,7 @@ final class AppViewModel: ObservableObject {
     // Periodic hydrate re-fetch for resolving TBD bracket teams
     private var lastHydrateRefresh: [Int: Date] = [:]  // divisionId → last fetch time
     private static let hydrateRefreshInterval: TimeInterval = 60  // seconds
+    var weakSmartSwitchConfirmationWindow: TimeInterval = 8
     // Placeholder pool endpoints can return repeated upstream 500s while a match
     // is still synthetic. Keep the first log line and then rate-limit reminders.
     private var placeholderSuppressionLogTimes: [Int: [String: Date]] = [:]
@@ -378,6 +380,7 @@ final class AppViewModel: ObservableObject {
         observedActiveScoring[courtId] = false
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         clearSuppressionLogState(for: courtId)
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "replaced queue for court \(courtId) with \(items.count) matches")
@@ -405,6 +408,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].queue = normalizedItems
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
 
         guard !normalizedItems.isEmpty else {
             courts[idx].activeIndex = nil
@@ -576,6 +580,7 @@ final class AppViewModel: ObservableObject {
         lastSmartSwitchCheck.removeAll()
         smartSwitchFallbackOriginIndex.removeAll()
         smartSwitchedMatchID.removeAll()
+        pendingSmartSwitchCandidate.removeAll()
         for i in courts.indices {
             let courtId = courts[i].id
             courts[i].queue = []
@@ -589,6 +594,7 @@ final class AppViewModel: ObservableObject {
             observedActiveScoring.removeValue(forKey: courtId)
             smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
             smartSwitchedMatchID.removeValue(forKey: courtId)
+            pendingSmartSwitchCandidate.removeValue(forKey: courtId)
             lastScoreChangeTime.removeValue(forKey: courtId)
             lastScoreSnapshot.removeValue(forKey: courtId)
             lastServeTeam.removeValue(forKey: courtId)
@@ -685,6 +691,7 @@ final class AppViewModel: ObservableObject {
         clearSignalRMutationFallbackState(for: courtId)
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -1727,6 +1734,21 @@ final class AppViewModel: ObservableObject {
             candidateIndex = nextIndex
         }
     }
+
+    private func smartSwitchCandidateStrength(for snapshot: ScoreSnapshot) -> Int? {
+        guard isMatchActive(snapshot) else { return nil }
+
+        let lowercasedStatus = snapshot.status.lowercased()
+        let hasExplicitLiveStatus =
+            lowercasedStatus.contains("live")
+            || lowercasedStatus.contains("progress")
+            || lowercasedStatus.contains("playing")
+        let totalPoints = snapshot.team1Score + snapshot.team2Score
+        let hasCompletedSet = snapshot.setHistory.contains(where: \.isComplete)
+        let hasMultiSetEvidence = snapshot.setNumber > 1 || snapshot.setHistory.count > 1
+
+        return (hasExplicitLiveStatus || hasCompletedSet || hasMultiSetEvidence || totalPoints >= 4) ? 2 : 1
+    }
     
     /// Smart Queue Switch: Check if current match is 0-0 but another queue match has active scoring.
     /// If so, auto-switch to the active match to prioritize live content.
@@ -1735,15 +1757,22 @@ final class AppViewModel: ObservableObject {
         guard let activeIdx = courts[idx].activeIndex else { return false }
 
         // Only smart-switch if the current match is not actively in progress.
-        guard !isMatchActive(currentSnapshot) else { return false }
+        guard !isMatchActive(currentSnapshot) else {
+            pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            return false
+        }
 
         // Don't switch if we've been live on this match (liveSince set)
-        if courts[idx].liveSince != nil { return false }
+        if courts[idx].liveSince != nil {
+            pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            return false
+        }
 
         // The default queue head can be scanned less often, but once we have
         // smart-switched away from it we need to re-evaluate every cycle so an
         // accidental later score cannot pin the wrong match on air.
         if activeIdx == 0,
+           pendingSmartSwitchCandidate[courtId] == nil,
            Date().timeIntervalSince(lastSmartSwitchCheck[courtId] ?? .distantPast) < 30 {
             return false
         }
@@ -1751,25 +1780,56 @@ final class AppViewModel: ObservableObject {
 
         // Scan queue in parallel for any match with active scoring
         let queue = courts[idx].queue
-        let result: Int? = await withTaskGroup(of: (Int, Bool).self) { group in
+        let result: (index: Int, strength: Int)? = await withTaskGroup(of: (Int, Int?).self) { group in
             for (queueIdx, match) in queue.enumerated() {
                 guard queueIdx != activeIdx else { continue }
                 group.addTask { [scoreCache] in
                     guard let data = try? await scoreCache.get(match.apiURL) else {
-                        return (queueIdx, false)
+                        return (queueIdx, nil)
                     }
                     let snapshot = await MainActor.run { self.normalizeData(data, courtId: 0, currentMatch: match) }
-                    let active = await MainActor.run { self.isMatchActive(snapshot) }
-                    return (queueIdx, active)
+                    let strength = await MainActor.run { self.smartSwitchCandidateStrength(for: snapshot) }
+                    return (queueIdx, strength)
                 }
             }
-            for await (queueIdx, isActive) in group {
-                if isActive { return queueIdx }
+            var bestCandidate: (index: Int, strength: Int)?
+            for await (queueIdx, strength) in group {
+                guard let strength else { continue }
+                if let currentBest = bestCandidate {
+                    if queueIdx < currentBest.index {
+                        bestCandidate = (queueIdx, strength)
+                    } else if queueIdx == currentBest.index {
+                        bestCandidate = (queueIdx, max(currentBest.strength, strength))
+                    }
+                } else {
+                    bestCandidate = (queueIdx, strength)
+                }
             }
-            return nil
+            return bestCandidate
         }
 
-        if let switchIdx = result,
+        if let candidate = result {
+            if candidate.strength == 1 {
+                let now = Date()
+                if let pending = pendingSmartSwitchCandidate[courtId],
+                   pending.queueIndex == candidate.index,
+                   now.timeIntervalSince(pending.firstSeenAt) >= weakSmartSwitchConfirmationWindow {
+                    pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+                } else {
+                    let firstSeenAt = pendingSmartSwitchCandidate[courtId]?.queueIndex == candidate.index
+                        ? pendingSmartSwitchCandidate[courtId]!.firstSeenAt
+                        : now
+                    pendingSmartSwitchCandidate[courtId] = (queueIndex: candidate.index, firstSeenAt: firstSeenAt)
+                    return false
+                }
+            } else {
+                pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+            }
+        } else {
+            pendingSmartSwitchCandidate.removeValue(forKey: courtId)
+        }
+
+        if let switchIdx = result?.index,
            let currentIdx = courtIndex(for: courtId),
            switchIdx < courts[currentIdx].queue.count {
             smartSwitchFallbackOriginIndex[courtId] = smartSwitchFallbackOriginIndex[courtId] ?? activeIdx
@@ -1812,6 +1872,7 @@ final class AppViewModel: ObservableObject {
         )
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         courts[currentIdx].activeIndex = canonicalIdx
         courts[currentIdx].lastSnapshot = nil
         courts[currentIdx].status = .waiting
