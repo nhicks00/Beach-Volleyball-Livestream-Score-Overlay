@@ -7,7 +7,7 @@
 #   ./run_tests.sh --all        # Everything including integration (needs playwright + internet)
 #   ./run_tests.sh --setup      # Set up the Python venv with all dependencies
 
-set -e
+set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRAPERS_DIR="$PROJECT_DIR/MultiCourtScore/Scrapers"
@@ -23,12 +23,14 @@ NC='\033[0m'
 run_swift_tests() {
     echo -e "${BLUE}Running Swift unit tests...${NC}"
     cd "$PROJECT_DIR"
-    if xcodebuild test \
+    xcodebuild test \
         -project MultiCourtScore.xcodeproj \
         -scheme MultiCourtScore \
         -destination 'platform=macOS' \
         -only-testing:MultiCourtScoreTests \
-        2>&1 | tee /tmp/swift_test_output.log | grep -E "passed|failed|TEST (SUCCEEDED|FAILED)"; then
+        2>&1 | tee /tmp/swift_test_output.log | grep -E "passed|failed|TEST (SUCCEEDED|FAILED)"
+    local test_status=${PIPESTATUS[0]}
+    if [ "$test_status" -eq 0 ]; then
         echo -e "${GREEN}Swift tests PASSED${NC}"
         return 0
     else
@@ -115,10 +117,13 @@ setup_venv() {
 build_project() {
     echo -e "${BLUE}Building project...${NC}"
     cd "$PROJECT_DIR"
-    if xcodebuild -project MultiCourtScore.xcodeproj -scheme MultiCourtScore -configuration Debug build 2>&1 | tail -5; then
+    local build_log="/tmp/multicourtscore_build.log"
+    if xcodebuild -project MultiCourtScore.xcodeproj -scheme MultiCourtScore -configuration Debug build >"$build_log" 2>&1; then
+        tail -5 "$build_log"
         echo -e "${GREEN}Build SUCCEEDED${NC}"
         return 0
     else
+        tail -20 "$build_log"
         echo -e "${RED}Build FAILED${NC}"
         return 1
     fi

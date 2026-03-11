@@ -2084,6 +2084,71 @@ struct SignalRMutationQueueTests {
             return court.activeIndex == 1 && court.status == .waiting && court.lastSnapshot == nil
         })
     }
+
+    @Test func signalRMutationFallbackPollsWhenMutationsAreQuietAndClearsAfterMutation() async throws {
+        try await withSharedOverlayServerTestScope {
+            let session = makeStubSession()
+            let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+            let (viewModel, _, cleanup) = makeIsolatedAppViewModel(apiClient: apiClient)
+            defer { cleanup() }
+
+            let match = makeMatchItem(
+                url: "https://example.com/matches/signalr-fallback",
+                team1: "Alice Smith / Beth Jones",
+                team2: "Cara Diaz / Dana Reed",
+                matchNumber: "10",
+                setsToWin: 1,
+                gameIds: [901]
+            )
+
+            viewModel.replaceQueue(1, with: [match], startIndex: 0)
+            _ = await viewModel.applySnapshotForTesting(courtId: 1, snapshot: makeSnapshot(status: "Pre-Match", setsToWin: 1))
+
+            _ = await viewModel.ensureServicesRunning()
+            viewModel.appSettings.signalREnabled = true
+            viewModel.signalRStatusDidChange(.connected)
+
+            StubURLProtocol.registerJSON(
+                makeScoreDict(status: "In Progress", home: 5, away: 4),
+                for: match.apiURL
+            )
+
+            viewModel.setSignalRMutationStateForTesting(
+                courtId: 1,
+                lastMutationAt: Date().addingTimeInterval(-60)
+            )
+
+            await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+            let fallbackSnapshot = viewModel.signalRMutationFallbackSnapshotForTesting()
+            #expect(fallbackSnapshot.count == 1)
+            #expect(fallbackSnapshot.courts == [1])
+
+            let fallbackHealth = WebSocketHub.shared.currentHealthSnapshot(port: viewModel.appSettings.serverPort)
+            #expect(fallbackHealth.signalRMutationFallbackCount == 1)
+            #expect(fallbackHealth.signalRMutationFallbackCourts == [1])
+
+            viewModel.rebuildGameIdMapForTesting()
+            viewModel.signalRDidReceiveMutation(
+                name: "UPDATE_GAME",
+                payload: [
+                    "id": 901,
+                    "home": 8,
+                    "away": 7,
+                    "number": 0,
+                    "isFinal": false
+                ]
+            )
+
+            let didClearFallback = await waitUntil {
+                viewModel.signalRMutationFallbackSnapshotForTesting().courts.isEmpty
+            }
+            #expect(didClearFallback)
+
+            let postMutationHealth = WebSocketHub.shared.currentHealthSnapshot(port: viewModel.appSettings.serverPort)
+            #expect(postMutationHealth.signalRMutationFallbackCourts.isEmpty)
+        }
+    }
 }
 
 @MainActor
@@ -3608,6 +3673,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3642,6 +3709,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3676,6 +3745,8 @@ struct DashboardViewLogicTests {
             signalREnabled: false,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3710,6 +3781,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3744,6 +3817,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3778,6 +3853,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 0,
             lastWatchdogRecoveryAt: nil,
             lastWatchdogRecoveryReason: nil,
@@ -3813,6 +3890,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 2,
             lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
             lastWatchdogRecoveryReason: "court 1 polling stale",
@@ -3835,6 +3914,8 @@ struct DashboardViewLogicTests {
             signalREnabled: true,
             port: 8787,
             courtCount: 4,
+            signalRMutationFallbackCount: 0,
+            signalRMutationFallbackCourts: [],
             watchdogRestartCount: 1,
             lastWatchdogRecoveryAt: "2026-03-07T01:23:45Z",
             lastWatchdogRecoveryReason: "court 1 polling stale",
@@ -4547,6 +4628,7 @@ private final class RecordingNotificationService: NotificationSending {
 actor RecordingSignalRClient: SignalRClienting {
     private var recordedConnectCalls: [ConfigStore.VBLCredentials] = []
     private var recordedSubscriptions: [(tournamentId: Int, divisionId: Int)] = []
+    private var recordedUnsubscribeCalls: [Int] = []
     private var recordedDisconnectCount = 0
 
     func connect(credentials: ConfigStore.VBLCredentials) {
@@ -4561,12 +4643,20 @@ actor RecordingSignalRClient: SignalRClienting {
         recordedSubscriptions.append((tournamentId, divisionId))
     }
 
+    func unsubscribeFromTournament(_ tournamentId: Int) async {
+        recordedUnsubscribeCalls.append(tournamentId)
+    }
+
     func connectCalls() -> [ConfigStore.VBLCredentials] {
         recordedConnectCalls
     }
 
     func subscriptions() -> [(tournamentId: Int, divisionId: Int)] {
         recordedSubscriptions
+    }
+
+    func unsubscribeCalls() -> [Int] {
+        recordedUnsubscribeCalls
     }
 
     func disconnectCount() -> Int {

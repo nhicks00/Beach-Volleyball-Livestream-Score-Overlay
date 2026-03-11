@@ -693,6 +693,20 @@ struct SettingsView: View {
                         : "\(health.watchdogRestartCount)x recoveries",
                     color: health.watchdogRestartCount == 0 ? AppColors.success : AppColors.warning
                 )
+                if !health.signalRMutationFallbackCourts.isEmpty {
+                    healthRow(
+                        label: "SignalR Fallback Polls",
+                        value: "\(health.signalRMutationFallbackCount)x",
+                        color: AppColors.warning
+                    )
+                }
+                if !health.signalRMutationFallbackCourts.isEmpty {
+                    healthRow(
+                        label: "Fallback Courts",
+                        value: health.signalRMutationFallbackCourts.map(String.init).joined(separator: ", "),
+                        color: AppColors.warning
+                    )
+                }
 
                 if let lastRecoveryAt = health.lastWatchdogRecoveryAt, !lastRecoveryAt.isEmpty {
                     healthRow(

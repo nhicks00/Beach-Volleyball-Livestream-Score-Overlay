@@ -33,6 +33,8 @@ struct OverlayHealthSnapshot: Codable {
     let signalREnabled: Bool
     let port: Int
     let courtCount: Int
+    let signalRMutationFallbackCount: Int
+    let signalRMutationFallbackCourts: [Int]
     let watchdogRestartCount: Int
     let lastWatchdogRecoveryAt: String?
     let lastWatchdogRecoveryReason: String?
@@ -169,6 +171,7 @@ final class WebSocketHub {
         let resolvedSignalRStatus = resolvedSignalRState.displayLabel
         let signalREnabled = appViewModel?.appSettings.signalREnabled ?? false
         let watchdogRecoverySnapshot = appViewModel?.currentWatchdogRecoverySnapshot()
+        let signalRMutationFallbackSnapshot = appViewModel?.currentSignalRMutationFallbackSnapshot()
 
         var stalePollingCourtIds: [Int] = []
         var errorCourtIds: [Int] = []
@@ -218,6 +221,8 @@ final class WebSocketHub {
             signalREnabled: signalREnabled,
             port: resolvedPort,
             courtCount: courts.count,
+            signalRMutationFallbackCount: signalRMutationFallbackSnapshot?.count ?? 0,
+            signalRMutationFallbackCourts: signalRMutationFallbackSnapshot?.courts ?? [],
             watchdogRestartCount: watchdogRecoverySnapshot?.count ?? 0,
             lastWatchdogRecoveryAt: watchdogRecoverySnapshot?.lastRecoveryAt.map { ISO8601DateFormatter().string(from: $0) },
             lastWatchdogRecoveryReason: watchdogRecoverySnapshot?.lastRecoveryReason,

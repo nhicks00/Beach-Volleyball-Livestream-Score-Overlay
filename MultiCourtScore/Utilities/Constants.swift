@@ -136,6 +136,8 @@ enum NetworkConstants {
     static let signalRMaxReconnectDelay: TimeInterval = 60
     static let signalRBaseReconnectDelay: TimeInterval = 2
     static let signalRReconcilePollInterval: TimeInterval = 10
+    static let signalRMutationFallbackTimeout: TimeInterval = 45
+    static let signalRMutationFallbackCooldown: TimeInterval = 30
 }
 
 // MARK: - App Configuration

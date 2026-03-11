@@ -115,6 +115,10 @@ func dashboardHealthRuntimeSummary(for health: OverlayHealthSnapshot) -> String?
         parts.append("watchdog \(health.watchdogRestartCount)x")
     }
 
+    if health.signalRMutationFallbackCount > 0 {
+        parts.append("signalR fallback \(health.signalRMutationFallbackCount)x")
+    }
+
     guard !parts.isEmpty else { return nil }
     return parts.joined(separator: "  |  ")
 }
@@ -145,6 +149,14 @@ func makeDashboardHealthBannerModel(
             message: "Polling is stale on court\(health.stalePollingCourtIds.count == 1 ? "" : "s") \(health.stalePollingCourtIds.map(String.init).joined(separator: ", ")).",
             tone: .warning,
             systemImageName: "exclamationmark.triangle.fill"
+        )
+    }
+
+    if !health.signalRMutationFallbackCourts.isEmpty {
+        return DashboardHealthBannerModel(
+            message: "SignalR mutation stream is quiet. Polling fallback active on court\(health.signalRMutationFallbackCourts.count == 1 ? "" : "s") \(health.signalRMutationFallbackCourts.map(String.init).joined(separator: ", ")).",
+            tone: .warning,
+            systemImageName: "antenna.radiowaves.left.and.right"
         )
     }
 

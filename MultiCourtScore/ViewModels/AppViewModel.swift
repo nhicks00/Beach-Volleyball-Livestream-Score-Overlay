@@ -154,6 +154,9 @@ final class AppViewModel: ObservableObject {
     private var lastSignalRReconcileAt: [Int: Date] = [:]
     private var lastSignalRMutationAt: [Int: Date] = [:]
     private var lastSignalRMutationEpochMs: [Int: Int64] = [:]
+    private var lastSignalRMutationFallbackAt: [Int: Date] = [:]
+    private var signalRMutationFallbackCourts: Set<Int> = []
+    private var signalRMutationFallbackAttemptsByCourt: [Int: Int] = [:]
     private var lastSignalRUnknownGameRefreshAt: [Int: Date] = [:]
     private var watchdogRecoveryCount = 0
     private var lastWatchdogRecoveryAt: Date?
@@ -560,6 +563,9 @@ final class AppViewModel: ObservableObject {
         lastSignalRReconcileAt.removeAll()
         lastSignalRMutationAt.removeAll()
         lastSignalRMutationEpochMs.removeAll()
+        lastSignalRMutationFallbackAt.removeAll()
+        signalRMutationFallbackCourts.removeAll()
+        signalRMutationFallbackAttemptsByCourt.removeAll()
         lastSignalRUnknownGameRefreshAt.removeAll()
         lastSmartSwitchCheck.removeAll()
         for i in courts.indices {
@@ -666,6 +672,7 @@ final class AppViewModel: ObservableObject {
         lastSignalRReconcileAt.removeValue(forKey: courtId)
         lastSignalRMutationAt.removeValue(forKey: courtId)
         lastSignalRMutationEpochMs.removeValue(forKey: courtId)
+        clearSignalRMutationFallbackState(for: courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -813,6 +820,22 @@ final class AppViewModel: ObservableObject {
         courts[idx].status = status
         courts[idx].lastPollTime = lastPollTime
         courts[idx].errorMessage = nil
+    }
+
+    func setSignalRMutationStateForTesting(
+        courtId: Int,
+        lastMutationAt: Date?
+    ) {
+        if let lastMutationAt {
+            lastSignalRMutationAt[courtId] = lastMutationAt
+            return
+        }
+
+        lastSignalRMutationAt.removeValue(forKey: courtId)
+    }
+
+    func signalRMutationFallbackSnapshotForTesting() -> (count: Int, courts: [Int]) {
+        currentSignalRMutationFallbackSnapshot()
     }
 
     func currentWatchdogRecoverySnapshot() -> WatchdogRecoverySnapshot {
@@ -966,6 +989,13 @@ final class AppViewModel: ObservableObject {
             "Error Courts: \(errorCourtsText)"
         ]
 
+        if healthSnapshot.signalRMutationFallbackCount > 0 {
+            let fallbackCourtsText = healthSnapshot.signalRMutationFallbackCourts.isEmpty
+                ? "none"
+                : healthSnapshot.signalRMutationFallbackCourts.map(String.init).joined(separator: ", ")
+            lines.append("SignalR Mutation Fallback Polls: \(healthSnapshot.signalRMutationFallbackCount) on courts \(fallbackCourtsText)")
+        }
+
         if let startupError = healthSnapshot.startupError, !startupError.isEmpty {
             lines.append("Startup Error: \(startupError)")
         }
@@ -1073,6 +1103,10 @@ final class AppViewModel: ObservableObject {
             alerts.append("[signalr] \(healthSnapshot.signalRStatus)")
         }
 
+        if !healthSnapshot.signalRMutationFallbackCourts.isEmpty {
+            alerts.append("[signalr] fallback polling active for courts \(healthSnapshot.signalRMutationFallbackCourts.map(String.init).joined(separator: ", "))")
+        }
+
         return dedupeStringsPreservingOrder(alerts)
     }
 
@@ -1101,6 +1135,7 @@ final class AppViewModel: ObservableObject {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            webSocketHub.appViewModel = self
             let healthSnapshot = webSocketHub.currentHealthSnapshot(port: appSettings.serverPort)
 
             let manifest = DiagnosticsManifest(
@@ -1110,7 +1145,7 @@ final class AppViewModel: ObservableObject {
                 runtimeLogPath: runtimeLog.logFilePath,
                 serverRunning: serverRunning,
                 signalRStatus: signalRStatus.displayLabel,
-                courtCount: courts.count
+                courtCount: healthSnapshot.courtCount
             )
 
             let courtSnapshots = currentCourtDiagnosticsSnapshots()
@@ -1253,6 +1288,7 @@ final class AppViewModel: ObservableObject {
             stopPolling(for: courtId)
             return
         }
+        let now = Date()
 
         // Prevent overlapping poll cycles for the same court when network calls run long.
         guard !pollsInFlight.contains(courtId) else { return }
@@ -1265,8 +1301,13 @@ final class AppViewModel: ObservableObject {
         }
         
         let matchItem = courts[idx].queue[activeIdx]
+        let useSignalRPrimary = shouldUseSignalRPrimary(for: courtId)
 
-        if shouldUseSignalRPrimary(for: courtId) && shouldSkipScorePollForSignalR(courtId: courtId) {
+        if useSignalRPrimary && shouldFallbackToPollingDueToSignalRMutationQuietness(courtId: courtId, now: now) {
+            markSignalRMutationFallback(for: courtId, at: now)
+        }
+
+        if useSignalRPrimary && shouldSkipScorePollForSignalR(courtId: courtId, now: now) {
             await runSignalRReconciliationMaintenance(for: courtId)
             return
         }
@@ -1402,6 +1443,46 @@ final class AppViewModel: ObservableObject {
 
         guard let lastMutationAt = lastSignalRMutationAt[courtId] else { return false }
         return now.timeIntervalSince(lastMutationAt) < reconcileInterval
+    }
+
+    private func shouldFallbackToPollingDueToSignalRMutationQuietness(
+        courtId: Int,
+        now: Date = Date()
+    ) -> Bool {
+        guard let lastMutationAt = lastSignalRMutationAt[courtId] else {
+            return false
+        }
+
+        guard now.timeIntervalSince(lastMutationAt) >= NetworkConstants.signalRMutationFallbackTimeout else {
+            return false
+        }
+
+        let lastFallback = lastSignalRMutationFallbackAt[courtId] ?? .distantPast
+        guard now.timeIntervalSince(lastFallback) >= NetworkConstants.signalRMutationFallbackCooldown else {
+            return false
+        }
+
+        return true
+    }
+
+    private func markSignalRMutationFallback(for courtId: Int, at date: Date) {
+        lastSignalRMutationFallbackAt[courtId] = date
+        signalRMutationFallbackCourts.insert(courtId)
+        signalRMutationFallbackAttemptsByCourt[courtId, default: 0] += 1
+    }
+
+    private func clearSignalRMutationFallbackState(for courtId: Int) {
+        lastSignalRMutationFallbackAt.removeValue(forKey: courtId)
+        signalRMutationFallbackCourts.remove(courtId)
+        signalRMutationFallbackAttemptsByCourt.removeValue(forKey: courtId)
+    }
+
+    func currentSignalRMutationFallbackSnapshot() -> (count: Int, courts: [Int]) {
+        let courts = signalRMutationFallbackCourts.sorted()
+        let count = courts.reduce(0) { partialResult, courtId in
+            partialResult + (signalRMutationFallbackAttemptsByCourt[courtId] ?? 0)
+        }
+        return (count: count, courts: courts)
     }
     
     private func runSignalRReconciliationMaintenance(for courtId: Int) async {
@@ -2705,6 +2786,9 @@ final class AppViewModel: ObservableObject {
         guard let client = signalRClient else { return }
         let tournaments = Array(activeSubscriptions.keys)
         activeSubscriptions.removeAll()
+        lastSignalRMutationFallbackAt.removeAll()
+        signalRMutationFallbackCourts.removeAll()
+        signalRMutationFallbackAttemptsByCourt.removeAll()
         Task {
             for tournamentId in tournaments {
                 await client.unsubscribeFromTournament(tournamentId)
@@ -2897,6 +2981,7 @@ extension AppViewModel: SignalRDelegate {
     }
 
     func signalRDidConnect() {
+        signalRStatus = .connected
         syncSignalRSubscriptions(forceResubscribe: true)
     }
 
@@ -3030,6 +3115,7 @@ extension AppViewModel: SignalRDelegate {
             lastSignalRMutationEpochMs[courtId] = mutationEpochMs
         }
         lastSignalRMutationAt[courtId] = Date()
+        clearSignalRMutationFallbackState(for: courtId)
 
         guard let idx = courtIndex(for: courtId),
               let activeIdx = courts[idx].activeIndex,
