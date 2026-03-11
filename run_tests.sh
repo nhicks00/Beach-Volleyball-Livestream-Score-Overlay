@@ -27,6 +27,8 @@ run_swift_tests() {
         -project MultiCourtScore.xcodeproj \
         -scheme MultiCourtScore \
         -destination 'platform=macOS' \
+        -parallel-testing-enabled NO \
+        -maximum-parallel-testing-workers 1 \
         -only-testing:MultiCourtScoreTests \
         2>&1 | tee /tmp/swift_test_output.log | grep -E "passed|failed|TEST (SUCCEEDED|FAILED)"
     local test_status=${PIPESTATUS[0]}

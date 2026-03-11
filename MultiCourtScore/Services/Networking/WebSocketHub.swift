@@ -892,9 +892,13 @@ body {
   background-color: #0a0a0a;
   margin: 0;
   padding: 0;
-  font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
   color: white;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
 }
 /* Serve indicator - static with fade transition */
 .serve-indicator {
@@ -911,7 +915,7 @@ body {
   height: 32px;
 }
 .bubble-bar {
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease-out;
   position: absolute;
   top: 0;
   left: 50%;
@@ -938,7 +942,7 @@ body {
   transition: opacity 0.1s ease;
 }
 #scoring-content > * {
-  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease-out;
 }
 #scoring-content.slide-out > * {
   opacity: 0;
@@ -952,7 +956,10 @@ body {
 
 /* Scorebug width transition */
 #scorebug {
-  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease-out;
+  min-width: 760px;
+  will-change: width, opacity;
+  transform: translateZ(0);
 }
 
 /* Intermission content inside scorebug */
@@ -1047,6 +1054,17 @@ body {
 /* Center layout (default) - upper third bar */
 body.layout-center #scorebug { display: flex; }
 body.layout-center #trad-board { display: none !important; }
+body.layout-center {
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding-top: 2rem !important;
+  padding-bottom: 0 !important;
+}
+body.layout-center > div:not(#stale-indicator) {
+  align-items: center !important;
+  max-width: 900px !important;
+  padding: 0 1rem !important;
+}
 
 /* Traditional layouts - hide center bar, show table */
 body.layout-top-left #scorebug { display: none !important; }
@@ -1182,7 +1200,7 @@ body.layout-bottom-left .bubble-bar svg {
 /* Layout fade transition */
 .layout-fading {
   opacity: 0 !important;
-  transition: opacity 0.35s ease !important;
+  transition: opacity 0.22s ease-out !important;
   will-change: opacity;
 }
 
@@ -1191,6 +1209,59 @@ body.layout-bottom-left .bubble-bar svg {
   will-change: opacity;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+#team1-section,
+#team2-section {
+  min-width: 0;
+}
+
+.center-team-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 20;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.center-team-meta.right {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.center-team-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.center-team-copy.right {
+  align-items: flex-end;
+}
+
+.center-team-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.01em !important;
+  color: rgba(255,255,255,0.98) !important;
+}
+
+.intermission-team-name {
+  font-style: normal !important;
+  letter-spacing: 0.01em !important;
+}
+
+.intermission-vs {
+  font-style: normal !important;
 }
 
 /* ===== TRADITIONAL SCOREBOARD ===== */
@@ -1351,7 +1422,7 @@ body.layout-bottom-left .bubble-bar svg {
     <!-- Scoring Content Layer -->
     <div id="scoring-content">
       <!-- Left Team Section -->
-      <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+      <div id="team1-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
         <div id="confetti-left" class="confetti-container">
           <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
           <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
@@ -1364,11 +1435,11 @@ body.layout-bottom-left .bubble-bar svg {
           <div class="confetti-piece cf-17"></div><div class="confetti-piece cf-18"></div>
           <div class="confetti-piece cf-19"></div><div class="confetti-piece cf-20"></div>
         </div>
-        <div style="display: flex; align-items: flex-start; gap: 0.5rem; position: relative; z-index: 20;">
+        <div class="center-team-meta" style="display: flex; align-items: flex-start; gap: 0.5rem; position: relative; z-index: 20;">
           <span id="trophy-left" class="trophy-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/></svg></span>
           <span id="seed1" style="font-size: 0.75rem; font-weight: 700; color: rgba(212,175,55,0.8); margin-top: 0.1rem; min-width: 1rem; text-align: center;"></span>
-          <div style="display: flex; flex-direction: column; justify-content: center;">
-            <span id="t1" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 1</span>
+          <div class="center-team-copy" style="display: flex; flex-direction: column; justify-content: center;">
+            <span id="t1" class="center-team-name" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: normal;">Team 1</span>
             <div id="pips1" style="display: flex; gap: 0.375rem;">
               <div class="set-pip bg-gold-muted"></div>
               <div class="set-pip bg-gold-muted"></div>
@@ -1392,7 +1463,7 @@ body.layout-bottom-left .bubble-bar svg {
       <div class="center-divider" style="width: 1px; height: 2.5rem; background: rgba(255,255,255,0.2); flex-shrink: 0;"></div>
 
       <!-- Right Team Section -->
-      <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden;">
+      <div id="team2-section" style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; height: 100%; position: relative; overflow: hidden; min-width: 0;">
         <div id="confetti-right" class="confetti-container">
           <div class="confetti-piece cf-1"></div><div class="confetti-piece cf-2"></div>
           <div class="confetti-piece cf-3"></div><div class="confetti-piece cf-4"></div>
@@ -1408,10 +1479,10 @@ body.layout-bottom-left .bubble-bar svg {
         <div class="score-container" style="position: relative; z-index: 20;">
           <span id="sc2" class="score-text">0</span>
         </div>
-        <div style="display: flex; align-items: flex-start; gap: 0.5rem; text-align: right; position: relative; z-index: 20;">
+        <div class="center-team-meta right" style="display: flex; align-items: flex-start; gap: 0.5rem; text-align: right; position: relative; z-index: 20;">
           <span id="serve-right" class="serve-indicator" style="opacity: 0; margin-top: -0.1rem; display: inline-flex;"><svg width="24" height="24" viewBox="0 0 24 24" fill="#D4AF37"><circle cx="12" cy="12" r="10" fill="none" stroke="#D4AF37" stroke-width="2"/><path d="M6.5 3.5c3.5 2 5 5.5 5 8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M17.5 20.5c-3.5-2-5-5.5-5-8.5" fill="none" stroke="#D4AF37" stroke-width="1.5"/><path d="M2.5 10c3 1.5 7 1.5 10 0s7-1.5 10 0" fill="none" stroke="#D4AF37" stroke-width="1.5"/></svg></span>
-          <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
-            <span id="t2" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: italic;">Team 2</span>
+          <div class="center-team-copy right" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+            <span id="t2" class="center-team-name" style="font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.025em; color: rgba(255,255,255,0.95); line-height: 1; margin-bottom: 0.375rem; font-style: normal;">Team 2</span>
             <div id="pips2" style="display: flex; gap: 0.375rem;">
               <div class="set-pip bg-gold-muted"></div>
               <div class="set-pip bg-gold-muted"></div>
@@ -1426,15 +1497,15 @@ body.layout-bottom-left .bubble-bar svg {
     <!-- Intermission Content Layer (overlaid, hidden by default) -->
     <div id="intermission-content">
       <div id="int-team1-container" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-        <span id="int-team1" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 1</span>
+        <span id="int-team1" class="intermission-team-name" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: normal; white-space: nowrap; transform: translateX(30px); transition: transform 0.5s cubic-bezier(0.22,1,0.36,1), opacity 0.32s ease-out; opacity: 0;">Team 1</span>
       </div>
       <div id="int-vs" style="display: flex; align-items: center; flex-shrink: 0; margin: 0 1rem; opacity: 0; transition: opacity 0.5s ease;">
         <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
-        <span style="font-size: 1.125rem; font-weight: 900; font-style: italic; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
+        <span class="intermission-vs" style="font-size: 1.125rem; font-weight: 900; font-style: normal; letter-spacing: 0.15em; padding: 0 1rem; background: linear-gradient(180deg, #F9E29B 0%, #D4AF37 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">VS</span>
         <div style="width: 1px; height: 1.5rem; background: rgba(255,255,255,0.2);"></div>
       </div>
       <div id="int-team2-container" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-        <span id="int-team2" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: italic; white-space: nowrap; transform: translateX(-30px); transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.5s ease; opacity: 0;">Team 2</span>
+        <span id="int-team2" class="intermission-team-name" style="font-size: 1.25rem; font-weight: 900; text-transform: uppercase; letter-spacing: -0.025em; color: white; font-style: normal; white-space: nowrap; transform: translateX(-30px); transition: transform 0.5s cubic-bezier(0.22,1,0.36,1), opacity 0.32s ease-out; opacity: 0;">Team 2</span>
       </div>
     </div>
 
@@ -1602,6 +1673,7 @@ var layoutTransitionInProgress = false;
 var lastSetHistoryKey = '';
 var tradCelebrationActive = false;
 var socialBarEnabled = true;
+var queuedLayout = null;
 
 /* Stale data detection */
 function updateStaleState(dataJSON) {
@@ -1676,6 +1748,8 @@ function abbreviateName(teamName) {
   if (!teamName) return "";
   const normalizedTeamName = cleanName(teamName);
   if (!normalizedTeamName.includes("/")) {
+    const compactPlaceholder = abbreviatePlaceholderName(normalizedTeamName);
+    if (compactPlaceholder !== normalizedTeamName) return compactPlaceholder;
     const teamParts = normalizedTeamName.split(/\s+/);
     if (teamParts.length <= 3) return normalizedTeamName;
   }
@@ -1686,7 +1760,7 @@ function abbreviateName(teamName) {
     if (lower.includes("winner") || lower.includes("loser") ||
         lower.includes("team ") || lower.includes("seed ") ||
         lower.includes("match ") || lower.includes("this match")) {
-      return normalizedPlayer;
+      return abbreviatePlaceholderName(normalizedPlayer);
     }
     const parts = normalizedPlayer.split(/\s+/);
     if (parts.length < 2) return normalizedPlayer;
@@ -1695,6 +1769,23 @@ function abbreviateName(teamName) {
     return parts[parts.length - 1];
   });
   return abbreviated.join(" / ");
+}
+
+function abbreviatePlaceholderName(name) {
+  if (!name) return "";
+  const normalized = cleanName(name);
+  var match = normalized.match(/^(Winner|Loser)\s+of\s+Match\s+(\d+)$/i);
+  if (match) return 'M' + match[2] + ' ' + titleCaseWord(match[1]);
+  match = normalized.match(/^(Winner|Loser)\s+of\s+this match$/i);
+  if (match) return 'This Match ' + titleCaseWord(match[1]);
+  match = normalized.match(/^Match\s+(\d+)\s+(Winner|Loser)$/i);
+  if (match) return 'M' + match[1] + ' ' + titleCaseWord(match[2]);
+  return normalized;
+}
+
+function titleCaseWord(word) {
+  if (!word) return '';
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
 /* Replace "Match N" with "this match" when N is the current match */
@@ -2449,8 +2540,13 @@ function updateTradBoardHeight() {
 }
 
 function applyLayoutTransition(newLayout) {
-  if (layoutTransitionInProgress || newLayout === currentLayout) return;
+  if (layoutTransitionInProgress) {
+    queuedLayout = newLayout;
+    return;
+  }
+  if (newLayout === currentLayout) return;
   layoutTransitionInProgress = true;
+  queuedLayout = null;
 
   var wrapper = document.getElementById('overlay-wrapper');
 
@@ -2481,6 +2577,8 @@ function applyLayoutTransition(newLayout) {
     // Re-equalize trad board name widths if switching to trad layout
     if (newLayout !== 'center') {
       equalizeTradNameWidths(true);
+    } else {
+      normalizeCenterLayoutState();
     }
 
     // Phase 3: Allow 1 frame for layout to render, then fade back in
@@ -2498,6 +2596,8 @@ function applyLayoutTransition(newLayout) {
         if (socialBar.classList.contains('visible')) fitBubbleToBoard(socialBar);
         if (nextBar.classList.contains('visible')) fitBubbleToBoard(nextBar);
         if (intStatusBar && intStatusBar.classList.contains('visible')) fitBubbleToBoard(intStatusBar);
+      } else if (overlayState === 'intermission') {
+        setIntermissionWidth();
       }
 
       // Fade back in
@@ -2505,9 +2605,27 @@ function applyLayoutTransition(newLayout) {
         if (wrapper) wrapper.classList.remove('layout-fading');
         layoutTransitionInProgress = false;
         console.log('[Overlay] Layout transition complete:', newLayout);
+        if (queuedLayout && queuedLayout !== currentLayout) {
+          var pendingLayout = queuedLayout;
+          queuedLayout = null;
+          applyLayoutTransition(pendingLayout);
+        }
       });
     });
   }, 380);
+}
+
+function normalizeCenterLayoutState() {
+  if (tradT1) tradT1.style.minWidth = '';
+  if (tradT2) tradT2.style.minWidth = '';
+  if (intTeam1Container) intTeam1Container.style.width = '';
+  if (intTeam2Container) intTeam2Container.style.width = '';
+  if (scorebug) {
+    scorebug.style.width = overlayState === 'intermission' ? '' : SCORING_WIDTH;
+  }
+  lastEqualizedKey = null;
+  document.documentElement.style.removeProperty('--trad-board-width');
+  document.documentElement.style.removeProperty('--trad-board-height');
 }
 
 /* ===== TRADITIONAL SCOREBOARD ===== */

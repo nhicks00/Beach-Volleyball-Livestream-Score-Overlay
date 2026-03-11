@@ -4644,9 +4644,11 @@ private func withSharedOverlayServerTestScope<T>(
     await SharedOverlayServerTestLock.shared.acquire()
     do {
         let result = try await operation()
+        await stopSharedOverlayServer()
         await SharedOverlayServerTestLock.shared.release()
         return result
     } catch {
+        await stopSharedOverlayServer()
         await SharedOverlayServerTestLock.shared.release()
         throw error
     }

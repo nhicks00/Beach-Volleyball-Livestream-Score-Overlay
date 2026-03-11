@@ -124,6 +124,7 @@ class Scenario:
     score: dict[str, Any]
     next_match: dict[str, Any]
     wait_ms: int = POLL_SETTLE_MS
+    sequence: list[tuple[dict[str, Any], dict[str, Any], int]] | None = None
 
 
 def build_scenarios() -> list[Scenario]:
@@ -271,8 +272,22 @@ def build_scenarios() -> list[Scenario]:
         Scenario(
             "center_11_layout_cycle_return",
             (1920, 1080),
-            merge(seed_live, layout="center", showSocialBar=True),
+            merge(
+                seed_live,
+                layout="center",
+                showSocialBar=True,
+                team1="Winner of Match 24 / Alexandria Montgomery",
+                team2="North Shore Elite / The Sandstorm Sisters",
+                nextMatch="Winner of Match 42 vs Winner of Match 43",
+            ),
             next_payload("Oscar Pair", "Papa Pair", "10"),
+            sequence=[
+                (merge(seed_live, layout="top-left", showSocialBar=True), next_payload("Oscar Pair", "Papa Pair", "10"), 1400),
+                (merge(seed_live, layout="bottom-left", showSocialBar=False, nextMatch="India Pair vs Juliet Pair"), next_payload("India Pair", "Juliet Pair", "7"), 1400),
+                (merge(seed_live, layout="center", showSocialBar=True, team1="Winner of Match 24 / Alexandria Montgomery", team2="North Shore Elite / The Sandstorm Sisters", nextMatch="Winner of Match 42 vs Winner of Match 43"), next_payload("Oscar Pair", "Papa Pair", "10"), 1500),
+                (merge(seed_live, layout="top-left", showSocialBar=False), next_payload("Charlie Pair", "Delta Pair", "4"), 1200),
+                (merge(seed_live, layout="center", showSocialBar=True, team1="Winner of Match 24 / Alexandria Montgomery", team2="North Shore Elite / The Sandstorm Sisters", nextMatch="Winner of Match 42 vs Winner of Match 43"), next_payload("Oscar Pair", "Papa Pair", "10"), 1700),
+            ],
         ),
         Scenario(
             "center_12_720p_regression_live",
@@ -338,6 +353,10 @@ def main() -> int:
             results: list[dict[str, Any]] = []
             for scenario in scenarios:
                 page.set_viewport_size({"width": scenario.viewport[0], "height": scenario.viewport[1]})
+                if scenario.sequence:
+                    for score_step, next_step, wait_ms in scenario.sequence:
+                        STATE.update(score=score_step, next_match_data=next_step)
+                        time.sleep(wait_ms / 1000)
                 STATE.update(score=scenario.score, next_match_data=scenario.next_match)
                 time.sleep(scenario.wait_ms / 1000)
 
