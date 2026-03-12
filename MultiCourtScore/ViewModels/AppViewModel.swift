@@ -445,23 +445,28 @@ final class AppViewModel: ObservableObject {
         court.nextMatchBarEnabled ?? appSettings.showNextMatchBar
     }
 
+    func effectiveBroadcastTransitionsEnabled(for court: Court) -> Bool {
+        court.broadcastTransitionsEnabled ?? appSettings.broadcastTransitionsEnabled
+    }
+
     func effectiveLiveScoreboardLayout(for court: Court) -> String {
         court.scoreboardLayout ?? appSettings.defaultScoreboardLayout
     }
 
     func effectiveOverlayState(for court: Court) -> String {
         let liveLayout = effectiveLiveScoreboardLayout(for: court)
+        let broadcastTransitionsEnabled = effectiveBroadcastTransitionsEnabled(for: court)
         let forceLiveLayout = forcedBroadcastLiveLayoutByCourt.contains(court.id)
 
         if forceLiveLayout,
-           appSettings.broadcastTransitionsEnabled,
+           broadcastTransitionsEnabled,
            court.currentMatch != nil,
            liveLayout != "center" {
             return "scoring"
         }
 
         let shouldUseIntermission = Self.shouldUseBroadcastIntermissionLayout(
-            broadcastTransitionsEnabled: appSettings.broadcastTransitionsEnabled,
+            broadcastTransitionsEnabled: broadcastTransitionsEnabled,
             liveLayout: liveLayout,
             courtStatus: court.status,
             hasCurrentMatch: court.currentMatch != nil,
@@ -481,7 +486,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func canForceBroadcastLiveLayout(for court: Court) -> Bool {
-        appSettings.broadcastTransitionsEnabled
+        effectiveBroadcastTransitionsEnabled(for: court)
             && court.status.isPolling
             && court.currentMatch != nil
             && effectiveLiveScoreboardLayout(for: court) != "center"
@@ -492,7 +497,7 @@ final class AppViewModel: ObservableObject {
         guard let idx = courtIndex(for: courtId) else { return }
         let court = courts[idx]
         let liveLayout = effectiveLiveScoreboardLayout(for: court)
-        guard appSettings.broadcastTransitionsEnabled,
+        guard effectiveBroadcastTransitionsEnabled(for: court),
               court.status.isPolling,
               court.currentMatch != nil,
               liveLayout != "center" else {
@@ -501,6 +506,16 @@ final class AppViewModel: ObservableObject {
 
         forcedBroadcastLiveLayoutByCourt.insert(courtId)
         runtimeLog.log(.info, subsystem: "operator", message: "forced broadcast live layout for court \(courtId) to \(liveLayout)")
+    }
+
+    func setCourtBroadcastTransitionsEnabled(_ courtId: Int, isEnabled: Bool?) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        courts[idx].broadcastTransitionsEnabled = isEnabled
+        if !effectiveBroadcastTransitionsEnabled(for: courts[idx]) {
+            forcedBroadcastLiveLayoutByCourt.remove(courtId)
+        }
+        saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "set broadcast transitions for court \(courtId) to \(isEnabled.map(String.init) ?? "default")")
     }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {

@@ -64,6 +64,7 @@ struct CourtCard: View {
     let onSetLayout: (String?) -> Void
     let onSetSocialBarEnabled: (Bool?) -> Void
     let onSetNextMatchBarEnabled: (Bool?) -> Void
+    let onSetBroadcastTransitionsEnabled: (Bool?) -> Void
     let onForceLiveLayout: () -> Void
     var showForceLiveLayoutButton: Bool = false
     var isCopied: Bool = false
@@ -300,6 +301,20 @@ struct CourtCard: View {
                 }
             } label: {
                 Label("Next Match Bubble", systemImage: "bubble.right")
+            }
+
+            Menu {
+                Button { onSetBroadcastTransitionsEnabled(nil) } label: {
+                    Label("Default", systemImage: court.broadcastTransitionsEnabled == nil ? "checkmark" : "")
+                }
+                Button { onSetBroadcastTransitionsEnabled(true) } label: {
+                    Label("Enable", systemImage: court.broadcastTransitionsEnabled == true ? "checkmark" : "")
+                }
+                Button { onSetBroadcastTransitionsEnabled(false) } label: {
+                    Label("Disable", systemImage: court.broadcastTransitionsEnabled == false ? "checkmark" : "")
+                }
+            } label: {
+                Label("Broadcast Transitions", systemImage: "sparkles.tv")
             }
         }
     }
@@ -740,6 +755,7 @@ struct CourtCard: View {
 
             footerPill(socialStateLabel, textColor: .white, fill: AppColors.surfaceHover)
             footerPill(nextMatchStateLabel, textColor: .white, fill: AppColors.surfaceHover)
+            footerPill(broadcastTransitionsStateLabel, textColor: .white, fill: AppColors.surfaceHover)
         }
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
@@ -751,6 +767,10 @@ struct CourtCard: View {
 
     private var nextMatchStateLabel: String {
         court.nextMatchBarEnabled == nil ? "Next Auto" : (court.nextMatchBarEnabled == true ? "Next On" : "Next Off")
+    }
+
+    private var broadcastTransitionsStateLabel: String {
+        court.broadcastTransitionsEnabled == nil ? "Bcast Auto" : (court.broadcastTransitionsEnabled == true ? "Bcast On" : "Bcast Off")
     }
 
     private func footerPill(_ text: String, textColor: Color, fill: Color) -> some View {

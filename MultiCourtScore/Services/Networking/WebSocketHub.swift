@@ -402,6 +402,7 @@ final class WebSocketHub {
                 let hub = WebSocketHub.shared
                 let defaultShowSocialBar = hub.appViewModel?.appSettings.showSocialBar ?? true
                 let defaultShowNextMatchBar = hub.appViewModel?.appSettings.showNextMatchBar ?? true
+                let defaultBroadcastTransitionsEnabled = hub.appViewModel?.appSettings.broadcastTransitionsEnabled ?? false
                 guard let vm = hub.appViewModel,
                       let idStr = req.parameters.get("id"),
                       let courtId = Int(idStr),
@@ -419,7 +420,7 @@ final class WebSocketHub {
                         "layout": "bottom-left",
                         "showSocialBar": defaultShowSocialBar,
                         "showNextMatchBar": defaultShowNextMatchBar,
-                        "broadcastTransitionsEnabled": false
+                        "broadcastTransitionsEnabled": defaultBroadcastTransitionsEnabled
                     ])
                 }
                 
@@ -444,6 +445,7 @@ final class WebSocketHub {
                 let effectiveLayout = vm.effectiveOverlayLayout(for: court)
                 let socialBarEnabled = court.socialBarEnabled ?? vm.appSettings.showSocialBar
                 let nextMatchBarEnabled = court.nextMatchBarEnabled ?? vm.appSettings.showNextMatchBar
+                let broadcastTransitionsEnabled = vm.effectiveBroadcastTransitionsEnabled(for: court)
                 let overlayStatus: String = {
                     guard isOverlayScoring else { return "Pre-Match" }
                     if let snapshotStatus = snapshot?.status, !snapshotStatus.isEmpty {
@@ -491,7 +493,7 @@ final class WebSocketHub {
                     "layout": effectiveLayout,
                     "showSocialBar": socialBarEnabled,
                     "showNextMatchBar": nextMatchBarEnabled,
-                    "broadcastTransitionsEnabled": vm.appSettings.broadcastTransitionsEnabled,
+                    "broadcastTransitionsEnabled": broadcastTransitionsEnabled,
                     "holdDuration": vm.appSettings.holdScoreDuration * 1000
                 ]
                 

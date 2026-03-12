@@ -296,6 +296,7 @@ struct Court: Identifiable, Codable, Equatable {
     var scoreboardLayout: String?   // nil = use app default; "center", "top-left", "bottom-left"
     var socialBarEnabled: Bool? = nil    // nil = inherit from app default
     var nextMatchBarEnabled: Bool? = nil // nil = inherit from app default
+    var broadcastTransitionsEnabled: Bool? = nil // nil = inherit from app default
     
     // MARK: Computed Properties
     
@@ -353,7 +354,8 @@ struct Court: Identifiable, Codable, Equatable {
             errorMessage: nil,
             scoreboardLayout: nil,
             socialBarEnabled: nil,
-            nextMatchBarEnabled: nil
+            nextMatchBarEnabled: nil,
+            broadcastTransitionsEnabled: nil
         )
     }
 }

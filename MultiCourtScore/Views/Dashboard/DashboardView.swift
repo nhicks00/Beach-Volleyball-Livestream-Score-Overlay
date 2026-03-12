@@ -273,6 +273,9 @@ struct DashboardView: View {
                                             onSetNextMatchBarEnabled: { isEnabled in
                                                 appViewModel.setCourtNextMatchBarEnabled(court.id, isEnabled: isEnabled)
                                             },
+                                            onSetBroadcastTransitionsEnabled: { isEnabled in
+                                                appViewModel.setCourtBroadcastTransitionsEnabled(court.id, isEnabled: isEnabled)
+                                            },
                                             onForceLiveLayout: { appViewModel.forceBroadcastLiveLayout(court.id) },
                                             showForceLiveLayoutButton: appViewModel.canForceBroadcastLiveLayout(for: court),
                                             isCopied: urlCopiedCourtId == court.id,
