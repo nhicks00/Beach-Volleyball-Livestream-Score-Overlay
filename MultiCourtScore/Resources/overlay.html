@@ -432,25 +432,25 @@ body.layout-top-left .bubble-bar.visible {
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
 body.layout-bottom-left #trad-board {
   position: fixed;
-  top: calc(100vh - 1rem - var(--trad-board-height, 5.5rem));
+  top: auto;
   left: 1rem;
-  bottom: auto;
-  transition: top 0.42s var(--overlay-motion);
-  will-change: top;
+  bottom: 1rem;
+  transition: bottom 0.42s var(--overlay-motion);
+  will-change: bottom;
 }
 body.layout-bottom-left .bubble-container {
   position: fixed;
   left: 1rem;
-  top: calc(100vh - 1rem - var(--trad-board-height, 5.5rem) - 30px);
-  bottom: auto;
+  top: auto;
+  bottom: calc(1rem + var(--trad-board-height, 5.5rem) - 2px);
   justify-content: center;
   margin: 0;
   z-index: 19;
   height: 32px;
   width: var(--trad-board-width, auto);
   overflow: visible;
-  transition: top 0.42s var(--overlay-motion), width 0.42s var(--overlay-motion);
-  will-change: top, width;
+  transition: bottom 0.42s var(--overlay-motion), width 0.42s var(--overlay-motion);
+  will-change: bottom, width;
 }
 /* Invert bubble direction for bottom-left: pop UP */
 body.layout-bottom-left .bubble-bar {

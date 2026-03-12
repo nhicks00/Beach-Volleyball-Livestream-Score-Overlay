@@ -377,6 +377,7 @@ final class WebSocketHub {
                 let html = hub.generateOverlayHTML(courtId: idStr)
                 let response = Response(status: .ok)
                 response.headers.contentType = .html
+                response.headers.cacheControl = .init(noStore: true)
                 response.body = .init(string: html)
                 return response
             }
@@ -390,6 +391,7 @@ final class WebSocketHub {
                 let html = hub.generateOverlayHTML(courtId: idStr)
                 let response = Response(status: .ok)
                 response.headers.contentType = .html
+                response.headers.cacheControl = .init(noStore: true)
                 response.body = .init(string: html)
                 return response
             }
