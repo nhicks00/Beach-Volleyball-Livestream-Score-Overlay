@@ -9,6 +9,7 @@
   --overlay-font: "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Helvetica", Arial, sans-serif;
   --overlay-condensed-font: "SF Pro Display", "Helvetica Neue", "Arial Narrow", Arial, sans-serif;
   --overlay-motion: cubic-bezier(0.22, 1, 0.36, 1);
+  --trad-bubble-inset: 0.38rem;
 }
 
 /* Tailwind utility classes compiled inline for overlay */
@@ -523,11 +524,12 @@ body.layout-bottom-left .bubble-bar {
   gap: 0.35rem !important;
   white-space: nowrap;
   overflow: hidden;
-  width: 100%;
+  width: calc(100% - (var(--trad-bubble-inset) * 2));
+  max-width: calc(100% - (var(--trad-bubble-inset) * 2));
   box-sizing: border-box;
   justify-content: center;
-  left: 0;
-  right: 0;
+  left: var(--trad-bubble-inset);
+  right: auto;
 }
 body.layout-top-left .bubble-bar span,
 body.layout-bottom-left .bubble-bar span {
@@ -2310,13 +2312,16 @@ function normalizeCenterLayoutState() {
 /* Shrink a bubble bar's font until its content fits the board width */
 function fitBubbleToBoard(bar) {
   if (!bar || !tradBoard || currentLayout === 'center') return;
-  var boardW = tradBoard.offsetWidth;
-  if (boardW <= 0) return;
+  void bar.offsetWidth;
+  var availableW = bar.clientWidth;
+  if (availableW <= 0 && bar.parentElement) availableW = bar.parentElement.clientWidth;
+  if (availableW <= 0) availableW = tradBoard.offsetWidth;
+  if (availableW <= 0) return;
   var size = 11;
   bar.style.fontSize = size + 'px';
   // Force reflow so scrollWidth reflects the new font-size
   void bar.offsetWidth;
-  while (bar.scrollWidth > boardW && size > 5) {
+  while (bar.scrollWidth > availableW && size > 5) {
     size -= 0.5;
     bar.style.fontSize = size + 'px';
     void bar.offsetWidth; // force reflow each iteration
