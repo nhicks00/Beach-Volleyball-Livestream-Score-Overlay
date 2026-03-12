@@ -441,7 +441,7 @@ body.layout-bottom-left #trad-board {
 body.layout-bottom-left .bubble-container {
   position: fixed;
   left: 1rem;
-  top: calc(100vh - 1rem - (var(--trad-board-height, 5.5rem) * 2) - 32px);
+  top: calc(100vh - 1rem - var(--trad-board-height, 5.5rem) - 30px);
   bottom: auto;
   justify-content: center;
   margin: 0;
@@ -2541,6 +2541,12 @@ async function tick() {
       if (!socialBarEnabled) {
         socialBar.classList.remove('visible');
         socialBar.classList.add('hidden-up');
+      } else if ((overlayState === 'scoring' || overlayState === 'postmatch') &&
+                 !nextBar.classList.contains('visible') &&
+                 !intStatusBar.classList.contains('visible')) {
+        socialBar.classList.remove('hidden-up');
+        socialBar.classList.add('visible');
+        fitBubbleToBoard(socialBar);
       }
     }
 
