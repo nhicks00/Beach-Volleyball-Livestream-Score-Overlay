@@ -10,6 +10,7 @@
   --overlay-condensed-font: "SF Pro Display", "Helvetica Neue", "Arial Narrow", Arial, sans-serif;
   --overlay-motion: cubic-bezier(0.22, 1, 0.36, 1);
   --trad-bubble-inset: 0.38rem;
+  --trad-layout-shift-ms: 420ms;
 }
 
 /* Tailwind utility classes compiled inline for overlay */
@@ -543,6 +544,25 @@ body.layout-bottom-left .bubble-bar svg {
   flex-shrink: 0;
 }
 
+/* Reduce compositor-heavy ornamentation while trad layouts reposition in OBS */
+body.layout-shifting .status-bubble {
+  animation: none !important;
+}
+body.layout-shifting .bubble-bar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.38) !important;
+}
+body.layout-shifting .trad-board {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.72) !important;
+}
+body.layout-shifting .trad-board > div:last-child {
+  opacity: 0.24;
+}
+body.layout-shifting .trophy-icon {
+  filter: none !important;
+}
+
 /* Layout fade transition */
 .layout-fading {
   opacity: 0 !important;
@@ -988,6 +1008,7 @@ const NEXT_SRC = "/next.json";
 const POLL_MS = 1000;
 let POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends (updated from server)
 const SCORING_WIDTH = '100%';
+const TRAD_LAYOUT_SHIFT_MS = 420;
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
 let overlayState = 'intermission'; // Start in intermission until scoring data arrives
@@ -2194,6 +2215,7 @@ function refreshLayoutContent(newLayout) {
 }
 
 function finishLayoutTransition(newLayout) {
+  document.body.classList.remove('layout-shifting');
   layoutTransitionInProgress = false;
   console.log('[Overlay] Layout transition complete:', newLayout);
   if (queuedLayout && queuedLayout !== currentLayout) {
@@ -2204,16 +2226,23 @@ function finishLayoutTransition(newLayout) {
 }
 
 function applyTraditionalLayoutTransition(newLayout, visibleTradBubbles) {
+  document.body.classList.add('layout-shifting');
   hideVisibleTradBubbles(visibleTradBubbles);
   requestAnimationFrame(function() {
     applyLayout(newLayout);
     refreshLayoutContent(newLayout);
-    requestAnimationFrame(function() {
-      restoreVisibleTradBubbles(visibleTradBubbles);
-      setTimeout(function() {
+    setTimeout(function() {
+      if (!visibleTradBubbles || (!visibleTradBubbles.social && !visibleTradBubbles.next && !visibleTradBubbles.status)) {
         finishLayoutTransition(newLayout);
-      }, 460);
-    });
+        return;
+      }
+      requestAnimationFrame(function() {
+        restoreVisibleTradBubbles(visibleTradBubbles);
+        setTimeout(function() {
+          finishLayoutTransition(newLayout);
+        }, 360);
+      });
+    }, TRAD_LAYOUT_SHIFT_MS);
   });
 }
 
