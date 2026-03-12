@@ -252,7 +252,7 @@ struct CourtCard: View {
 
             if showForceLiveLayoutButton {
                 Button { onForceLiveLayout() } label: {
-                    Label("Force Live Layout", systemImage: "play.rectangle.fill")
+                    Label("Match Started", systemImage: "play.rectangle.fill")
                 }
 
                 Divider()
@@ -679,7 +679,7 @@ struct CourtCard: View {
                     HStack(spacing: 4) {
                         Image(systemName: "play.rectangle.fill")
                             .font(.system(size: 12, weight: .bold))
-                        Text("Live View")
+                        Text("Match Started")
                             .font(.system(size: 13, weight: .bold))
                             .lineLimit(1)
                     }
