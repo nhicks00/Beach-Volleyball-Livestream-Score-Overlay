@@ -171,6 +171,7 @@ final class AppViewModel: ObservableObject {
     private var signalRMutationFallbackCourts: Set<Int> = []
     private var signalRMutationFallbackAttemptsByCourt: [Int: Int] = [:]
     private var lastSignalRUnknownGameRefreshAt: [Int: Date] = [:]
+    private var forcedBroadcastLiveLayoutByCourt: Set<Int> = []
     private var watchdogRecoveryCount = 0
     private var lastWatchdogRecoveryAt: Date?
     private var lastWatchdogRecoveryReason: String?
@@ -443,6 +444,64 @@ final class AppViewModel: ObservableObject {
     func effectiveNextMatchBarEnabled(for court: Court) -> Bool {
         court.nextMatchBarEnabled ?? appSettings.showNextMatchBar
     }
+
+    func effectiveLiveScoreboardLayout(for court: Court) -> String {
+        court.scoreboardLayout ?? appSettings.defaultScoreboardLayout
+    }
+
+    func effectiveOverlayState(for court: Court) -> String {
+        let liveLayout = effectiveLiveScoreboardLayout(for: court)
+        let forceLiveLayout = forcedBroadcastLiveLayoutByCourt.contains(court.id)
+
+        if forceLiveLayout,
+           appSettings.broadcastTransitionsEnabled,
+           court.currentMatch != nil,
+           liveLayout != "center" {
+            return "scoring"
+        }
+
+        let shouldUseIntermission = Self.shouldUseBroadcastIntermissionLayout(
+            broadcastTransitionsEnabled: appSettings.broadcastTransitionsEnabled,
+            liveLayout: liveLayout,
+            courtStatus: court.status,
+            hasCurrentMatch: court.currentMatch != nil,
+            hasScoreEvidence: courtHasLiveScoreEvidence(court),
+            forceLiveLayout: forceLiveLayout
+        )
+
+        if shouldUseIntermission {
+            return "intermission"
+        }
+
+        return (court.status == .live || court.status == .finished) ? "scoring" : "intermission"
+    }
+
+    func effectiveOverlayLayout(for court: Court) -> String {
+        effectiveOverlayState(for: court) == "intermission" ? "center" : effectiveLiveScoreboardLayout(for: court)
+    }
+
+    func canForceBroadcastLiveLayout(for court: Court) -> Bool {
+        appSettings.broadcastTransitionsEnabled
+            && court.status.isPolling
+            && court.currentMatch != nil
+            && effectiveLiveScoreboardLayout(for: court) != "center"
+            && effectiveOverlayState(for: court) == "intermission"
+    }
+
+    func forceBroadcastLiveLayout(_ courtId: Int) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        let court = courts[idx]
+        let liveLayout = effectiveLiveScoreboardLayout(for: court)
+        guard appSettings.broadcastTransitionsEnabled,
+              court.status.isPolling,
+              court.currentMatch != nil,
+              liveLayout != "center" else {
+            return
+        }
+
+        forcedBroadcastLiveLayoutByCourt.insert(courtId)
+        runtimeLog.log(.info, subsystem: "operator", message: "forced broadcast live layout for court \(courtId) to \(liveLayout)")
+    }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
         guard let idx = courtIndex(for: courtId) else { return }
@@ -453,6 +512,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].finishedAt = nil
         observedActiveScoring[courtId] = false
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
         smartSwitchFallbackOriginIndex.removeValue(forKey: courtId)
         smartSwitchedMatchID.removeValue(forKey: courtId)
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
@@ -489,6 +549,7 @@ final class AppViewModel: ObservableObject {
         pendingSmartSwitchCandidate.removeValue(forKey: courtId)
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
         lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
 
         guard !normalizedItems.isEmpty else {
             courts[idx].activeIndex = nil
@@ -498,6 +559,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].finishedAt = nil
             courts[idx].errorMessage = nil
             observedActiveScoring[courtId] = false
+            forcedBroadcastLiveLayoutByCourt.remove(courtId)
             clearSuppressionLogState(for: courtId)
             queueArbitrationReasonByCourt.removeValue(forKey: courtId)
             saveConfigurationNow()
@@ -518,6 +580,7 @@ final class AppViewModel: ObservableObject {
                 courts[idx].finishedAt = nil
                 courts[idx].errorMessage = nil
                 observedActiveScoring[courtId] = false
+                forcedBroadcastLiveLayoutByCourt.remove(courtId)
             }
         } else {
             let fallbackIndex = min(previousCourt.activeIndex ?? 0, normalizedItems.count - 1)
@@ -528,6 +591,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].finishedAt = nil
             courts[idx].errorMessage = nil
             observedActiveScoring[courtId] = false
+            forcedBroadcastLiveLayoutByCourt.remove(courtId)
         }
 
         queueArbitrationReasonByCourt[courtId] = defaultQueueArbitrationReason(for: courts[idx].activeIndex)
@@ -667,6 +731,7 @@ final class AppViewModel: ObservableObject {
         pendingSmartSwitchCandidate.removeAll()
         queueArbitrationReasonByCourt.removeAll()
         lastQueueArbitrationNoteByCourt.removeAll()
+        forcedBroadcastLiveLayoutByCourt.removeAll()
         for i in courts.indices {
             let courtId = courts[i].id
             courts[i].queue = []
@@ -734,6 +799,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].status = .waiting
             courts[idx].liveSince = nil
         }
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
         lastSignalRReconcileAt[courtId] = Date().addingTimeInterval(-NetworkConstants.signalRReconcilePollInterval)
         observedActiveScoring[courtId] = false
         courts[idx].errorMessage = nil
@@ -781,6 +847,7 @@ final class AppViewModel: ObservableObject {
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
         queueArbitrationReasonByCourt.removeValue(forKey: courtId)
         lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
 
         if let idx = courtIndex(for: courtId) {
             courts[idx].status = .idle
@@ -1019,6 +1086,7 @@ final class AppViewModel: ObservableObject {
             courts[idx].liveSince = nil
             courts[idx].lastSnapshot = nil
             observedActiveScoring[courtId] = false
+            forcedBroadcastLiveLayoutByCourt.remove(courtId)
             recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
             queueArbitrationReasonByCourt[courtId] = .manual
             lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
@@ -1043,6 +1111,7 @@ final class AppViewModel: ObservableObject {
         courts[idx].liveSince = nil
         courts[idx].lastSnapshot = nil
         observedActiveScoring[courtId] = false
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
         recentlyAutoAdvancedMatches.removeValue(forKey: courtId)
         queueArbitrationReasonByCourt[courtId] = .manual
         lastQueueArbitrationNoteByCourt.removeValue(forKey: courtId)
@@ -3996,6 +4065,7 @@ extension AppViewModel: SignalRDelegate {
             matchItem: nextMatch
         )
         observedActiveScoring[courtId] = false
+        forcedBroadcastLiveLayoutByCourt.remove(courtId)
         lastScoreChangeTime[courtId] = nil
         lastScoreSnapshot[courtId] = nil
         lastServeTeam.removeValue(forKey: courtId)
@@ -4030,6 +4100,30 @@ extension AppViewModel: SignalRDelegate {
             && (previousStatus == .live || previousStatus == .finished || hasScoreData || isFinalStatus)
     }
 
+    static func shouldUseBroadcastIntermissionLayout(
+        broadcastTransitionsEnabled: Bool,
+        liveLayout: String,
+        courtStatus: CourtStatus,
+        hasCurrentMatch: Bool,
+        hasScoreEvidence: Bool,
+        forceLiveLayout: Bool
+    ) -> Bool {
+        guard broadcastTransitionsEnabled else {
+            return false
+        }
+
+        guard liveLayout != "center",
+              courtStatus.isPolling,
+              courtStatus != .finished,
+              hasCurrentMatch,
+              !hasScoreEvidence,
+              !forceLiveLayout else {
+            return false
+        }
+
+        return true
+    }
+
     static func shouldAdvanceAfterConclusion(
         matchConcluded: Bool,
         isStale: Bool,
@@ -4042,6 +4136,14 @@ extension AppViewModel: SignalRDelegate {
         }
 
         return isStale || !shouldHoldPostMatch || holdExpired || nextMatchHasStarted
+    }
+
+    private func courtHasLiveScoreEvidence(_ court: Court) -> Bool {
+        guard let snapshot = court.lastSnapshot else { return false }
+        if snapshot.team1Score > 0 || snapshot.team2Score > 0 {
+            return true
+        }
+        return snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
     }
 }
 

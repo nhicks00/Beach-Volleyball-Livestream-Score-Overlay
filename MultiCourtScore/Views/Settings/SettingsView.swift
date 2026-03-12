@@ -272,6 +272,11 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Auto-start polling on launch", isOn: $settings.autoStartPolling)
                             .toggleStyle(.switch)
+                        Toggle("Enable broadcast transitions", isOn: $settings.broadcastTransitionsEnabled)
+                            .toggleStyle(.switch)
+                            .onChange(of: settings.broadcastTransitionsEnabled) { _, newValue in
+                                appViewModel.appSettings.broadcastTransitionsEnabled = newValue
+                            }
                         Toggle("Show social media bar on overlay", isOn: $settings.showSocialBar)
                             .toggleStyle(.switch)
                             .onChange(of: settings.showSocialBar) { _, newValue in
@@ -282,6 +287,10 @@ struct SettingsView: View {
                             .onChange(of: settings.showNextMatchBar) { _, newValue in
                                 appViewModel.appSettings.showNextMatchBar = newValue
                             }
+
+                        Text("When enabled, queued team names stay in the centered intermission layout until actual score evidence appears, then shift into the configured live scoreboard layout.")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppColors.textMuted)
                     }
                 }
 
@@ -298,7 +307,7 @@ struct SettingsView: View {
                             .onChange(of: settings.holdScoreDuration) { _, newValue in
                                 appViewModel.appSettings.holdScoreDuration = newValue
                             }
-                            Text("How long to display final scores before advancing to next match.")
+                            Text("How long to display final scores before advancing to the next queued match.")
                                 .font(.system(size: 11))
                                 .foregroundColor(AppColors.textMuted)
                         }
@@ -364,16 +373,16 @@ struct SettingsView: View {
                 DetailSection(title: "Default Scoreboard Layout") {
                     VStack(alignment: .leading, spacing: 8) {
                         Picker("Layout", selection: $settings.defaultScoreboardLayout) {
+                            Text("Bottom-Left").tag("bottom-left")
                             Text("Center").tag("center")
                             Text("Top-Left").tag("top-left")
-                            Text("Bottom-Left").tag("bottom-left")
                         }
                         .pickerStyle(.segmented)
                         .onChange(of: settings.defaultScoreboardLayout) { _, newLayout in
                             appViewModel.appSettings.defaultScoreboardLayout = newLayout
                         }
 
-                        Text("Applied to all overlays unless overridden per-court.")
+                        Text("Applied to all overlays unless overridden per-court. Broadcast transitions use this as the live scoreboard layout.")
                             .font(.system(size: 11))
                             .foregroundColor(AppColors.textMuted)
                     }

@@ -89,12 +89,46 @@ class ConfigStore {
         var autoStartPolling: Bool = false
         var showDebugInfo: Bool = false
         var overlayTheme: String = "dark"
-        var defaultScoreboardLayout: String = "center"
+        var defaultScoreboardLayout: String = "bottom-left"
         var showSocialBar: Bool = true
         var showNextMatchBar: Bool = true
-        var holdScoreDuration: TimeInterval = 180    // post-match hold seconds
+        var broadcastTransitionsEnabled: Bool = false
+        var holdScoreDuration: TimeInterval = 60     // post-match hold seconds
         var staleMatchTimeout: TimeInterval = 900    // auto-advance after N seconds of inactivity
         var signalREnabled: Bool = false
+
+        enum CodingKeys: String, CodingKey {
+            case serverPort
+            case pollingInterval
+            case autoStartPolling
+            case showDebugInfo
+            case overlayTheme
+            case defaultScoreboardLayout
+            case showSocialBar
+            case showNextMatchBar
+            case broadcastTransitionsEnabled
+            case holdScoreDuration
+            case staleMatchTimeout
+            case signalREnabled
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            serverPort = try container.decodeIfPresent(Int.self, forKey: .serverPort) ?? NetworkConstants.webSocketPort
+            pollingInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .pollingInterval) ?? NetworkConstants.pollingInterval
+            autoStartPolling = try container.decodeIfPresent(Bool.self, forKey: .autoStartPolling) ?? false
+            showDebugInfo = try container.decodeIfPresent(Bool.self, forKey: .showDebugInfo) ?? false
+            overlayTheme = try container.decodeIfPresent(String.self, forKey: .overlayTheme) ?? "dark"
+            defaultScoreboardLayout = try container.decodeIfPresent(String.self, forKey: .defaultScoreboardLayout) ?? "bottom-left"
+            showSocialBar = try container.decodeIfPresent(Bool.self, forKey: .showSocialBar) ?? true
+            showNextMatchBar = try container.decodeIfPresent(Bool.self, forKey: .showNextMatchBar) ?? true
+            broadcastTransitionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .broadcastTransitionsEnabled) ?? false
+            holdScoreDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .holdScoreDuration) ?? 60
+            staleMatchTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .staleMatchTimeout) ?? 900
+            signalREnabled = try container.decodeIfPresent(Bool.self, forKey: .signalREnabled) ?? false
+        }
     }
     
     func loadSettings() -> AppSettings {

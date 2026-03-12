@@ -64,6 +64,8 @@ struct CourtCard: View {
     let onSetLayout: (String?) -> Void
     let onSetSocialBarEnabled: (Bool?) -> Void
     let onSetNextMatchBarEnabled: (Bool?) -> Void
+    let onForceLiveLayout: () -> Void
+    var showForceLiveLayoutButton: Bool = false
     var isCopied: Bool = false
     var holdScoreDuration: TimeInterval = 180
 
@@ -246,6 +248,14 @@ struct CourtCard: View {
             }
 
             Divider()
+
+            if showForceLiveLayoutButton {
+                Button { onForceLiveLayout() } label: {
+                    Label("Force Live Layout", systemImage: "play.rectangle.fill")
+                }
+
+                Divider()
+            }
 
             Menu {
                 Button { onSetLayout(nil) } label: {
@@ -647,6 +657,29 @@ struct CourtCard: View {
 
     private var footerPollingControls: some View {
         HStack(spacing: 6) {
+            if showForceLiveLayoutButton {
+                Button {
+                    onForceLiveLayout()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Live View")
+                            .font(.system(size: 13, weight: .bold))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(AppColors.info)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(AppColors.info.opacity(0.15))
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("court.\(court.id).forceLiveLayout")
+            }
+
             Button {
                 onStart()
             } label: {
@@ -947,7 +980,8 @@ struct PostmatchTimer: View {
             onCopyURL: {},
             onSetLayout: { _ in },
             onSetSocialBarEnabled: { _ in },
-            onSetNextMatchBarEnabled: { _ in }
+            onSetNextMatchBarEnabled: { _ in },
+            onForceLiveLayout: {}
         )
         .frame(width: 340)
 
@@ -963,7 +997,8 @@ struct PostmatchTimer: View {
             onCopyURL: {},
             onSetLayout: { _ in },
             onSetSocialBarEnabled: { _ in },
-            onSetNextMatchBarEnabled: { _ in }
+            onSetNextMatchBarEnabled: { _ in },
+            onForceLiveLayout: {}
         )
         .frame(width: 340)
     }

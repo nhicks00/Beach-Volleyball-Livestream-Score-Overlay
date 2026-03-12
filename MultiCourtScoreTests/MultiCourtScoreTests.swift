@@ -423,8 +423,8 @@ struct AppConfigTests {
         #expect(AppConfig.maxCourts == 10)
     }
 
-    @Test func holdScoreDuration_is3Minutes() async throws {
-        #expect(AppConfig.holdScoreDuration == 180)
+    @Test func holdScoreDuration_is60Seconds() async throws {
+        #expect(AppConfig.holdScoreDuration == 60)
     }
 
     @Test func staleMatchTimeout_is15Minutes() async throws {
@@ -788,6 +788,81 @@ struct QueueAdvanceDecisionTests {
         )
 
         #expect(shouldAdvance)
+    }
+
+    @Test func shouldUseBroadcastIntermissionLayout_isTrue_forQueuedCourtWithoutScoreEvidence() async throws {
+        let shouldUse = AppViewModel.shouldUseBroadcastIntermissionLayout(
+            broadcastTransitionsEnabled: true,
+            liveLayout: "bottom-left",
+            courtStatus: .waiting,
+            hasCurrentMatch: true,
+            hasScoreEvidence: false,
+            forceLiveLayout: false
+        )
+
+        #expect(shouldUse)
+    }
+
+    @Test func shouldUseBroadcastIntermissionLayout_isFalse_afterFirstPoint() async throws {
+        let shouldUse = AppViewModel.shouldUseBroadcastIntermissionLayout(
+            broadcastTransitionsEnabled: true,
+            liveLayout: "bottom-left",
+            courtStatus: .live,
+            hasCurrentMatch: true,
+            hasScoreEvidence: true,
+            forceLiveLayout: false
+        )
+
+        #expect(!shouldUse)
+    }
+
+    @Test func shouldUseBroadcastIntermissionLayout_isFalse_whenOperatorForcesLiveLayout() async throws {
+        let shouldUse = AppViewModel.shouldUseBroadcastIntermissionLayout(
+            broadcastTransitionsEnabled: true,
+            liveLayout: "bottom-left",
+            courtStatus: .waiting,
+            hasCurrentMatch: true,
+            hasScoreEvidence: false,
+            forceLiveLayout: true
+        )
+
+        #expect(!shouldUse)
+    }
+
+    @Test func appSettings_decodesLegacyPayloadWithoutResettingValues() throws {
+        let data = Data(
+            """
+            {
+              "serverPort": 9001,
+              "pollingInterval": 1.5,
+              "autoStartPolling": true,
+              "overlayTheme": "dark",
+              "defaultScoreboardLayout": "top-left",
+              "showSocialBar": false,
+              "showNextMatchBar": true,
+              "holdScoreDuration": 180,
+              "staleMatchTimeout": 1200,
+              "signalREnabled": true
+            }
+            """.utf8
+        )
+
+        let settings = try JSONDecoder().decode(ConfigStore.AppSettings.self, from: data)
+
+        #expect(settings.serverPort == 9001)
+        #expect(settings.defaultScoreboardLayout == "top-left")
+        #expect(settings.showSocialBar == false)
+        #expect(settings.holdScoreDuration == 180)
+        #expect(settings.broadcastTransitionsEnabled == false)
+        #expect(settings.signalREnabled == true)
+    }
+
+    @Test func appSettings_defaultsUseBroadcastFriendlyBaseline() throws {
+        let settings = ConfigStore.AppSettings()
+
+        #expect(settings.defaultScoreboardLayout == "bottom-left")
+        #expect(settings.holdScoreDuration == 60)
+        #expect(settings.broadcastTransitionsEnabled == false)
     }
 }
 

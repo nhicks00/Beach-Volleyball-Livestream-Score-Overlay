@@ -415,8 +415,11 @@ final class WebSocketHub {
                         "seed1": "", "seed2": "",
                         "setHistory": [] as [String],
                         "nextMatch": "",
+                        "overlayState": "intermission",
+                        "layout": "bottom-left",
                         "showSocialBar": defaultShowSocialBar,
-                        "showNextMatchBar": defaultShowNextMatchBar
+                        "showNextMatchBar": defaultShowNextMatchBar,
+                        "broadcastTransitionsEnabled": false
                     ])
                 }
                 
@@ -430,29 +433,45 @@ final class WebSocketHub {
 
                 // Force scores to 0-0 when court is not actively live or finished
                 // This prevents stale scores from a previous match lingering during auto-advance
-                let isLiveOrFinished = court.status == .live || court.status == .finished
+                let overlayState = vm.effectiveOverlayState(for: court)
+                let isOverlayScoring = overlayState == "scoring"
 
                 let currentGame = snapshot?.setHistory.last
-                let gameScore1 = isLiveOrFinished ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
-                let gameScore2 = isLiveOrFinished ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
+                let gameScore1 = isOverlayScoring ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
+                let gameScore2 = isOverlayScoring ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
 
                 // Determine effective layout
-                let effectiveLayout = court.scoreboardLayout ?? vm.appSettings.defaultScoreboardLayout
+                let effectiveLayout = vm.effectiveOverlayLayout(for: court)
                 let socialBarEnabled = court.socialBarEnabled ?? vm.appSettings.showSocialBar
                 let nextMatchBarEnabled = court.nextMatchBarEnabled ?? vm.appSettings.showNextMatchBar
+                let overlayStatus: String = {
+                    guard isOverlayScoring else { return "Pre-Match" }
+                    if let snapshotStatus = snapshot?.status, !snapshotStatus.isEmpty {
+                        return snapshotStatus
+                    }
+                    switch court.status {
+                    case .finished:
+                        return "Final"
+                    case .live:
+                        return "In Progress"
+                    default:
+                        return "Pre-Match"
+                    }
+                }()
 
                 let data: [String: Any] = [
                     "team1": team1,
                     "team2": team2,
                     "score1": gameScore1,
                     "score2": gameScore2,
-                    "set": isLiveOrFinished ? (snapshot?.setNumber ?? 1) : 1,
-                    "status": isLiveOrFinished ? (snapshot?.status ?? "Pre-Match") : "Pre-Match",
+                    "set": isOverlayScoring ? (snapshot?.setNumber ?? 1) : 1,
+                    "status": overlayStatus,
                     "courtStatus": court.status.rawValue,
-                    "setsA": isLiveOrFinished ? (snapshot?.totalSetsWon.team1 ?? 0) : 0,
-                    "setsB": isLiveOrFinished ? (snapshot?.totalSetsWon.team2 ?? 0) : 0,
-                    "serve": isLiveOrFinished ? (snapshot?.serve ?? "none") : "none",
-                    "setHistory": isLiveOrFinished ? (snapshot?.setHistory.map { $0.displayString } ?? []) : [] as [String],
+                    "overlayState": overlayState,
+                    "setsA": isOverlayScoring ? (snapshot?.totalSetsWon.team1 ?? 0) : 0,
+                    "setsB": isOverlayScoring ? (snapshot?.totalSetsWon.team2 ?? 0) : 0,
+                    "serve": isOverlayScoring ? (snapshot?.serve ?? "none") : "none",
+                    "setHistory": isOverlayScoring ? (snapshot?.setHistory.map { $0.displayString } ?? []) : [] as [String],
 
                     "seed1": seed1,
                     "seed2": seed2,
@@ -472,6 +491,7 @@ final class WebSocketHub {
                     "layout": effectiveLayout,
                     "showSocialBar": socialBarEnabled,
                     "showNextMatchBar": nextMatchBarEnabled,
+                    "broadcastTransitionsEnabled": vm.appSettings.broadcastTransitionsEnabled,
                     "holdDuration": vm.appSettings.holdScoreDuration * 1000
                 ]
                 

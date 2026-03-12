@@ -220,7 +220,7 @@
 .final-label.visible { display: block; }
 
 body {
-  min-height: 100dvh;
+  min-height: 100vh;
   background-color: #0a0a0a;
   margin: 0;
   padding: 0;
@@ -470,7 +470,7 @@ body.layout-top-left .bubble-bar.visible {
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
 body.layout-bottom-left #trad-board {
   position: fixed;
-  top: calc(100dvh - 1rem - var(--trad-board-height, 5.5rem));
+  top: calc(100vh - 1rem - var(--trad-board-height, 5.5rem));
   left: 1rem;
   bottom: auto;
   transition: top 0.42s var(--overlay-motion);
@@ -479,7 +479,7 @@ body.layout-bottom-left #trad-board {
 body.layout-bottom-left .bubble-container {
   position: fixed;
   left: 1rem;
-  top: calc(100dvh - 1rem - (var(--trad-board-height, 5.5rem) * 2) - 32px);
+  top: calc(100vh - 1rem - (var(--trad-board-height, 5.5rem) * 2) - 32px);
   bottom: auto;
   justify-content: center;
   margin: 0;
@@ -576,6 +576,11 @@ body.layout-shifting .trophy-icon {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transform: translateZ(0);
+}
+
+body.layout-top-left #overlay-wrapper,
+body.layout-bottom-left #overlay-wrapper {
+  transform: none;
 }
 
 #team1-section,
@@ -1009,6 +1014,7 @@ const POLL_MS = 1000;
 let POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends (updated from server)
 const SCORING_WIDTH = '100%';
 const TRAD_LAYOUT_SHIFT_MS = 420;
+var broadcastTransitionsEnabled = false;
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
 let overlayState = 'intermission'; // Start in intermission until scoring data arrives
@@ -2260,6 +2266,10 @@ function applyLayoutTransition(newLayout) {
 
   var wrapper = document.getElementById('overlay-wrapper');
 
+  if (broadcastTransitionsEnabled) {
+    document.body.classList.add('layout-shifting');
+  }
+
   if (shouldRetriggerTradBubbleEntrance) {
     applyTraditionalLayoutTransition(newLayout, visibleTradBubbles);
     return;
@@ -2524,20 +2534,28 @@ function determineState(d) {
   const hasScoring = combinedScore > 0;
   const matchFinished = isMatchFinished(d);
   const courtStatus = (d.courtStatus || '').toLowerCase();
+  const explicitState = d.overlayState;
   
   // Check if match has already started (any sets won)
   const setsWon1 = d.setsA || 0;
   const setsWon2 = d.setsB || 0;
   const matchInProgress = setsWon1 > 0 || setsWon2 > 0;
 
-  // If currently in intermission and scoring starts, switch to scoring
-  if (overlayState === 'intermission' && hasScoring && !matchFinished) {
+  if (explicitState === 'intermission') {
+    return 'intermission';
+  }
+
+  if (matchFinished) {
+    return 'postmatch';
+  }
+
+  if (explicitState === 'scoring') {
     return 'scoring';
   }
 
-  // If match just finished, enter post-match state
-  if (matchFinished && overlayState === 'scoring') {
-    return 'postmatch';
+  // If currently in intermission and scoring starts, switch to scoring
+  if (overlayState === 'intermission' && hasScoring && !matchFinished) {
+    return 'scoring';
   }
 
   // If in post-match and 3 min elapsed, go to intermission
@@ -2569,6 +2587,7 @@ async function tick() {
 
     // Update dynamic hold duration from server settings
     POST_MATCH_HOLD_MS = d.holdDuration || 180000;
+    broadcastTransitionsEnabled = d.broadcastTransitionsEnabled === true;
 
     // Track data freshness
     updateStaleState(JSON.stringify(d));
@@ -2603,7 +2622,7 @@ async function tick() {
 
     const newState = determineState(d);
 
-    // First load — set up initial state based on ACTUAL DATA, not overlayState
+    // First load — set up initial state from server-driven overlay presentation.
     if (firstLoad) {
       firstLoad = false;
       // Initialize current match tracking
@@ -2616,14 +2635,9 @@ async function tick() {
       socialBarEnabled = d.showSocialBar !== false;
       nextMatchBarEnabled = d.showNextMatchBar !== false;
       
-      const combinedScore = (d.score1 || 0) + (d.score2 || 0);
-      const courtStatus = (d.courtStatus || '').toLowerCase();
-      const matchFinished = isMatchFinished(d);
-      
-      // If there's an active score OR match is finished (postmatch), show scoring overlay
-      if (combinedScore > 0 || matchFinished) {
-        console.log('[Overlay] First load: Active scoring detected (score:', combinedScore, ')');
-        overlayState = matchFinished ? 'postmatch' : 'scoring';
+      if (newState === 'scoring' || newState === 'postmatch') {
+        console.log('[Overlay] First load: scoring presentation detected');
+        overlayState = newState;
         
         // Initialize score tracking for serve indicator
         window.prevScore1 = 0;
@@ -2640,7 +2654,7 @@ async function tick() {
           fitBubbleToBoard(socialBar);
         }
         applyData(d);
-        if (matchFinished) {
+        if (newState === 'postmatch') {
           matchFinishedAt = Date.now();
         }
         return;
