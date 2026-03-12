@@ -564,6 +564,8 @@ struct CourtCard: View {
                 footerPreferencePills
                 Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
@@ -577,7 +579,10 @@ struct CourtCard: View {
                     Spacer(minLength: 0)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
+        .contentShape(Rectangle())
     }
 
     private var footerNavigationControls: some View {
@@ -637,6 +642,7 @@ struct CourtCard: View {
         .background(AppColors.surfaceElevated.opacity(0.3))
         .cornerRadius(6)
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Rectangle())
     }
 
     private var footerPollingControls: some View {
@@ -690,6 +696,7 @@ struct CourtCard: View {
         .background(AppColors.surfaceElevated.opacity(0.3))
         .cornerRadius(6)
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Rectangle())
     }
 
     private var footerPreferencePills: some View {
@@ -702,6 +709,7 @@ struct CourtCard: View {
             footerPill(nextMatchStateLabel, textColor: .white, fill: AppColors.surfaceHover)
         }
         .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Rectangle())
     }
 
     private var socialStateLabel: String {
