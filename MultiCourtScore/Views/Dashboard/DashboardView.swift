@@ -267,6 +267,12 @@ struct DashboardView: View {
                                             },
                                             onCopyURL: { copyOverlayURL(for: court.id) },
                                             onSetLayout: { layout in appViewModel.setScoreboardLayout(court.id, layout: layout) },
+                                            onSetSocialBarEnabled: { isEnabled in
+                                                appViewModel.setCourtSocialBarEnabled(court.id, isEnabled: isEnabled)
+                                            },
+                                            onSetNextMatchBarEnabled: { isEnabled in
+                                                appViewModel.setCourtNextMatchBarEnabled(court.id, isEnabled: isEnabled)
+                                            },
                                             isCopied: urlCopiedCourtId == court.id,
                                             holdScoreDuration: appViewModel.appSettings.holdScoreDuration
                                         )

@@ -496,6 +496,58 @@ struct QueueEditorView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 280)
                 }
+
+                Divider()
+                    .frame(height: 20)
+
+                Menu {
+                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: nil) } label: {
+                        Text("Default")
+                        if court.socialBarEnabled == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: true) } label: {
+                        Text("Show")
+                        if court.socialBarEnabled == true {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: false) } label: {
+                        Text("Hide")
+                        if court.socialBarEnabled == false {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                } label: {
+                    Label("Social Bubble", systemImage: "bubble.left.and.bubble.right")
+                }
+
+                Divider()
+                    .frame(height: 20)
+
+                Menu {
+                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: nil) } label: {
+                        Text("Default")
+                        if court.nextMatchBarEnabled == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: true) } label: {
+                        Text("Show")
+                        if court.nextMatchBarEnabled == true {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: false) } label: {
+                        Text("Hide")
+                        if court.nextMatchBarEnabled == false {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                } label: {
+                    Label("Next Match Bubble", systemImage: "bubble.right")
+                }
             }
 
             Spacer()

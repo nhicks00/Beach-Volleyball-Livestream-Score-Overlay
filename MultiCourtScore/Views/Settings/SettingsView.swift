@@ -277,6 +277,11 @@ struct SettingsView: View {
                             .onChange(of: settings.showSocialBar) { _, newValue in
                                 appViewModel.appSettings.showSocialBar = newValue
                             }
+                        Toggle("Show next match bar on overlay", isOn: $settings.showNextMatchBar)
+                            .toggleStyle(.switch)
+                            .onChange(of: settings.showNextMatchBar) { _, newValue in
+                                appViewModel.appSettings.showNextMatchBar = newValue
+                            }
                     }
                 }
 

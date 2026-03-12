@@ -186,6 +186,7 @@ struct MatchItem: Codable, Hashable, Identifiable {
         tournamentId = try container.decodeIfPresent(Int.self, forKey: .tournamentId)
         gameIds = try container.decodeIfPresent([Int].self, forKey: .gameIds)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+
     }
 }
 
@@ -293,6 +294,8 @@ struct Court: Identifiable, Codable, Equatable {
     var lastPollTime: Date?
     var errorMessage: String?
     var scoreboardLayout: String?   // nil = use app default; "center", "top-left", "bottom-left"
+    var socialBarEnabled: Bool? = nil    // nil = inherit from app default
+    var nextMatchBarEnabled: Bool? = nil // nil = inherit from app default
     
     // MARK: Computed Properties
     
@@ -348,7 +351,9 @@ struct Court: Identifiable, Codable, Equatable {
             finishedAt: nil,
             lastPollTime: nil,
             errorMessage: nil,
-            scoreboardLayout: nil
+            scoreboardLayout: nil,
+            socialBarEnabled: nil,
+            nextMatchBarEnabled: nil
         )
     }
 }

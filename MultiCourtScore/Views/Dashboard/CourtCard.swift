@@ -62,6 +62,8 @@ struct CourtCard: View {
     let onRename: () -> Void
     let onCopyURL: () -> Void
     let onSetLayout: (String?) -> Void
+    let onSetSocialBarEnabled: (Bool?) -> Void
+    let onSetNextMatchBarEnabled: (Bool?) -> Void
     var isCopied: Bool = false
     var holdScoreDuration: TimeInterval = 180
 
@@ -260,6 +262,34 @@ struct CourtCard: View {
                 }
             } label: {
                 Label("Scoreboard Layout", systemImage: "rectangle.on.rectangle")
+            }
+
+            Menu {
+                Button { onSetSocialBarEnabled(nil) } label: {
+                    Label("Default", systemImage: court.socialBarEnabled == nil ? "checkmark" : "")
+                }
+                Button { onSetSocialBarEnabled(true) } label: {
+                    Label("Show", systemImage: court.socialBarEnabled == true ? "checkmark" : "")
+                }
+                Button { onSetSocialBarEnabled(false) } label: {
+                    Label("Hide", systemImage: court.socialBarEnabled == false ? "checkmark" : "")
+                }
+            } label: {
+                Label("Social Bubble", systemImage: "bubble.left.and.bubble.right")
+            }
+
+            Menu {
+                Button { onSetNextMatchBarEnabled(nil) } label: {
+                    Label("Default", systemImage: court.nextMatchBarEnabled == nil ? "checkmark" : "")
+                }
+                Button { onSetNextMatchBarEnabled(true) } label: {
+                    Label("Show", systemImage: court.nextMatchBarEnabled == true ? "checkmark" : "")
+                }
+                Button { onSetNextMatchBarEnabled(false) } label: {
+                    Label("Hide", systemImage: court.nextMatchBarEnabled == false ? "checkmark" : "")
+                }
+            } label: {
+                Label("Next Match Bubble", systemImage: "bubble.right")
             }
         }
     }
@@ -643,6 +673,28 @@ struct CourtCard: View {
                     )
             }
 
+            let socialState = court.socialBarEnabled == nil ? "Social: Auto" : (court.socialBarEnabled == true ? "Social: Show" : "Social: Hide")
+            Text(socialState)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(AppColors.surfaceHover)
+                )
+
+            let nextMatchState = court.nextMatchBarEnabled == nil ? "Next: Auto" : (court.nextMatchBarEnabled == true ? "Next: Show" : "Next: Hide")
+            Text(nextMatchState)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(AppColors.surfaceHover)
+                )
+
             Spacer()
         }
     }
@@ -859,7 +911,9 @@ struct PostmatchTimer: View {
             onEditQueue: {},
             onRename: {},
             onCopyURL: {},
-            onSetLayout: { _ in }
+            onSetLayout: { _ in },
+            onSetSocialBarEnabled: { _ in },
+            onSetNextMatchBarEnabled: { _ in }
         )
         .frame(width: 340)
 
@@ -873,7 +927,9 @@ struct PostmatchTimer: View {
             onEditQueue: {},
             onRename: {},
             onCopyURL: {},
-            onSetLayout: { _ in }
+            onSetLayout: { _ in },
+            onSetSocialBarEnabled: { _ in },
+            onSetNextMatchBarEnabled: { _ in }
         )
         .frame(width: 340)
     }

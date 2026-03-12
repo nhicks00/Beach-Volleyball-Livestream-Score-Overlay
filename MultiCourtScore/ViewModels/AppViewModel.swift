@@ -421,6 +421,28 @@ final class AppViewModel: ObservableObject {
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "set scoreboard layout for court \(courtId) to \(layout ?? "default")")
     }
+
+    func setCourtSocialBarEnabled(_ courtId: Int, isEnabled: Bool?) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        courts[idx].socialBarEnabled = isEnabled
+        saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "set social bar for court \(courtId) to \(isEnabled.map(String.init) ?? "default")")
+    }
+
+    func setCourtNextMatchBarEnabled(_ courtId: Int, isEnabled: Bool?) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        courts[idx].nextMatchBarEnabled = isEnabled
+        saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "set next match bar for court \(courtId) to \(isEnabled.map(String.init) ?? "default")")
+    }
+
+    func effectiveSocialBarEnabled(for court: Court) -> Bool {
+        court.socialBarEnabled ?? appSettings.showSocialBar
+    }
+
+    func effectiveNextMatchBarEnabled(for court: Court) -> Bool {
+        court.nextMatchBarEnabled ?? appSettings.showNextMatchBar
+    }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
         guard let idx = courtIndex(for: courtId) else { return }
