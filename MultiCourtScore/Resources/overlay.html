@@ -318,63 +318,25 @@ body {
   border-radius: 0 0 0.5rem 0.5rem;
   animation: status-pulse 2s infinite ease-in-out;
 }
-/* Stale data indicator */
+/* Connection-loss presentation */
 #stale-indicator {
-  position: fixed;
-  top: 8px;
-  right: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.5s ease;
-  pointer-events: none;
-  z-index: 100;
+  display: none !important;
 }
-#stale-indicator.stale {
-  opacity: 1;
-  background: rgba(245, 158, 11, 0.3);
-  color: #FBBF24;
-  animation: stale-pulse 2s ease-in-out infinite;
+#overlay-wrapper {
+  transition: opacity 0.45s var(--overlay-motion);
 }
-#stale-indicator.lost {
-  opacity: 1;
-  background: rgba(239, 68, 68, 0.3);
-  color: #F87171;
+#overlay-wrapper.connection-hidden {
+  opacity: 0 !important;
 }
-@keyframes stale-pulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
-}
-#scorebug.stale-border {
-  border-color: rgba(245, 158, 11, 0.4) !important;
-  box-shadow: 0 8px 30px rgb(0,0,0,0.8), 0 0 8px rgba(245, 158, 11, 0.2) !important;
-}
-/* Connecting fallback */
+/* Connecting fallback intentionally hidden for broadcast presentation */
 #connecting-indicator {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.5s ease;
-  z-index: 50;
-  background: var(--bg-dark, rgba(18,18,18,0.95));
+  display: none !important;
 }
 #connecting-indicator.visible {
-  opacity: 1;
+  opacity: 0;
 }
 #connecting-indicator span {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  color: rgba(255,255,255,0.4);
-  animation: connecting-pulse 2s ease-in-out infinite;
+  display: none;
 }
 @keyframes connecting-pulse {
   0%, 100% { opacity: 0.3; }
@@ -1082,6 +1044,7 @@ const sc2El = document.getElementById('sc2');
 const setNumEl = document.getElementById('set-num');
 const staleIndicator = document.getElementById('stale-indicator');
 const connectingIndicator = document.getElementById('connecting-indicator');
+const overlayWrapper = document.getElementById('overlay-wrapper');
 
 // Traditional scoreboard DOM refs
 const tradBoard = document.getElementById('trad-board');
@@ -1116,59 +1079,32 @@ var bubbleFitFrame = null;
 
 /* Stale data detection */
 function updateStaleState(dataJSON) {
-  if (dataJSON !== lastDataJSON) {
-    lastDataJSON = dataJSON;
-    lastDataChangeTime = Date.now();
-    consecutiveFetchErrors = 0;
-  }
-  var elapsed = (Date.now() - lastDataChangeTime) / 1000;
-  var newState = 'fresh';
-  if (elapsed >= 60) {
-    newState = 'lost';
-  } else if (elapsed >= 15) {
-    newState = 'stale';
-  }
-  if (newState !== staleIndicatorState) {
-    staleIndicatorState = newState;
-    applyStaleIndicator();
-  }
+  lastDataJSON = dataJSON;
+  lastDataChangeTime = Date.now();
+  consecutiveFetchErrors = 0;
+  staleIndicatorState = 'fresh';
+  applyStaleIndicator();
 }
 
 function onFetchError() {
   consecutiveFetchErrors++;
   if (consecutiveFetchErrors >= 5) {
-    connectingIndicator.classList.add('visible');
-    scoringContent.style.opacity = '0';
-  }
-  var elapsed = (Date.now() - lastDataChangeTime) / 1000;
-  if (elapsed >= 60 && staleIndicatorState !== 'lost') {
     staleIndicatorState = 'lost';
-    applyStaleIndicator();
-  } else if (elapsed >= 15 && staleIndicatorState === 'fresh') {
-    staleIndicatorState = 'stale';
     applyStaleIndicator();
   }
 }
 
 function applyStaleIndicator() {
-  if (staleIndicatorState === 'fresh') {
-    staleIndicator.className = '';
-    staleIndicator.textContent = '';
-    scorebug.classList.remove('stale-border');
-    connectingIndicator.classList.remove('visible');
-    // Restore scoring content visibility after connection recovery
-    if (scoringContent && overlayState !== 'intermission' && overlayState !== 'postmatch') {
-      scoringContent.style.opacity = '1';
-    }
-  } else if (staleIndicatorState === 'stale') {
-    staleIndicator.className = 'stale';
-    staleIndicator.textContent = '';
-    scorebug.classList.add('stale-border');
-    connectingIndicator.classList.remove('visible');
-  } else if (staleIndicatorState === 'lost') {
-    staleIndicator.className = 'lost';
-    staleIndicator.textContent = 'Signal Lost';
-    scorebug.classList.add('stale-border');
+  const shouldHideOverlay = consecutiveFetchErrors >= 5;
+  staleIndicator.className = '';
+  staleIndicator.textContent = '';
+  scorebug.classList.remove('stale-border');
+  connectingIndicator.classList.remove('visible');
+  if (overlayWrapper) {
+    overlayWrapper.classList.toggle('connection-hidden', shouldHideOverlay);
+  }
+  if (!shouldHideOverlay && scoringContent && overlayState !== 'intermission' && overlayState !== 'postmatch') {
+    scoringContent.style.opacity = '1';
   }
 }
 
