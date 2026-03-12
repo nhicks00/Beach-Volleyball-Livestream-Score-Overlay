@@ -557,146 +557,172 @@ struct CourtCard: View {
     // MARK: - Footer
 
     private var cardFooter: some View {
-        HStack(spacing: 10) {
-            // Navigation buttons - larger and more prominent
-            HStack(spacing: 6) {
-                Button {
-                    onSkipPrevious()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Prev")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill((court.activeIndex ?? 0) <= 0 ? Color.clear : AppColors.surfaceHover)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled((court.activeIndex ?? 0) <= 0)
-                .accessibilityIdentifier("court.\(court.id).prev")
-                
-                Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(AppColors.textMuted)
-                    .padding(.horizontal, 4)
-                
-                Button {
-                    onSkipNext()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Next")
-                            .font(.system(size: 13, weight: .semibold))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill((court.activeIndex ?? 0) >= court.queue.count - 1 ? Color.clear : AppColors.surfaceHover)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
-                .accessibilityIdentifier("court.\(court.id).next")
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-            .background(AppColors.surfaceElevated.opacity(0.3))
-            .cornerRadius(6)
-            
-            HStack(spacing: 6) {
-                Button {
-                    onStart()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Start")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .foregroundColor(court.status.isPolling ? AppColors.textMuted : AppColors.success)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(court.status.isPolling ? Color.clear : AppColors.success.opacity(0.15))
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(court.queue.isEmpty || court.status.isPolling)
-                .accessibilityIdentifier("court.\(court.id).start")
-                
-                Button {
-                    onStop()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Stop")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .foregroundColor(court.status.isPolling ? AppColors.error : AppColors.textMuted)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(court.status.isPolling ? AppColors.error.opacity(0.15) : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(!court.status.isPolling)
-                .accessibilityIdentifier("court.\(court.id).stop")
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-            .background(AppColors.surfaceElevated.opacity(0.3))
-            .cornerRadius(6)
-
-            // Layout override indicator
-            if let layout = court.scoreboardLayout {
-                Text(layoutLabel(layout))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(AppColors.info)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(AppColors.info.opacity(0.15))
-                    )
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                footerNavigationControls
+                footerPollingControls
+                footerPreferencePills
+                Spacer(minLength: 0)
             }
 
-            let socialState = court.socialBarEnabled == nil ? "Social: Auto" : (court.socialBarEnabled == true ? "Social: Show" : "Social: Hide")
-            Text(socialState)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(AppColors.surfaceHover)
-                )
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    footerNavigationControls
+                    footerPollingControls
+                    Spacer(minLength: 0)
+                }
 
-            let nextMatchState = court.nextMatchBarEnabled == nil ? "Next: Auto" : (court.nextMatchBarEnabled == true ? "Next: Show" : "Next: Hide")
-            Text(nextMatchState)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(AppColors.surfaceHover)
-                )
-
-            Spacer()
+                HStack(spacing: 8) {
+                    footerPreferencePills
+                    Spacer(minLength: 0)
+                }
+            }
         }
+    }
+
+    private var footerNavigationControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                onSkipPrevious()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Prev")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill((court.activeIndex ?? 0) <= 0 ? Color.clear : AppColors.surfaceHover)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled((court.activeIndex ?? 0) <= 0)
+            .accessibilityIdentifier("court.\(court.id).prev")
+
+            Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(AppColors.textMuted)
+                .lineLimit(1)
+                .padding(.horizontal, 4)
+
+            Button {
+                onSkipNext()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill((court.activeIndex ?? 0) >= court.queue.count - 1 ? Color.clear : AppColors.surfaceHover)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
+            .accessibilityIdentifier("court.\(court.id).next")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(AppColors.surfaceElevated.opacity(0.3))
+        .cornerRadius(6)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var footerPollingControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                onStart()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("Start")
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                }
+                .foregroundColor(court.status.isPolling ? AppColors.textMuted : AppColors.success)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(court.status.isPolling ? Color.clear : AppColors.success.opacity(0.15))
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(court.queue.isEmpty || court.status.isPolling)
+            .accessibilityIdentifier("court.\(court.id).start")
+
+            Button {
+                onStop()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .bold))
+                    Text("Stop")
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                }
+                .foregroundColor(court.status.isPolling ? AppColors.error : AppColors.textMuted)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(court.status.isPolling ? AppColors.error.opacity(0.15) : Color.clear)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!court.status.isPolling)
+            .accessibilityIdentifier("court.\(court.id).stop")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(AppColors.surfaceElevated.opacity(0.3))
+        .cornerRadius(6)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var footerPreferencePills: some View {
+        HStack(spacing: 8) {
+            if let layout = court.scoreboardLayout {
+                footerPill(layoutLabel(layout), textColor: AppColors.info, fill: AppColors.info.opacity(0.15))
+            }
+
+            footerPill(socialStateLabel, textColor: .white, fill: AppColors.surfaceHover)
+            footerPill(nextMatchStateLabel, textColor: .white, fill: AppColors.surfaceHover)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var socialStateLabel: String {
+        court.socialBarEnabled == nil ? "Social Auto" : (court.socialBarEnabled == true ? "Social On" : "Social Off")
+    }
+
+    private var nextMatchStateLabel: String {
+        court.nextMatchBarEnabled == nil ? "Next Auto" : (court.nextMatchBarEnabled == true ? "Next On" : "Next Off")
+    }
+
+    private func footerPill(_ text: String, textColor: Color, fill: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(textColor)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(fill)
+            )
     }
 
     // MARK: - Name Helpers
