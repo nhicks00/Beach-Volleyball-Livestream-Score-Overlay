@@ -770,7 +770,7 @@ struct CourtCard: View {
 
             footerPill(socialStateLabel, textColor: .white, fill: AppColors.surfaceHover)
             footerPill(nextMatchStateLabel, textColor: .white, fill: AppColors.surfaceHover)
-            footerPill(broadcastTransitionsStateLabel, textColor: .white, fill: AppColors.surfaceHover)
+            broadcastTransitionsMenuPill
         }
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
@@ -786,6 +786,38 @@ struct CourtCard: View {
 
     private var broadcastTransitionsStateLabel: String {
         court.broadcastTransitionsEnabled == nil ? "Bcast Auto" : (court.broadcastTransitionsEnabled == true ? "Bcast On" : "Bcast Off")
+    }
+
+    private var broadcastTransitionsMenuPill: some View {
+        Menu {
+            Button { onSetBroadcastTransitionsEnabled(nil) } label: {
+                Label("Default", systemImage: court.broadcastTransitionsEnabled == nil ? "checkmark" : "")
+            }
+            Button { onSetBroadcastTransitionsEnabled(true) } label: {
+                Label("Enable", systemImage: court.broadcastTransitionsEnabled == true ? "checkmark" : "")
+            }
+            Button { onSetBroadcastTransitionsEnabled(false) } label: {
+                Label("Disable", systemImage: court.broadcastTransitionsEnabled == false ? "checkmark" : "")
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(broadcastTransitionsStateLabel)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .opacity(0.8)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(AppColors.surfaceHover)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func footerPill(_ text: String, textColor: Color, fill: Color) -> some View {
