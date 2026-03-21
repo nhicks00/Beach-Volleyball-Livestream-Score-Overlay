@@ -521,7 +521,12 @@ final class AppViewModel: ObservableObject {
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {
         guard let idx = courtIndex(for: courtId) else { return }
         courts[idx].queue = items.map(normalizeLegacyPoolFormat)
-        courts[idx].activeIndex = items.isEmpty ? nil : (startIndex ?? 0)
+        if items.isEmpty {
+            courts[idx].activeIndex = nil
+        } else {
+            let requestedIndex = startIndex ?? 0
+            courts[idx].activeIndex = min(max(0, requestedIndex), items.count - 1)
+        }
         courts[idx].status = .idle  // Require manual start - don't auto-set to waiting
         courts[idx].lastSnapshot = nil
         courts[idx].liveSince = nil
@@ -2780,26 +2785,24 @@ final class AppViewModel: ObservableObject {
         let mappingStore = CourtMappingStore.shared
         var changesToProcess: [(matchId: UUID, fromCourt: Int, toCourt: Int, match: MatchItem)] = []
         
-        // Scan all courts for matches with changed court assignments
-        for courtIdx in courts.indices {
-            for matchIdx in courts[courtIdx].queue.indices {
-                let match = courts[courtIdx].queue[matchIdx]
-                guard let physicalCourt = match.physicalCourt else { continue }
-                
-                // Check if this match should be on a different camera based on current mapping
-                if let correctCameraId = mappingStore.cameraId(for: physicalCourt) {
-                    let currentCameraId = courts[courtIdx].id
-                    
-                    if correctCameraId != currentCameraId {
-                        // This match needs to move!
-                        changesToProcess.append((
-                            matchId: match.id,
-                            fromCourt: currentCameraId,
-                            toCourt: correctCameraId,
-                            match: match
-                        ))
-                    }
-                }
+        // Only auto-reassign the actively monitored match on courts with live evidence.
+        // Queued warmup matches are intentionally held in place until there is strong proof
+        // they truly belong on another camera.
+        for court in courts {
+            guard let match = autoReassignmentCandidate(for: court),
+                  let physicalCourt = match.physicalCourt?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !physicalCourt.isEmpty,
+                  let correctCameraId = mappingStore.cameraId(for: physicalCourt) else {
+                continue
+            }
+
+            if correctCameraId != court.id {
+                changesToProcess.append((
+                    matchId: match.id,
+                    fromCourt: court.id,
+                    toCourt: correctCameraId,
+                    match: match
+                ))
             }
         }
         
@@ -4303,6 +4306,17 @@ extension AppViewModel: SignalRDelegate {
             return true
         }
         return snapshot.setHistory.contains { $0.team1Score > 0 || $0.team2Score > 0 }
+    }
+
+    private func autoReassignmentCandidate(for court: Court) -> MatchItem? {
+        guard court.status.isPolling,
+              (court.status == .live || court.status == .finished || courtHasLiveScoreEvidence(court)),
+              let activeIndex = court.activeIndex,
+              court.queue.indices.contains(activeIndex) else {
+            return nil
+        }
+
+        return court.queue[activeIndex]
     }
 }
 

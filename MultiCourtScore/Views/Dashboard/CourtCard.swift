@@ -76,6 +76,21 @@ struct CourtCard: View {
         makeCourtHealthStripModel(court: court, operationalHealth: operationalHealth)
     }
 
+    private var displayActiveIndex: Int? {
+        guard !court.queue.isEmpty else { return nil }
+        guard let activeIndex = court.activeIndex else { return 0 }
+        return min(max(0, activeIndex), court.queue.count - 1)
+    }
+
+    private var displayMatch: MatchItem? {
+        displayActiveIndex.map { court.queue[$0] } ?? court.queue.first
+    }
+
+    private var queuePositionText: String {
+        guard !court.queue.isEmpty else { return "0 of 0" }
+        return "\((displayActiveIndex ?? 0) + 1) of \(court.queue.count)"
+    }
+
     // MARK: - Status Styling
 
     private var statusColor: Color {
@@ -131,7 +146,7 @@ struct CourtCard: View {
                 .overlay(AppColors.border)
 
             // Score area
-            if let snapshot = court.lastSnapshot, court.currentMatch != nil {
+            if let snapshot = court.lastSnapshot, displayMatch != nil {
                 scoreRows(snapshot: snapshot)
                     .padding(.horizontal, AppLayout.cardPadding)
                     .padding(.vertical, 10)
@@ -329,7 +344,7 @@ struct CourtCard: View {
                 .foregroundColor(AppColors.textPrimary)
                 .lineLimit(1)
             
-            if let match = court.currentMatch {
+            if let match = displayMatch {
                 topMetadataBadges(for: match)
             }
             
@@ -564,7 +579,7 @@ struct CourtCard: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(AppColors.textMuted)
 
-            if let match = court.currentMatch {
+            if let match = displayMatch {
                 Text(abbreviatedDisplayName(for: match))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(AppColors.textPrimary)
@@ -622,19 +637,19 @@ struct CourtCard: View {
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                 }
-                .foregroundColor((court.activeIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                .foregroundColor((displayActiveIndex ?? 0) <= 0 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill((court.activeIndex ?? 0) <= 0 ? Color.clear : AppColors.surfaceHover)
+                        .fill((displayActiveIndex ?? 0) <= 0 ? Color.clear : AppColors.surfaceHover)
                 )
             }
             .buttonStyle(.plain)
-            .disabled((court.activeIndex ?? 0) <= 0)
+            .disabled((displayActiveIndex ?? 0) <= 0)
             .accessibilityIdentifier("court.\(court.id).prev")
 
-            Text("\((court.activeIndex ?? 0) + 1) of \(court.queue.count)")
+            Text(queuePositionText)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(AppColors.textMuted)
                 .lineLimit(1)
@@ -650,16 +665,16 @@ struct CourtCard: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .bold))
                 }
-                .foregroundColor((court.activeIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
+                .foregroundColor((displayActiveIndex ?? 0) >= court.queue.count - 1 ? AppColors.textMuted.opacity(0.3) : AppColors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill((court.activeIndex ?? 0) >= court.queue.count - 1 ? Color.clear : AppColors.surfaceHover)
+                        .fill((displayActiveIndex ?? 0) >= court.queue.count - 1 ? Color.clear : AppColors.surfaceHover)
                 )
             }
             .buttonStyle(.plain)
-            .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
+            .disabled((displayActiveIndex ?? 0) >= court.queue.count - 1)
             .accessibilityIdentifier("court.\(court.id).next")
         }
         .padding(.horizontal, 4)

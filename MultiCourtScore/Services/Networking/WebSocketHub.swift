@@ -426,9 +426,21 @@ final class WebSocketHub {
                     ])
                 }
                 
+                let resolvedActiveIndex: Int? = {
+                    guard !court.queue.isEmpty else { return nil }
+                    guard let activeIndex = court.activeIndex else { return 0 }
+                    return min(max(0, activeIndex), court.queue.count - 1)
+                }()
+                let currentMatch = resolvedActiveIndex.map { court.queue[$0] } ?? court.queue.first
+                let nextMatch: MatchItem? = {
+                    guard let activeIndex = resolvedActiveIndex else { return nil }
+                    let nextIndex = activeIndex + 1
+                    guard nextIndex < court.queue.count else { return nil }
+                    return court.queue[nextIndex]
+                }()
+
                 // Get team names - prefer snapshot, fallback to MatchItem (from scanner)
                 let snapshot = court.lastSnapshot
-                let currentMatch = court.currentMatch
                 let team1 = snapshot?.team1Name.isEmpty == false ? snapshot!.team1Name : (currentMatch?.team1Name ?? "")
                 let team2 = snapshot?.team2Name.isEmpty == false ? snapshot!.team2Name : (currentMatch?.team2Name ?? "")
                 let seed1 = snapshot?.team1Seed ?? currentMatch?.team1Seed ?? ""
@@ -488,9 +500,9 @@ final class WebSocketHub {
                     "matchType": currentMatch?.matchType ?? "",
                     "typeDetail": currentMatch?.typeDetail ?? "",
                     "nextMatch": Self.localizeNextMatch(
-                        court.nextMatch?.displayName ?? "",
+                        nextMatch?.displayName ?? "",
                         queue: court.queue,
-                        activeIndex: court.activeIndex
+                        activeIndex: resolvedActiveIndex
                     ),
                     "layout": effectiveLayout,
                     "showSocialBar": socialBarEnabled,

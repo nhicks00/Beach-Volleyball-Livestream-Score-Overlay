@@ -2616,6 +2616,88 @@ struct CourtReassignmentTests {
         #expect(targetCourt.queue.map(\.id) == [destinationMatch.id, sourceMatch.id])
         #expect(targetCourt.queue[1].physicalCourt == CourtNaming.defaultName(for: 2))
     }
+
+    @Test func runImmediatePollCycle_doesNotAutoMoveWarmupQueuesUsingOnlyStaticCourtMetadata() async throws {
+        let session = makeStubSession()
+        let apiClient = APIClient(session: session, maxRetries: 1, retryDelay: 0)
+        let notificationService = RecordingNotificationService()
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel(
+            apiClient: apiClient,
+            notificationService: notificationService
+        )
+        defer { cleanup() }
+
+        let mappingStore = CourtMappingStore.shared
+        let previousMappings = mappingStore.mappings
+        let previousUnmappedCourts = mappingStore.unmappedCourts
+        defer {
+            mappingStore.clearAllMappings()
+            for mapping in previousMappings {
+                mappingStore.setMapping(courtNames: mapping.courtNames, to: mapping.cameraId)
+            }
+            mappingStore.unmappedCourts = previousUnmappedCourts
+        }
+
+        mappingStore.clearAllMappings()
+        mappingStore.setMapping(courtNames: ["1"], to: 1)
+
+        let liveCoreMatch = makeMatchItem(
+            url: "https://example.com/matches/core-live",
+            team1: "William Mota / Derek Strause",
+            team2: "George Black / Daniel Wenger",
+            matchNumber: "1",
+            physicalCourt: "1",
+            scheduledTime: "9:00AM",
+            setsToWin: 1,
+            pointCap: 28
+        )
+        let queuedMevoTwoMatch = makeMatchItem(
+            url: "https://example.com/matches/mevo-two-warmup",
+            team1: "Nathan Hicks / Reid Malone",
+            team2: "Marvin Pacheco / Derek Toliver",
+            matchNumber: "2",
+            physicalCourt: "1",
+            scheduledTime: "9:30AM",
+            setsToWin: 1,
+            pointCap: 28
+        )
+        let queuedMevoThreeMatch = makeMatchItem(
+            url: "https://example.com/matches/mevo-three-warmup",
+            team1: "Derek Strause / William Mota",
+            team2: "Match 2 Winner",
+            matchNumber: "3",
+            physicalCourt: "1",
+            scheduledTime: "10:00AM",
+            setsToWin: 1,
+            pointCap: 28
+        )
+
+        StubURLProtocol.registerJSON(
+            makeScoreDict(status: "In Progress", home: 1, away: 0),
+            for: liveCoreMatch.apiURL
+        )
+
+        viewModel.replaceQueue(1, with: [liveCoreMatch], startIndex: 0)
+        viewModel.replaceQueue(2, with: [queuedMevoTwoMatch], startIndex: 0)
+        viewModel.replaceQueue(3, with: [queuedMevoThreeMatch], startIndex: 0)
+        viewModel.setPollingStateForTesting(courtId: 2, status: .waiting)
+        viewModel.setPollingStateForTesting(courtId: 3, status: .waiting)
+
+        await viewModel.runImmediatePollCycleForTesting(courtId: 1)
+
+        let courtOne = try #require(viewModel.court(for: 1))
+        #expect(courtOne.queue.map(\.id) == [liveCoreMatch.id])
+
+        let courtTwo = try #require(viewModel.court(for: 2))
+        #expect(courtTwo.queue.map(\.id) == [queuedMevoTwoMatch.id])
+        #expect(courtTwo.activeIndex == 0)
+
+        let courtThree = try #require(viewModel.court(for: 3))
+        #expect(courtThree.queue.map(\.id) == [queuedMevoThreeMatch.id])
+        #expect(courtThree.activeIndex == 0)
+
+        #expect(notificationService.courtChangeEvents.isEmpty)
+    }
 }
 
 @MainActor
