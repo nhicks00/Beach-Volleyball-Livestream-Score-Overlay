@@ -2055,6 +2055,7 @@ function syncBroadcastCenterPreviewPosition() {
     && overlayState === 'intermission';
   if (overlayWrapper) {
     overlayWrapper.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
+    overlayWrapper.style.transform = shouldLowerPreview ? 'translate3d(0, 8rem, 0)' : '';
   }
 }
 
