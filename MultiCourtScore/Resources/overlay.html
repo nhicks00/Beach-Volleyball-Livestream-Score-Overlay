@@ -356,6 +356,9 @@ body.layout-center {
   padding-top: 2rem !important;
   padding-bottom: 0 !important;
 }
+body.layout-center.broadcast-center-preview-lowered {
+  padding-top: calc(2rem + 3.5rem) !important;
+}
 body.layout-center > div:not(#stale-indicator) {
   align-items: center !important;
   max-width: 900px !important;
@@ -1725,6 +1728,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
       fitBubbleToBoard(intStatusBar);
 
       overlayState = 'intermission';
+      syncBroadcastCenterPreviewPosition();
       endTransition();
       matchFinishedAt = null;
       postMatchTimer = null;
@@ -1783,6 +1787,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
       applySocialBarVisibility('scoring');
 
       overlayState = 'scoring';
+      syncBroadcastCenterPreviewPosition();
       endTransition();
       matchFinishedAt = null;
       postMatchTimer = null;
@@ -1843,6 +1848,7 @@ function showIntermissionImmediate(team1, team2) {
   }, 300);
 
   overlayState = 'intermission';
+  syncBroadcastCenterPreviewPosition();
   console.log('[Overlay] Showing intermission (immediate)');
 }
 
@@ -1965,6 +1971,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
     fitBubbleToBoard(intStatusBar);
 
     overlayState = 'intermission';
+    syncBroadcastCenterPreviewPosition();
     endTransition();
     console.log('[Overlay] Transitioned to intermission');
   }, 2100);
@@ -2029,6 +2036,7 @@ function transitionToScoring(data) {
     applySocialBarVisibility('scoring');
 
     overlayState = 'scoring';
+    syncBroadcastCenterPreviewPosition();
     endTransition();
     matchFinishedAt = null;
     postMatchTimer = null;
@@ -2038,10 +2046,18 @@ function transitionToScoring(data) {
 
 /* ===== LAYOUT MANAGEMENT ===== */
 
+function syncBroadcastCenterPreviewPosition() {
+  var shouldLowerPreview = broadcastTransitionsEnabled
+    && currentLayout === 'center'
+    && overlayState === 'intermission';
+  document.body.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
+}
+
 function applyLayout(layout) {
   document.body.classList.remove('layout-center', 'layout-top-left', 'layout-bottom-left');
   document.body.classList.add('layout-' + layout);
   currentLayout = layout;
+  syncBroadcastCenterPreviewPosition();
   // Update trad board height CSS variable for bubble positioning
   updateTradBoardHeight();
   console.log('[Overlay] Layout applied:', layout);
@@ -2530,6 +2546,7 @@ async function tick() {
     // Update dynamic hold duration from server settings
     POST_MATCH_HOLD_MS = d.holdDuration || 180000;
     broadcastTransitionsEnabled = d.broadcastTransitionsEnabled === true;
+    syncBroadcastCenterPreviewPosition();
 
     // Track data freshness
     updateStaleState(JSON.stringify(d));
@@ -2577,6 +2594,7 @@ async function tick() {
       if (newState === 'scoring' || newState === 'postmatch') {
         console.log('[Overlay] First load: scoring presentation detected');
         overlayState = newState;
+        syncBroadcastCenterPreviewPosition();
         
         // Initialize score tracking for serve indicator
         window.prevScore1 = 0;
@@ -2656,6 +2674,7 @@ async function tick() {
     // Handle state transitions
     if (newState === 'postmatch' && overlayState === 'scoring') {
       overlayState = 'postmatch';
+      syncBroadcastCenterPreviewPosition();
       matchFinishedAt = Date.now();
       console.log('[Overlay] Match finished, holding for 3 minutes');
     }
