@@ -325,7 +325,7 @@ body {
   display: none !important;
 }
 #overlay-wrapper {
-  transition: opacity 0.45s var(--overlay-motion);
+  transition: opacity 0.45s var(--overlay-motion), transform 0.42s var(--overlay-motion);
 }
 #overlay-wrapper.connection-hidden {
   opacity: 0 !important;
@@ -356,13 +356,13 @@ body.layout-center {
   padding-top: 2rem !important;
   padding-bottom: 0 !important;
 }
-body.layout-center.broadcast-center-preview-lowered {
-  padding-top: clamp(8.5rem, 19vh, 12rem) !important;
-}
 body.layout-center > div:not(#stale-indicator) {
   align-items: center !important;
   max-width: 900px !important;
   padding: 0 1rem !important;
+}
+body.layout-center #overlay-wrapper.broadcast-center-preview-lowered {
+  transform: translate3d(0, clamp(7rem, 15vh, 9.5rem), 0) !important;
 }
 
 /* Traditional layouts - hide center bar, show table */
@@ -2053,7 +2053,9 @@ function syncBroadcastCenterPreviewPosition() {
   var shouldLowerPreview = broadcastTransitionsEnabled
     && currentLayout === 'center'
     && overlayState === 'intermission';
-  document.body.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
+  if (overlayWrapper) {
+    overlayWrapper.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
+  }
 }
 
 function applyLayout(layout) {
