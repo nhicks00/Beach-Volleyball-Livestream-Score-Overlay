@@ -2563,6 +2563,59 @@ struct CourtReassignmentTests {
         let event = try #require(notificationService.courtChangeEvents.first)
         #expect(!event.isLiveMatch)
     }
+
+    @Test func moveQueuedMatch_returnsFalseForInvalidInputs() throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let missingMatch = makeMatchItem(
+            url: "https://example.com/matches/missing",
+            team1: "A/B",
+            team2: "C/D",
+            matchNumber: nil
+        )
+        let result = viewModel.moveQueuedMatch(fromCourtId: 1, toCourtId: 2, match: missingMatch)
+        #expect(result == false)
+        #expect(viewModel.court(for: 1)?.queue.isEmpty == true)
+    }
+
+    @Test func moveQueuedMatch_migratesQueuedMatchAndUpdatesSourceQueue() throws {
+        let (viewModel, _, cleanup) = makeIsolatedAppViewModel()
+        defer { cleanup() }
+
+        let sourceMatch = makeMatchItem(
+            url: "https://example.com/matches/source-queued",
+            team1: "Alice / Bob",
+            team2: "Cara / Dan",
+            matchNumber: nil
+        )
+        let targetMatch = makeMatchItem(
+            url: "https://example.com/matches/source-active",
+            team1: "Eve / Finn",
+            team2: "Gia / Hal",
+            matchNumber: nil
+        )
+        let destinationMatch = makeMatchItem(
+            url: "https://example.com/matches/destination-existing",
+            team1: "Iris / Jill",
+            team2: "Kara / Lee",
+            matchNumber: nil
+        )
+
+        viewModel.replaceQueue(1, with: [sourceMatch, targetMatch], startIndex: 1)
+        viewModel.replaceQueue(2, with: [destinationMatch], startIndex: 0)
+
+        let moved = viewModel.moveQueuedMatch(fromCourtId: 1, toCourtId: 2, match: sourceMatch)
+        #expect(moved == true)
+
+        let sourceCourt = try #require(viewModel.court(for: 1))
+        #expect(sourceCourt.queue.map(\.id) == [targetMatch.id])
+        #expect(sourceCourt.activeIndex == 0)
+
+        let targetCourt = try #require(viewModel.court(for: 2))
+        #expect(targetCourt.queue.map(\.id) == [destinationMatch.id, sourceMatch.id])
+        #expect(targetCourt.queue[1].physicalCourt == CourtNaming.defaultName(for: 2))
+    }
 }
 
 @MainActor
@@ -4650,7 +4703,7 @@ private func makeMatchItem(
     url: String,
     team1: String?,
     team2: String?,
-    matchNumber: String?,
+    matchNumber: String? = nil,
     courtNumber: String? = nil,
     physicalCourt: String? = nil,
     scheduledTime: String? = nil,

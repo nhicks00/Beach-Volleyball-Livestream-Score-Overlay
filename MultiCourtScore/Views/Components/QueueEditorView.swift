@@ -714,7 +714,16 @@ struct QueueEditorView: View {
             formatText: row.formatText.isEmpty ? nil : row.formatText
         )
 
-        appViewModel.appendToQueue(targetCourtId, items: [item])
+        let didMove = appViewModel.moveQueuedMatch(
+            fromCourtId: courtId,
+            toCourtId: targetCourtId,
+            match: item
+        )
+        guard didMove else {
+            runtimeLog.log(.warning, subsystem: "operator", message: "failed to move queue row from court \(courtId) to court \(targetCourtId)")
+            return
+        }
+
         deleteRow(at: index)
         runtimeLog.log(.info, subsystem: "operator", message: "moved queue row from court \(courtId) to court \(targetCourtId)")
     }

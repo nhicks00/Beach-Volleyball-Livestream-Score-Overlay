@@ -1001,6 +1001,7 @@ struct PostmatchTimer: View {
             onSetLayout: { _ in },
             onSetSocialBarEnabled: { _ in },
             onSetNextMatchBarEnabled: { _ in },
+            onSetBroadcastTransitionsEnabled: { _ in },
             onForceLiveLayout: {}
         )
         .frame(width: 340)
@@ -1018,6 +1019,7 @@ struct PostmatchTimer: View {
             onSetLayout: { _ in },
             onSetSocialBarEnabled: { _ in },
             onSetNextMatchBarEnabled: { _ in },
+            onSetBroadcastTransitionsEnabled: { _ in },
             onForceLiveLayout: {}
         )
         .frame(width: 340)

@@ -10,6 +10,8 @@
   --overlay-condensed-font: "SF Pro Display", "Helvetica Neue", "Arial Narrow", Arial, sans-serif;
   --overlay-motion: cubic-bezier(0.22, 1, 0.36, 1);
   --trad-bubble-inset: 0.38rem;
+  --trad-bubble-height: 2rem;
+  --trad-corner-inset: 0.48rem;
   --trad-layout-shift-ms: 420ms;
 }
 
@@ -408,7 +410,7 @@ body.layout-top-left .bubble-container {
   justify-content: center;
   margin: 0;
   z-index: 19;
-  height: 32px;
+  height: var(--trad-bubble-height);
   width: var(--trad-board-width, auto);
   overflow: visible;
   transition: top 0.42s var(--overlay-motion), width 0.42s var(--overlay-motion);
@@ -432,25 +434,24 @@ body.layout-top-left .bubble-bar.visible {
 /* Bottom-left: board fixed to corner, bubbles pop UP above board */
 body.layout-bottom-left #trad-board {
   position: fixed;
-  top: auto;
+  top: calc(100dvh - var(--trad-board-height, 5.5rem) - 1rem);
   left: 1rem;
-  bottom: 1rem;
-  transition: bottom 0.42s var(--overlay-motion);
-  will-change: bottom;
+  bottom: auto;
+  transition: top 0.42s var(--overlay-motion);
+  will-change: top;
 }
 body.layout-bottom-left .bubble-container {
   position: fixed;
   left: 1rem;
-  top: auto;
-  bottom: calc(1rem + var(--trad-board-height, 5.5rem) - 2px);
+  top: calc(100dvh - var(--trad-board-height, 5.5rem) - 1rem - var(--trad-bubble-height));
   justify-content: center;
   margin: 0;
   z-index: 19;
-  height: 32px;
+  height: var(--trad-bubble-height);
   width: var(--trad-board-width, auto);
   overflow: visible;
-  transition: bottom 0.42s var(--overlay-motion), width 0.42s var(--overlay-motion);
-  will-change: bottom, width;
+  transition: top 0.42s var(--overlay-motion), width 0.42s var(--overlay-motion);
+  will-change: top, width;
 }
 /* Invert bubble direction for bottom-left: pop UP */
 body.layout-bottom-left .bubble-bar {
@@ -491,7 +492,7 @@ body.layout-bottom-left .bubble-bar {
   max-width: calc(100% - (var(--trad-bubble-inset) * 2));
   box-sizing: border-box;
   justify-content: center;
-  left: var(--trad-bubble-inset);
+  left: var(--trad-corner-inset);
   right: auto;
 }
 body.layout-top-left .bubble-bar span,
@@ -732,13 +733,15 @@ body.layout-bottom-left #overlay-wrapper {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
   box-sizing: border-box;
   flex-shrink: 0;
-  width: auto;
-  min-width: 3rem;
+  width: 3.4rem;
+  min-width: 3.4rem;
+  max-width: 3.4rem;
 }
 .trad-score-cell {
-  width: 3rem;
-  flex: 0 0 3rem;
-  min-width: 0;
+  width: 3.4rem;
+  flex: 0 0 3.4rem;
+  min-width: 3.4rem;
+  max-width: 3.4rem;
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -1417,12 +1420,7 @@ function hideNextMatchBar() {
   window.nextBarPersistent = false;
 
   setTimeout(function() {
-    if (socialBarEnabled) {
-      socialBar.style.fontSize = '';
-      socialBar.classList.remove('hidden-up');
-      socialBar.classList.add('visible');
-      fitBubbleToBoard(socialBar);
-    }
+    applySocialBarVisibility();
     clearTimeout(window.animSafetyTimer);
     animationInProgress = false;
   }, 400);
@@ -1782,11 +1780,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
     
     // Phase 6 (2300ms): Complete - show social bar
     setTimeout(function() {
-      if (socialBarEnabled) {
-        socialBar.classList.remove('hidden-up');
-        socialBar.classList.add('visible');
-        fitBubbleToBoard(socialBar);
-      }
+      applySocialBarVisibility('scoring');
 
       overlayState = 'scoring';
       endTransition();
@@ -2032,11 +2026,7 @@ function transitionToScoring(data) {
 
   // Phase 5 (1900-2300ms): Social bubble drops down
   setTimeout(function() {
-    if (socialBarEnabled) {
-      socialBar.classList.remove('hidden-up');
-      socialBar.classList.add('visible');
-      fitBubbleToBoard(socialBar);
-    }
+    applySocialBarVisibility('scoring');
 
     overlayState = 'scoring';
     endTransition();
@@ -2124,6 +2114,22 @@ function restoreVisibleTradBubbles(visibleTradBubbles) {
     intStatusBar.classList.remove('hidden-up');
     intStatusBar.classList.add('visible');
   }
+}
+
+function applySocialBarVisibility(forceState) {
+  const resolvedState = forceState || overlayState;
+  const hasNextStatusBubble = nextBar.classList.contains('visible') || !!window.nextBarPersistent;
+  const hasIntermissionStatus = intStatusBar && intStatusBar.classList.contains('visible');
+  if (!socialBarEnabled || resolvedState !== 'scoring' && resolvedState !== 'postmatch' || hasNextStatusBubble || hasIntermissionStatus) {
+    socialBar.classList.remove('visible');
+    socialBar.classList.add('hidden-up');
+    socialBar.style.fontSize = '';
+    return;
+  }
+
+  fitBubbleToBoard(socialBar);
+  socialBar.classList.remove('hidden-up');
+  socialBar.classList.add('visible');
 }
 
 function refreshLayoutContent(newLayout) {
@@ -2538,16 +2544,7 @@ async function tick() {
     var newSocialEnabled = d.showSocialBar !== false;
     if (newSocialEnabled !== socialBarEnabled) {
       socialBarEnabled = newSocialEnabled;
-      if (!socialBarEnabled) {
-        socialBar.classList.remove('visible');
-        socialBar.classList.add('hidden-up');
-      } else if ((overlayState === 'scoring' || overlayState === 'postmatch') &&
-                 !nextBar.classList.contains('visible') &&
-                 !intStatusBar.classList.contains('visible')) {
-        socialBar.classList.remove('hidden-up');
-        socialBar.classList.add('visible');
-        fitBubbleToBoard(socialBar);
-      }
+      applySocialBarVisibility();
     }
 
     // Next-match bar toggle
@@ -2590,11 +2587,7 @@ async function tick() {
           scoringContent.style.pointerEvents = 'auto';
         }
         scorebug.style.width = SCORING_WIDTH;
-        if (socialBarEnabled) {
-          socialBar.classList.remove('hidden-up');
-          socialBar.classList.add('visible');
-          fitBubbleToBoard(socialBar);
-        }
+        applySocialBarVisibility();
         applyData(d);
         if (newState === 'postmatch') {
           matchFinishedAt = Date.now();

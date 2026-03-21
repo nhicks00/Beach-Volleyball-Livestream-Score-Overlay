@@ -630,6 +630,150 @@ final class AppViewModel: ObservableObject {
         runtimeLog.log(.info, subsystem: "operator", message: "appended \(items.count) matches to court \(courtId)")
     }
 
+    /// Move one match item from one court queue to another in a consistent way.
+    func moveQueuedMatch(fromCourtId: Int, toCourtId: Int, match: MatchItem) -> Bool {
+        guard fromCourtId != toCourtId else { return false }
+        guard let fromIdx = courtIndex(for: fromCourtId),
+              let toIdx = courtIndex(for: toCourtId) else {
+            runtimeLog.log(
+                .warning,
+                subsystem: "queue",
+                message: "unable to move match from court \(fromCourtId) to \(toCourtId): missing court"
+            )
+            return false
+        }
+
+        guard let sourceMatchIndex = courts[fromIdx].queue.firstIndex(where: { $0.id == match.id }) else {
+            runtimeLog.log(
+                .warning,
+                subsystem: "queue",
+                message: "unable to move match from court \(fromCourtId) to \(toCourtId): match not in source queue"
+            )
+            return false
+        }
+
+        var movingMatch = match
+        movingMatch.physicalCourt = CourtNaming.defaultName(for: toCourtId)
+
+        let wasLiveMatch = {
+            guard courts[fromIdx].status == .live,
+                  let active = courts[fromIdx].activeIndex,
+                  active < courts[fromIdx].queue.count else {
+                return false
+            }
+            return courts[fromIdx].queue[active].id == match.id
+        }()
+
+        // Remove source queue item first so active-index updates are correct.
+        courts[fromIdx].queue.remove(at: sourceMatchIndex)
+
+        // Adjust source active index
+        if let active = courts[fromIdx].activeIndex {
+            if courts[fromIdx].queue.isEmpty {
+                courts[fromIdx].activeIndex = nil
+            } else if active > sourceMatchIndex {
+                courts[fromIdx].activeIndex = active - 1
+            } else if active >= courts[fromIdx].queue.count {
+                courts[fromIdx].activeIndex = courts[fromIdx].queue.count - 1
+            }
+        }
+
+        if wasLiveMatch {
+            courts[fromIdx].status = courts[fromIdx].queue.isEmpty ? .idle : .waiting
+            courts[fromIdx].liveSince = nil
+            courts[fromIdx].lastSnapshot = nil
+            courts[fromIdx].finishedAt = nil
+            courts[fromIdx].errorMessage = nil
+            observedActiveScoring[fromCourtId] = false
+            lastScoreChangeTime.removeValue(forKey: fromCourtId)
+            lastScoreSnapshot.removeValue(forKey: fromCourtId)
+            lastServeTeam.removeValue(forKey: fromCourtId)
+            lastSignalRReconcileAt.removeValue(forKey: fromCourtId)
+            lastSignalRMutationAt.removeValue(forKey: fromCourtId)
+            lastSignalRMutationEpochMs.removeValue(forKey: fromCourtId)
+        } else if courts[fromIdx].queue.isEmpty {
+            courts[fromIdx].status = .idle
+            courts[fromIdx].errorMessage = nil
+        }
+
+        // Insert target queue entry
+        if courts[toIdx].queue.isEmpty || courts[toIdx].activeIndex == nil {
+            courts[toIdx].activeIndex = 0
+        }
+
+        let targetIsLive = courts[toIdx].status == .live
+        var insertIndex = (targetIsLive ? ((courts[toIdx].activeIndex ?? 0) + 1) : 0)
+
+        for i in insertIndex..<courts[toIdx].queue.count {
+            if compareMatchOrder(movingMatch, courts[toIdx].queue[i]) {
+                insertIndex = i
+                break
+            }
+            insertIndex = i + 1
+        }
+
+        courts[toIdx].queue.insert(movingMatch, at: min(insertIndex, courts[toIdx].queue.count))
+
+        // Clear stale arbitration/animation state for both courts after manual relocation.
+        smartSwitchFallbackOriginIndex.removeValue(forKey: fromCourtId)
+        smartSwitchedMatchID.removeValue(forKey: fromCourtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: fromCourtId)
+        smartSwitchFallbackOriginIndex.removeValue(forKey: toCourtId)
+        smartSwitchedMatchID.removeValue(forKey: toCourtId)
+        pendingSmartSwitchCandidate.removeValue(forKey: toCourtId)
+        recentlyAutoAdvancedMatches.removeValue(forKey: fromCourtId)
+        recentlyAutoAdvancedMatches.removeValue(forKey: toCourtId)
+        queueArbitrationReasonByCourt[fromCourtId] = defaultQueueArbitrationReason(for: courts[fromIdx].activeIndex)
+        queueArbitrationReasonByCourt[toCourtId] = defaultQueueArbitrationReason(for: courts[toIdx].activeIndex)
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: fromCourtId)
+        lastQueueArbitrationNoteByCourt.removeValue(forKey: toCourtId)
+        clearSuppressionLogState(for: fromCourtId)
+        clearSuppressionLogState(for: toCourtId)
+        forcedBroadcastLiveLayoutByCourt.remove(fromCourtId)
+        forcedBroadcastLiveLayoutByCourt.remove(toCourtId)
+        rebuildGameIdMap()
+        syncSignalRSubscriptions()
+        lastQueueRefreshTimes[fromCourtId] = .distantPast
+        lastQueueRefreshTimes[toCourtId] = .distantPast
+        let shouldPollFromCourt = courts[fromIdx].status.isPolling
+        let shouldPollToCourt = courts[toIdx].status.isPolling
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if shouldPollFromCourt {
+                await self.refreshQueueMetadata(for: fromCourtId)
+                await self.pollOnce(fromCourtId)
+            }
+            if shouldPollToCourt {
+                await self.refreshQueueMetadata(for: toCourtId)
+                await self.pollOnce(toCourtId)
+            }
+        }
+
+        saveConfigurationNow()
+        runtimeLog.log(
+            .info,
+            subsystem: "queue",
+            message: "moved match \(movingMatch.displayName) from court \(fromCourtId) to court \(toCourtId)"
+        )
+
+        // Send change event if this move impacts active live match routing.
+        guard wasLiveMatch || !courts[toIdx].queue.isEmpty else { return true }
+        Task {
+            let event = CourtChangeEvent(
+                matchLabel: movingMatch.displayName,
+                oldCourt: CourtNaming.defaultName(for: fromCourtId),
+                newCourt: CourtNaming.defaultName(for: toCourtId),
+                oldCamera: fromCourtId,
+                newCamera: toCourtId,
+                isLiveMatch: wasLiveMatch,
+                timestamp: Date()
+            )
+            await notificationService.sendCourtChangeAlert(event)
+        }
+
+        return true
+    }
+
     /// Merge new scan results into an existing queue without disrupting active state.
     ///
     /// Matches are correlated by exact endpoint URL first, then by stable team-name/match-number key.
