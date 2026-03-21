@@ -95,7 +95,7 @@ class ConfigStore {
         var broadcastTransitionsEnabled: Bool = false
         var holdScoreDuration: TimeInterval = 60     // post-match hold seconds
         var staleMatchTimeout: TimeInterval = 900    // auto-advance after N seconds of inactivity
-        var signalREnabled: Bool = false
+        var signalREnabled: Bool = true
 
         enum CodingKeys: String, CodingKey {
             case serverPort
@@ -127,7 +127,7 @@ class ConfigStore {
             broadcastTransitionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .broadcastTransitionsEnabled) ?? false
             holdScoreDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .holdScoreDuration) ?? 60
             staleMatchTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .staleMatchTimeout) ?? 900
-            signalREnabled = try container.decodeIfPresent(Bool.self, forKey: .signalREnabled) ?? false
+            signalREnabled = try container.decodeIfPresent(Bool.self, forKey: .signalREnabled) ?? true
         }
     }
     
