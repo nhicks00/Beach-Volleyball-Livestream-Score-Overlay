@@ -498,6 +498,15 @@ body.layout-bottom-left .bubble-bar {
   left: var(--trad-corner-inset);
   right: auto;
 }
+body.layout-top-left .status-bubble,
+body.layout-bottom-left .status-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: fit-content;
+  max-width: calc(100% - (var(--trad-bubble-inset) * 2));
+  min-width: 0;
+}
 body.layout-top-left .bubble-bar span,
 body.layout-bottom-left .bubble-bar span {
   letter-spacing: 0 !important;
