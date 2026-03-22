@@ -596,8 +596,18 @@ body.layout-bottom-left #overlay-wrapper {
 }
 
 .intermission-team-name {
+  display: block;
+  width: 100%;
+  text-align: center;
   font-style: normal !important;
   letter-spacing: 0.01em !important;
+}
+
+#int-team1-container,
+#int-team2-container {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 1rem;
 }
 
 .intermission-vs {
@@ -1889,8 +1899,9 @@ function setIntermissionWidth() {
   const team1Width = intTeam1.offsetWidth;
   const team2Width = intTeam2.offsetWidth;
   
-  // Use the LARGER width for BOTH containers (symmetric layout)
-  const maxTeamWidth = Math.min(Math.max(team1Width, team2Width), Math.max(180, Math.round(window.innerWidth * 0.26)));
+  // Use the larger width for both containers, plus breathing room so names stay visually centered.
+  const slotPadding = 32;
+  const maxTeamWidth = Math.min(Math.max(team1Width, team2Width) + slotPadding, Math.max(212, Math.round(window.innerWidth * 0.28)));
   
   // Set both containers to equal width
   if (intTeam1Container) intTeam1Container.style.width = maxTeamWidth + 'px';
