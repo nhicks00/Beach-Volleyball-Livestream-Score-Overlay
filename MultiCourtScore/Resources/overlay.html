@@ -13,6 +13,7 @@
   --trad-bubble-height: 2rem;
   --trad-corner-inset: 0.48rem;
   --trad-layout-shift-ms: 420ms;
+  --broadcast-preview-offset: 4.5rem;
 }
 
 /* Tailwind utility classes compiled inline for overlay */
@@ -362,7 +363,7 @@ body.layout-center > div:not(#stale-indicator) {
   padding: 0 1rem !important;
 }
 body.layout-center #overlay-wrapper.broadcast-center-preview-lowered {
-  transform: translate3d(0, clamp(7rem, 15vh, 9.5rem), 0) !important;
+  transform: translate3d(0, var(--broadcast-preview-offset), 0) !important;
 }
 
 /* Traditional layouts - hide center bar, show table */
@@ -2085,7 +2086,7 @@ function syncBroadcastCenterPreviewPosition() {
     && overlayState === 'intermission';
   if (overlayWrapper) {
     overlayWrapper.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
-    overlayWrapper.style.transform = shouldLowerPreview ? 'translate3d(0, 8rem, 0)' : '';
+    overlayWrapper.style.transform = shouldLowerPreview ? 'translate3d(0, var(--broadcast-preview-offset), 0)' : '';
   }
 }
 
