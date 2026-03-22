@@ -548,6 +548,32 @@ struct QueueEditorView: View {
                 } label: {
                     Label("Next Match Bubble", systemImage: "bubble.right")
                 }
+
+                Divider()
+                    .frame(height: 20)
+
+                Menu {
+                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: nil) } label: {
+                        Text("Default")
+                        if court.broadcastTransitionsEnabled == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: true) } label: {
+                        Text("Enable")
+                        if court.broadcastTransitionsEnabled == true {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: false) } label: {
+                        Text("Disable")
+                        if court.broadcastTransitionsEnabled == false {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                } label: {
+                    Label("Broadcast Transitions", systemImage: "sparkles.tv")
+                }
             }
 
             Spacer()
