@@ -482,7 +482,12 @@ final class AppViewModel: ObservableObject {
     }
 
     func effectiveOverlayLayout(for court: Court) -> String {
-        effectiveOverlayState(for: court) == "intermission" ? "center" : effectiveLiveScoreboardLayout(for: court)
+        let liveLayout = effectiveLiveScoreboardLayout(for: court)
+        guard effectiveBroadcastTransitionsEnabled(for: court) else {
+            return liveLayout
+        }
+
+        return effectiveOverlayState(for: court) == "intermission" ? "center" : liveLayout
     }
 
     func canForceBroadcastLiveLayout(for court: Court) -> Bool {
