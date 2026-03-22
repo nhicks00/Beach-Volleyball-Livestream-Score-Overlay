@@ -722,6 +722,15 @@ final class WebSocketHub {
     private static let bvmOverlayHTML: String = loadOverlayHTML()
 
     private static func loadOverlayHTML() -> String {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/overlay.html")
+        if let html = try? String(contentsOf: sourceURL, encoding: .utf8) {
+            return html
+        }
+
         let bundleCandidates = Bundle.allBundles + Bundle.allFrameworks + [Bundle.main]
         if let bundleURL = bundleCandidates
             .first(where: {
@@ -730,15 +739,6 @@ final class WebSocketHub {
             })?
             .url(forResource: "overlay", withExtension: "html"),
            let html = try? String(contentsOf: bundleURL, encoding: .utf8) {
-            return html
-        }
-
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Resources/overlay.html")
-        if let html = try? String(contentsOf: sourceURL, encoding: .utf8) {
             return html
         }
 
