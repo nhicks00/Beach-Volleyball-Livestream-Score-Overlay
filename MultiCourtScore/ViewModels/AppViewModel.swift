@@ -1662,6 +1662,7 @@ final class AppViewModel: ObservableObject {
         }
         
         let matchItem = courts[idx].queue[activeIdx]
+        let allowStaleAdvance = !effectiveBroadcastTransitionsEnabled(for: courts[idx])
         let useSignalRPrimary = shouldUseSignalRPrimary(for: courtId)
 
         if useSignalRPrimary && shouldFallbackToPollingDueToSignalRMutationQuietness(courtId: courtId, now: now) {
@@ -1694,7 +1695,7 @@ final class AppViewModel: ObservableObject {
                 courtId: courtId,
                 snapshot: snapshot,
                 matchItem: matchItem,
-                allowStaleAdvance: true
+                allowStaleAdvance: allowStaleAdvance
             )
             if didAdvance {
                 if let writeIdx = courtIndex(for: courtId) {
