@@ -1032,6 +1032,13 @@ var nextMatchTimer = null;
 var transitionInProgress = false;
 var transitionSafetyTimer = null;
 var celebrationActive = false;
+var bubbleAnimationGeneration = 0;
+var bubblePhaseTimers = {
+  nextShow: null,
+  nextHideFinalize: null,
+  statusShow: null,
+  animationSafety: null
+};
 
 // Stale data tracking
 var lastDataChangeTime = Date.now();
@@ -1054,6 +1061,46 @@ function beginTransition() {
 function endTransition() {
   transitionInProgress = false;
   clearTimeout(transitionSafetyTimer);
+}
+
+function clearBubblePhaseTimer(key) {
+  if (!bubblePhaseTimers[key]) return;
+  clearTimeout(bubblePhaseTimers[key]);
+  bubblePhaseTimers[key] = null;
+}
+
+function cancelPendingBubbleCallbacks() {
+  bubbleAnimationGeneration += 1;
+  clearBubblePhaseTimer('nextShow');
+  clearBubblePhaseTimer('nextHideFinalize');
+  clearBubblePhaseTimer('statusShow');
+  clearBubblePhaseTimer('animationSafety');
+  clearTimeout(nextMatchTimer);
+  nextMatchTimer = null;
+  return bubbleAnimationGeneration;
+}
+
+function bubbleCallbacksAreCurrent(token) {
+  return token === bubbleAnimationGeneration;
+}
+
+function resetBubbleAnimationState() {
+  var token = cancelPendingBubbleCallbacks();
+  animationInProgress = false;
+  window.nextBarPersistent = false;
+  return token;
+}
+
+function scheduleStatusBubbleShow(token, delayMs) {
+  if (!intStatusBar) return;
+  clearBubblePhaseTimer('statusShow');
+  bubblePhaseTimers.statusShow = setTimeout(function() {
+    bubblePhaseTimers.statusShow = null;
+    if (!bubbleCallbacksAreCurrent(token)) return;
+    intStatusBar.classList.remove('hidden-up');
+    intStatusBar.classList.add('visible');
+    fitBubbleToBoard(intStatusBar);
+  }, delayMs);
 }
 
 // Match change detection - track current match to detect manual/auto advances
@@ -1396,8 +1443,7 @@ function updatePips(pipsEl, setsWon, setsToWin) {
 function showNextMatchBar(nextMatchText) {
   if (!nextMatchBarEnabled) return;
   if (animationInProgress) return;
-  clearTimeout(nextMatchTimer);
-  clearTimeout(window.animSafetyTimer);
+  const bubbleToken = cancelPendingBubbleCallbacks();
   animationInProgress = true;
 
   if (nextTeamsEl && nextMatchText) {
@@ -1415,19 +1461,23 @@ function showNextMatchBar(nextMatchText) {
   socialBar.classList.add('hidden-up');
   socialBar.style.fontSize = '';
 
-  setTimeout(function() {
+  bubblePhaseTimers.nextShow = setTimeout(function() {
+    bubblePhaseTimers.nextShow = null;
+    if (!bubbleCallbacksAreCurrent(bubbleToken)) return;
     nextBar.classList.remove('hidden-up');
     nextBar.classList.add('visible');
     fitBubbleToBoard(nextBar);
   }, 400);
 
   nextMatchTimer = setTimeout(function() {
+    if (!bubbleCallbacksAreCurrent(bubbleToken)) return;
     hideNextMatchBar();
   }, 17000);
 
   // Safety: reset animationInProgress after 20s as failsafe
-  window.animSafetyTimer = setTimeout(function() {
-    if (animationInProgress) {
+  bubblePhaseTimers.animationSafety = setTimeout(function() {
+    bubblePhaseTimers.animationSafety = null;
+    if (bubbleCallbacksAreCurrent(bubbleToken) && animationInProgress) {
       console.log('[Overlay] Animation safety timer — resetting stuck animation flag');
       animationInProgress = false;
     }
@@ -1437,11 +1487,7 @@ function showNextMatchBar(nextMatchText) {
 // Persistent next match bar for postmatch - stays until transition
 function showNextMatchBarPersistent(nextMatchText) {
   if (!nextMatchBarEnabled) return;
-  // Clear any existing timer
-  if (nextMatchTimer) {
-    clearTimeout(nextMatchTimer);
-    nextMatchTimer = null;
-  }
+  const bubbleToken = cancelPendingBubbleCallbacks();
   
   if (nextTeamsEl && nextMatchText) {
     const localized = localizeMatchRef(nextMatchText);
@@ -1459,7 +1505,9 @@ function showNextMatchBarPersistent(nextMatchText) {
   socialBar.classList.add('hidden-up');
 
   // Show next bar (no auto-hide timer)
-  setTimeout(function() {
+  bubblePhaseTimers.nextShow = setTimeout(function() {
+    bubblePhaseTimers.nextShow = null;
+    if (!bubbleCallbacksAreCurrent(bubbleToken)) return;
     nextBar.classList.remove('hidden-up');
     nextBar.classList.add('visible');
     fitBubbleToBoard(nextBar);
@@ -1471,14 +1519,16 @@ function showNextMatchBarPersistent(nextMatchText) {
 }
 
 function hideNextMatchBar() {
+  const bubbleToken = cancelPendingBubbleCallbacks();
   nextBar.classList.remove('visible');
   nextBar.classList.add('hidden-up');
   nextBar.style.fontSize = '';
   window.nextBarPersistent = false;
 
-  setTimeout(function() {
+  bubblePhaseTimers.nextHideFinalize = setTimeout(function() {
+    bubblePhaseTimers.nextHideFinalize = null;
+    if (!bubbleCallbacksAreCurrent(bubbleToken)) return;
     applySocialBarVisibility();
-    clearTimeout(window.animSafetyTimer);
     animationInProgress = false;
   }, 400);
 }
@@ -1707,8 +1757,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   
   beginTransition();
   clearCelebration();
-  animationInProgress = false; // Reset next-match animation state
-  clearTimeout(nextMatchTimer);
+  resetBubbleAnimationState();
   lastSetHistoryKey = ''; // Reset set history for new match
   lastEqualizedKey = ''; // Reset name equalization for new match
   console.log('[Overlay] Animating match change to:', abbreviateName(newTeam1), 'vs', abbreviateName(newTeam2));
@@ -1865,6 +1914,7 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
 // Show intermission immediately (no animation, used on first load)
 function showIntermissionImmediate(team1, team2) {
   const displayNames = buildTeamDisplayPair(team1, team2);
+  const bubbleToken = resetBubbleAnimationState();
   // Hide scoring content
   if (scoringContent) {
     scoringContent.style.opacity = '0';
@@ -1895,11 +1945,7 @@ function showIntermissionImmediate(team1, team2) {
   setIntermissionWidth();
 
   // Show status bubble
-  setTimeout(function() {
-    intStatusBar.classList.remove('hidden-up');
-    intStatusBar.classList.add('visible');
-    fitBubbleToBoard(intStatusBar);
-  }, 300);
+  scheduleStatusBubbleShow(bubbleToken, 300);
 
   overlayState = 'intermission';
   syncBroadcastCenterPreviewPosition();
@@ -1959,6 +2005,7 @@ function setIntermissionWidth() {
 function transitionToIntermission(nextTeam1, nextTeam2) {
   if (transitionInProgress || overlayState === 'intermission') return;
   beginTransition();
+  resetBubbleAnimationState();
 
   // Clear celebration before transitioning
   clearCelebration();
@@ -2037,6 +2084,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 function transitionToScoring(data) {
   if (transitionInProgress || overlayState === 'scoring') return;
   beginTransition();
+  resetBubbleAnimationState();
 
   // IMMEDIATELY hide scoring content and reset scores to prevent flash
   if (scoringContent) {
