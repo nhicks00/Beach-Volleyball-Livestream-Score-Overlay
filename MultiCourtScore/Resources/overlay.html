@@ -1176,6 +1176,8 @@ var queuedLayout = null;
 var lastTradBoardWidth = 0;
 var lastTradBoardHeight = 0;
 var bubbleFitFrame = null;
+var tradBoardRefreshFrame = null;
+var tradBoardRefreshTimer = null;
 
 /* Stale data detection */
 function updateStaleState(dataJSON) {
@@ -2197,6 +2199,28 @@ function updateTradBoardHeight() {
   }
 }
 
+function scheduleTradBoardRefresh() {
+  if (!tradBoard) return;
+  if (tradBoardRefreshFrame) cancelAnimationFrame(tradBoardRefreshFrame);
+  if (tradBoardRefreshTimer) clearTimeout(tradBoardRefreshTimer);
+
+  tradBoardRefreshFrame = requestAnimationFrame(function() {
+    tradBoardRefreshFrame = requestAnimationFrame(function() {
+      tradBoardRefreshFrame = null;
+      equalizeTradNameWidths(true);
+      updateTradBoardHeight();
+      scheduleVisibleBubbleFit();
+    });
+  });
+
+  tradBoardRefreshTimer = setTimeout(function() {
+    tradBoardRefreshTimer = null;
+    equalizeTradNameWidths(true);
+    updateTradBoardHeight();
+    scheduleVisibleBubbleFit();
+  }, 560);
+}
+
 function scheduleVisibleBubbleFit() {
   if (currentLayout === 'center') return;
   if (bubbleFitFrame) cancelAnimationFrame(bubbleFitFrame);
@@ -2583,6 +2607,7 @@ function showTradCelebration(winner) {
     if (tradRow2) tradRow2.classList.add('trad-winner-glow');
     if (tradRow1) tradRow1.classList.add('trad-loser-dim');
   }
+  scheduleTradBoardRefresh();
   console.log('[Overlay] Trad celebration for', winner);
 }
 
@@ -2597,6 +2622,7 @@ function clearTradCelebration() {
   if (tradTrophy2) tradTrophy2.classList.remove('visible');
   if (tradRow1) { tradRow1.classList.remove('trad-winner-glow'); tradRow1.classList.remove('trad-loser-dim'); }
   if (tradRow2) { tradRow2.classList.remove('trad-winner-glow'); tradRow2.classList.remove('trad-loser-dim'); }
+  scheduleTradBoardRefresh();
 }
 
 // Check if match is finished based on sets won
