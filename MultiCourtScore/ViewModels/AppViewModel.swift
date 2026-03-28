@@ -3235,7 +3235,14 @@ final class AppViewModel: ObservableObject {
         let pointsPerSet = inferredFormat.pointsPerSet
         let pointCap = inferredFormat.pointCap
         let setsToWin = inferredFormat.setsToWin
-        let configuredSetCount = max(currentMatch?.setsToPlay ?? 0, setsToWin)
+        let configuredSetCount: Int = {
+            if let setsToPlay = currentMatch?.setsToPlay, setsToPlay > 0 {
+                return min(3, max(setsToPlay, setsToWin))
+            }
+            // When only setsToWin is known, reserve the full possible match length.
+            // Example: best-of-3 => setsToWin = 2, possible sets = 3.
+            return min(3, max(setsToWin, (setsToWin * 2) - 1))
+        }()
         
         // Parse set scores from "gameX" keys as ints or strings
         // Based on user screenshot: "game1": 15
@@ -3297,6 +3304,18 @@ final class AppViewModel: ObservableObject {
         let won2 = score2 >= setsToWin
         let completedSets = setHistory.filter(\.isComplete).count
         
+        if !won1,
+           !won2,
+           setHistory.last?.isComplete == true,
+           setHistory.count < configuredSetCount {
+            setHistory.append(SetScore(
+                setNumber: setHistory.count + 1,
+                team1Score: 0,
+                team2Score: 0,
+                isComplete: false
+            ))
+        }
+
         let status: String
         if let setsToPlay = currentMatch?.setsToPlay {
             if completedSets >= setsToPlay {
