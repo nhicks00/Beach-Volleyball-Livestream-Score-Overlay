@@ -659,6 +659,9 @@ body.layout-bottom-left #overlay-wrapper {
   width: 100%;
   box-sizing: border-box;
 }
+.trad-board.trad-final-active .trad-row {
+  grid-template-columns: 24px 1.75rem minmax(0, 1fr) auto 5.1rem;
+}
 .trad-divider {
   height: 1px;
   background: rgba(255,255,255,0.1);
@@ -760,7 +763,7 @@ body.layout-bottom-left #overlay-wrapper {
   align-self: stretch;
   display: inline-flex;
   align-items: stretch;
-  justify-content: center;
+  justify-content: flex-start;
   position: relative;
   overflow: hidden;
   border-left: 1px solid rgba(255,255,255,0.15);
@@ -772,6 +775,11 @@ body.layout-bottom-left #overlay-wrapper {
   min-width: 3.4rem;
   max-width: 3.4rem;
   justify-self: stretch;
+}
+.trad-board.trad-final-active .trad-score-shell {
+  width: 5.1rem;
+  min-width: 5.1rem;
+  max-width: 5.1rem;
 }
 .trad-score-cell {
   width: 3.4rem;
@@ -808,9 +816,14 @@ body.layout-bottom-left #overlay-wrapper {
   opacity: 0;
 }
 .trad-trophy.visible {
-  width: 22px;
-  margin: 0 0.45rem 0 0.1rem;
+  width: 20px;
+  margin: 0 0.3rem 0 0.12rem;
   opacity: 1;
+}
+.trad-trophy svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 /* Confetti for traditional board */
@@ -2553,6 +2566,7 @@ function rebuildSetColumns(d) {
 function showTradCelebration(winner) {
   if (tradCelebrationActive) return;
   tradCelebrationActive = true;
+  if (tradBoard) tradBoard.classList.add('trad-final-active');
 
   // Hide serve indicators
   if (tradServe1) tradServe1.classList.remove('active');
@@ -2575,6 +2589,7 @@ function showTradCelebration(winner) {
 function clearTradCelebration() {
   if (!tradCelebrationActive) return;
   tradCelebrationActive = false;
+  if (tradBoard) tradBoard.classList.remove('trad-final-active');
 
   if (tradConfetti1) tradConfetti1.classList.remove('active');
   if (tradConfetti2) tradConfetti2.classList.remove('active');
