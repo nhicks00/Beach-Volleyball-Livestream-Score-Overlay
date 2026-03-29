@@ -144,7 +144,7 @@ enum NetworkConstants {
 enum AppConfig {
     static let maxCourts: Int = 10
     static let maxQueuePreview: Int = 3
-    static let holdScoreDuration: TimeInterval = 60 // 1 minute
+    static let holdScoreDuration: TimeInterval = 180 // 3 minutes
     static let staleMatchTimeout: TimeInterval = 900 // 15 minutes of inactivity
     static let appName = "MultiCourtScore"
     static let version = "2.0.0"

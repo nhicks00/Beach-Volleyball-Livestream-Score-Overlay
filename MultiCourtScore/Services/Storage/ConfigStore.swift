@@ -93,7 +93,7 @@ class ConfigStore {
         var showSocialBar: Bool = true
         var showNextMatchBar: Bool = true
         var broadcastTransitionsEnabled: Bool = false
-        var holdScoreDuration: TimeInterval = 60     // post-match hold seconds
+        var holdScoreDuration: TimeInterval = 180    // post-match hold seconds
         var staleMatchTimeout: TimeInterval = 900    // auto-advance after N seconds of inactivity
         var signalREnabled: Bool = true
 
@@ -125,7 +125,7 @@ class ConfigStore {
             showSocialBar = try container.decodeIfPresent(Bool.self, forKey: .showSocialBar) ?? true
             showNextMatchBar = try container.decodeIfPresent(Bool.self, forKey: .showNextMatchBar) ?? true
             broadcastTransitionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .broadcastTransitionsEnabled) ?? false
-            holdScoreDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .holdScoreDuration) ?? 60
+            holdScoreDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .holdScoreDuration) ?? 180
             staleMatchTimeout = try container.decodeIfPresent(TimeInterval.self, forKey: .staleMatchTimeout) ?? 900
             signalREnabled = try container.decodeIfPresent(Bool.self, forKey: .signalREnabled) ?? true
         }
@@ -136,7 +136,12 @@ class ConfigStore {
               let settings = try? load(AppSettings.self, from: settingsURL) else {
             return AppSettings()
         }
-        return settings
+        var migratedSettings = settings
+        if migratedSettings.holdScoreDuration == 60 {
+            migratedSettings.holdScoreDuration = 180
+            saveSettings(migratedSettings)
+        }
+        return migratedSettings
     }
     
     func saveSettings(_ settings: AppSettings) {
