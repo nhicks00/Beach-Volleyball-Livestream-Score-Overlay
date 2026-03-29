@@ -1101,6 +1101,21 @@ function resetBubbleAnimationState() {
   var token = cancelPendingBubbleCallbacks();
   animationInProgress = false;
   window.nextBarPersistent = false;
+  if (nextBar) {
+    nextBar.classList.remove('visible');
+    nextBar.classList.add('hidden-up');
+    nextBar.style.fontSize = '';
+  }
+  if (intStatusBar) {
+    intStatusBar.classList.remove('visible');
+    intStatusBar.classList.add('hidden-up');
+    intStatusBar.style.fontSize = '';
+  }
+  if (socialBar) {
+    socialBar.classList.remove('visible');
+    socialBar.classList.add('hidden-up');
+    socialBar.style.fontSize = '';
+  }
   return token;
 }
 
