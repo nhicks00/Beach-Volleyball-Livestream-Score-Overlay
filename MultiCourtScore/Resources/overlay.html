@@ -958,6 +958,11 @@ body.layout-bottom-left #overlay-wrapper {
     <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); z-index: 30;"></div>
   </div>
 
+  <div id="broadcast-countdown" style="display: none; align-items: center; justify-content: center; gap: 0.6rem; margin-top: 0.65rem; padding: 0.48rem 0.95rem; border-radius: 999px; background: rgba(6,6,6,0.9); border: 1px solid rgba(212,175,55,0.45); box-shadow: 0 10px 24px rgba(0,0,0,0.35);">
+    <span id="broadcast-countdown-label" style="font-size: 0.72rem; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(212,175,55,0.82);">Live In</span>
+    <span id="broadcast-countdown-value" style="font-size: 1rem; font-weight: 900; letter-spacing: 0.04em; color: rgba(255,255,255,0.96); font-variant-numeric: tabular-nums;">00:00</span>
+  </div>
+
   <!-- Traditional Scoreboard (hidden by default, shown in top-left/bottom-left layouts) -->
   <div id="trad-board" class="trad-board carbon-bar" style="display:none;">
     <div id="trad-row1" class="trad-row">
@@ -1026,6 +1031,7 @@ let POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends (updated fro
 const SCORING_WIDTH = '100%';
 const TRAD_LAYOUT_SHIFT_MS = 420;
 var broadcastTransitionsEnabled = false;
+var scheduledStartEpochMs = null;
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
 let overlayState = 'intermission'; // Start in intermission until scoring data arrives
@@ -1175,6 +1181,8 @@ const tradRow1 = document.getElementById('trad-row1');
 const tradRow2 = document.getElementById('trad-row2');
 const tradConfetti1 = document.getElementById('trad-confetti1');
 const tradConfetti2 = document.getElementById('trad-confetti2');
+const broadcastCountdownBar = document.getElementById('broadcast-countdown');
+const broadcastCountdownValue = document.getElementById('broadcast-countdown-value');
 
 // Layout state
 var currentLayout = 'center';
@@ -1975,6 +1983,7 @@ function showIntermissionImmediate(team1, team2) {
 
   overlayState = 'intermission';
   syncBroadcastCenterPreviewPosition();
+  syncBroadcastCountdown();
   console.log('[Overlay] Showing intermission (immediate)');
 }
 
@@ -2025,6 +2034,34 @@ function setIntermissionWidth() {
   const minWidth = 300;
   const targetWidth = Math.max(contentWidth + padding, minWidth);
   scorebug.style.width = targetWidth + 'px';
+}
+
+function formatBroadcastCountdown(msRemaining) {
+  var totalSeconds = Math.max(0, Math.ceil(msRemaining / 1000));
+  var hours = Math.floor(totalSeconds / 3600);
+  var minutes = Math.floor((totalSeconds % 3600) / 60);
+  var seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return String(hours) + ':' + String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+  }
+  return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+}
+
+function syncBroadcastCountdown() {
+  if (!broadcastCountdownBar || !broadcastCountdownValue) return;
+  var hasFutureStart = typeof scheduledStartEpochMs === 'number' && scheduledStartEpochMs > Date.now();
+  var shouldShow = broadcastTransitionsEnabled
+    && currentLayout === 'center'
+    && overlayState === 'intermission'
+    && hasFutureStart;
+
+  if (!shouldShow) {
+    broadcastCountdownBar.style.display = 'none';
+    return;
+  }
+
+  broadcastCountdownValue.textContent = formatBroadcastCountdown(scheduledStartEpochMs - Date.now());
+  broadcastCountdownBar.style.display = 'inline-flex';
 }
 
 // Transition from Scoring → Intermission (animated)
@@ -2100,6 +2137,7 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 
     overlayState = 'intermission';
     syncBroadcastCenterPreviewPosition();
+    syncBroadcastCountdown();
     endTransition();
     console.log('[Overlay] Transitioned to intermission');
   }, 2100);
@@ -2166,6 +2204,7 @@ function transitionToScoring(data) {
 
     overlayState = 'scoring';
     syncBroadcastCenterPreviewPosition();
+    syncBroadcastCountdown();
     endTransition();
     matchFinishedAt = null;
     postMatchTimer = null;
@@ -2187,6 +2226,7 @@ function applyLayout(layout) {
   document.body.classList.add('layout-' + layout);
   currentLayout = layout;
   syncBroadcastCenterPreviewPosition();
+  syncBroadcastCountdown();
   // Update trad board height CSS variable for bubble positioning
   updateTradBoardHeight();
   console.log('[Overlay] Layout applied:', layout);
@@ -2709,7 +2749,9 @@ async function tick() {
     // Update dynamic hold duration from server settings
     POST_MATCH_HOLD_MS = d.holdDuration || 180000;
     broadcastTransitionsEnabled = d.broadcastTransitionsEnabled === true;
+    scheduledStartEpochMs = typeof d.scheduledStartEpochMs === 'number' ? d.scheduledStartEpochMs : null;
     syncBroadcastCenterPreviewPosition();
+    syncBroadcastCountdown();
 
     // Track data freshness
     updateStaleState(JSON.stringify(d));
@@ -2758,6 +2800,7 @@ async function tick() {
         console.log('[Overlay] First load: scoring presentation detected');
         overlayState = newState;
         syncBroadcastCenterPreviewPosition();
+        syncBroadcastCountdown();
         
         // Initialize score tracking for serve indicator
         window.prevScore1 = 0;
@@ -2838,6 +2881,7 @@ async function tick() {
     if (newState === 'postmatch' && overlayState === 'scoring') {
       overlayState = 'postmatch';
       syncBroadcastCenterPreviewPosition();
+      syncBroadcastCountdown();
       matchFinishedAt = Date.now();
       console.log('[Overlay] Match finished, holding for 3 minutes');
     }

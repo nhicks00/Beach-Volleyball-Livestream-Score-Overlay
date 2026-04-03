@@ -457,6 +457,8 @@ final class AppViewModel: ObservableObject {
         let liveLayout = effectiveLiveScoreboardLayout(for: court)
         let broadcastTransitionsEnabled = effectiveBroadcastTransitionsEnabled(for: court)
         let forceLiveLayout = forcedBroadcastLiveLayoutByCourt.contains(court.id)
+        let scheduledStartReached = scheduledStartHasArrived(for: court.currentMatch)
+        let hasScoreEvidence = courtHasLiveScoreEvidence(court)
 
         if forceLiveLayout,
            broadcastTransitionsEnabled,
@@ -470,12 +472,23 @@ final class AppViewModel: ObservableObject {
             liveLayout: liveLayout,
             courtStatus: court.status,
             hasCurrentMatch: court.currentMatch != nil,
-            hasScoreEvidence: courtHasLiveScoreEvidence(court),
-            forceLiveLayout: forceLiveLayout
+            hasScoreEvidence: hasScoreEvidence,
+            forceLiveLayout: forceLiveLayout,
+            scheduledStartReached: scheduledStartReached
         )
 
         if shouldUseIntermission {
             return "intermission"
+        }
+
+        if broadcastTransitionsEnabled,
+           liveLayout != "center",
+           court.status.isPolling,
+           court.status != .finished,
+           court.currentMatch != nil,
+           scheduledStartReached,
+           !hasScoreEvidence {
+            return "scoring"
         }
 
         return (court.status == .live || court.status == .finished) ? "scoring" : "intermission"
@@ -2937,6 +2950,32 @@ final class AppViewModel: ObservableObject {
         if hour24A != hour24B { return hour24A - hour24B }
         return minA - minB
     }
+
+    func scheduledStartDate(for match: MatchItem?, referenceDate: Date = Date()) -> Date? {
+        guard let scheduledTime = match?.scheduledTime else { return nil }
+        let regex = Self.timeRegex
+        guard let timeMatch = regex.firstMatch(in: scheduledTime, range: NSRange(scheduledTime.startIndex..., in: scheduledTime)) else {
+            return nil
+        }
+
+        let hour = Int((scheduledTime as NSString).substring(with: timeMatch.range(at: 1))) ?? 0
+        let minute = Int((scheduledTime as NSString).substring(with: timeMatch.range(at: 2))) ?? 0
+        let ampm = (scheduledTime as NSString).substring(with: timeMatch.range(at: 3)).uppercased()
+        let hour24 = (ampm == "PM" && hour != 12 ? hour + 12 : (ampm == "AM" && hour == 12 ? 0 : hour))
+
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: referenceDate)
+        components.hour = hour24
+        components.minute = minute
+        components.second = 0
+        return Calendar.current.date(from: components)
+    }
+
+    func scheduledStartHasArrived(for match: MatchItem?, referenceDate: Date = Date()) -> Bool {
+        guard let scheduledStart = scheduledStartDate(for: match, referenceDate: referenceDate) else {
+            return false
+        }
+        return referenceDate >= scheduledStart
+    }
     
     private func extractMatchNumber(from matchNumber: String?) -> Int? {
         guard let num = matchNumber else { return nil }
@@ -4328,7 +4367,8 @@ extension AppViewModel: SignalRDelegate {
         courtStatus: CourtStatus,
         hasCurrentMatch: Bool,
         hasScoreEvidence: Bool,
-        forceLiveLayout: Bool
+        forceLiveLayout: Bool,
+        scheduledStartReached: Bool
     ) -> Bool {
         guard broadcastTransitionsEnabled else {
             return false
@@ -4338,6 +4378,7 @@ extension AppViewModel: SignalRDelegate {
               courtStatus.isPolling,
               courtStatus != .finished,
               hasCurrentMatch,
+              !scheduledStartReached,
               !hasScoreEvidence,
               !forceLiveLayout else {
             return false
