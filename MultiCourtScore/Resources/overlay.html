@@ -362,10 +362,6 @@ body.layout-center > div:not(#stale-indicator) {
   max-width: 900px !important;
   padding: 0 1rem !important;
 }
-body.layout-center #overlay-wrapper.broadcast-center-preview-lowered {
-  transform: translate3d(0, var(--broadcast-preview-offset), 0) !important;
-}
-
 /* Traditional layouts - hide center bar, show table */
 body.layout-top-left #scorebug { display: none !important; }
 body.layout-bottom-left #scorebug { display: none !important; }
@@ -2180,12 +2176,9 @@ function transitionToScoring(data) {
 /* ===== LAYOUT MANAGEMENT ===== */
 
 function syncBroadcastCenterPreviewPosition() {
-  var shouldLowerPreview = broadcastTransitionsEnabled
-    && currentLayout === 'center'
-    && overlayState === 'intermission';
   if (overlayWrapper) {
-    overlayWrapper.classList.toggle('broadcast-center-preview-lowered', shouldLowerPreview);
-    overlayWrapper.style.transform = shouldLowerPreview ? 'translate3d(0, var(--broadcast-preview-offset), 0)' : '';
+    overlayWrapper.classList.remove('broadcast-center-preview-lowered');
+    overlayWrapper.style.transform = '';
   }
 }
 
