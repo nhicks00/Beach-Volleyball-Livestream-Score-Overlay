@@ -452,8 +452,11 @@ final class WebSocketHub {
                 let isOverlayScoring = overlayState == "scoring"
 
                 let currentGame = snapshot?.setHistory.last
-                let gameScore1 = isOverlayScoring ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
-                let gameScore2 = isOverlayScoring ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
+                let rawGameScore1 = isOverlayScoring ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
+                let rawGameScore2 = isOverlayScoring ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
+                let gameScore1 = rawGameScore1 >= 60 ? abs(rawGameScore1) % 10 : rawGameScore1
+                let gameScore2 = rawGameScore2 >= 60 ? abs(rawGameScore2) % 10 : rawGameScore2
+                let scoreSafetySanitized = isOverlayScoring && (rawGameScore1 != gameScore1 || rawGameScore2 != gameScore2)
 
                 // Determine effective layout
                 let effectiveLayout = vm.effectiveOverlayLayout(for: court)
@@ -462,6 +465,9 @@ final class WebSocketHub {
                 let broadcastTransitionsEnabled = vm.effectiveBroadcastTransitionsEnabled(for: court)
                 let overlayStatus: String = {
                     guard isOverlayScoring else { return "Pre-Match" }
+                    if scoreSafetySanitized {
+                        return (gameScore1 > 0 || gameScore2 > 0) ? "In Progress" : "Pre-Match"
+                    }
                     if let snapshotStatus = snapshot?.status, !snapshotStatus.isEmpty {
                         return snapshotStatus
                     }
@@ -480,6 +486,7 @@ final class WebSocketHub {
                     "team2": team2,
                     "score1": gameScore1,
                     "score2": gameScore2,
+                    "scoreSafetySanitized": scoreSafetySanitized,
                     "set": isOverlayScoring ? (snapshot?.setNumber ?? 1) : 1,
                     "status": overlayStatus,
                     "courtStatus": court.status.rawValue,

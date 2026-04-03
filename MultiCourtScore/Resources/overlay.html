@@ -2635,6 +2635,9 @@ function clearTradCelebration() {
 
 // Check if match is finished based on sets won
 function isMatchFinished(d) {
+  if (d.scoreSafetySanitized === true) {
+    return false;
+  }
   const setsToWin = d.setsToWin || 2;
   const setsWon1 = d.setsA || 0;
   const setsWon2 = d.setsB || 0;
@@ -2648,11 +2651,16 @@ function determineState(d) {
   const matchFinished = isMatchFinished(d);
   const courtStatus = (d.courtStatus || '').toLowerCase();
   const explicitState = d.overlayState;
+  const scoreSafetySanitized = d.scoreSafetySanitized === true;
   
   // Check if match has already started (any sets won)
   const setsWon1 = d.setsA || 0;
   const setsWon2 = d.setsB || 0;
   const matchInProgress = setsWon1 > 0 || setsWon2 > 0;
+
+  if (scoreSafetySanitized) {
+    return hasScoring || matchInProgress ? 'scoring' : 'intermission';
+  }
 
   if (explicitState === 'intermission') {
     return 'intermission';

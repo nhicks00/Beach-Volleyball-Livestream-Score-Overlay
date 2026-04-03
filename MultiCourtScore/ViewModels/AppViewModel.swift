@@ -3252,6 +3252,10 @@ final class AppViewModel: ObservableObject {
         let g2b_raw = t2["game2"] as? Int ?? Int(t2["game2"] as? String ?? "0") ?? 0
         let g3a_raw = t1["game3"] as? Int ?? Int(t1["game3"] as? String ?? "0") ?? 0
         let g3b_raw = t2["game3"] as? Int ?? Int(t2["game3"] as? String ?? "0") ?? 0
+        let (g1a, g1b, g1Sanitized) = sanitizeDisplaySafeSetScores(team1: g1a_raw, team2: g1b_raw)
+        let (g2a, g2b, g2Sanitized) = sanitizeDisplaySafeSetScores(team1: g2a_raw, team2: g2b_raw)
+        let (g3a, g3b, g3Sanitized) = sanitizeDisplaySafeSetScores(team1: g3a_raw, team2: g3b_raw)
+        let scoreSafetySanitized = g1Sanitized || g2Sanitized || g3Sanitized
         
         // Helper to check if a set is complete
         func isSetComplete(_ a: Int, _ b: Int, target: Int, cap: Int?) -> Bool {
@@ -3269,30 +3273,30 @@ final class AppViewModel: ObservableObject {
         var score2 = 0
         
         // Set 1
-        if g1a_raw > 0 || g1b_raw > 0 {
-            let complete = isSetComplete(g1a_raw, g1b_raw, target: pointsPerSet, cap: pointCap)
-            setHistory.append(SetScore(setNumber: 1, team1Score: g1a_raw, team2Score: g1b_raw, isComplete: complete))
+        if g1a > 0 || g1b > 0 {
+            let complete = isSetComplete(g1a, g1b, target: pointsPerSet, cap: pointCap)
+            setHistory.append(SetScore(setNumber: 1, team1Score: g1a, team2Score: g1b, isComplete: complete))
             if complete {
-                if g1a_raw > g1b_raw { score1 += 1 } else { score2 += 1 }
+                if g1a > g1b { score1 += 1 } else { score2 += 1 }
             }
         }
         
         // Set 2
-        if configuredSetCount >= 2 && (g2a_raw > 0 || g2b_raw > 0) {
-            let complete = isSetComplete(g2a_raw, g2b_raw, target: pointsPerSet, cap: pointCap)
-            setHistory.append(SetScore(setNumber: 2, team1Score: g2a_raw, team2Score: g2b_raw, isComplete: complete))
+        if configuredSetCount >= 2 && (g2a > 0 || g2b > 0) {
+            let complete = isSetComplete(g2a, g2b, target: pointsPerSet, cap: pointCap)
+            setHistory.append(SetScore(setNumber: 2, team1Score: g2a, team2Score: g2b, isComplete: complete))
             if complete {
-                if g2a_raw > g2b_raw { score1 += 1 } else { score2 += 1 }
+                if g2a > g2b { score1 += 1 } else { score2 += 1 }
             }
         }
 
         // Set 3 (tiebreak: use 15 or match format if lower, e.g., training to 11)
-        if configuredSetCount >= 3 && (g3a_raw > 0 || g3b_raw > 0) {
+        if configuredSetCount >= 3 && (g3a > 0 || g3b > 0) {
             let tiebreakTarget = min(pointsPerSet, 15)
-            let complete = isSetComplete(g3a_raw, g3b_raw, target: tiebreakTarget, cap: pointCap)
-            setHistory.append(SetScore(setNumber: 3, team1Score: g3a_raw, team2Score: g3b_raw, isComplete: complete))
+            let complete = isSetComplete(g3a, g3b, target: tiebreakTarget, cap: pointCap)
+            setHistory.append(SetScore(setNumber: 3, team1Score: g3a, team2Score: g3b, isComplete: complete))
             if complete {
-                if g3a_raw > g3b_raw { score1 += 1 } else { score2 += 1 }
+                if g3a > g3b { score1 += 1 } else { score2 += 1 }
             }
         }
         
@@ -3317,17 +3321,19 @@ final class AppViewModel: ObservableObject {
         }
 
         let status: String
-        if let setsToPlay = currentMatch?.setsToPlay {
+        if scoreSafetySanitized {
+            status = !setHistory.isEmpty || g1a > 0 || g1b > 0 ? "In Progress" : "Pre-Match"
+        } else if let setsToPlay = currentMatch?.setsToPlay {
             if completedSets >= setsToPlay {
                 status = "Final"
-            } else if !setHistory.isEmpty || g1a_raw > 0 || g1b_raw > 0 {
+            } else if !setHistory.isEmpty || g1a > 0 || g1b > 0 {
                 status = "In Progress"
             } else {
                 status = "Pre-Match"
             }
         } else if won1 || won2 {
             status = "Final"
-        } else if !setHistory.isEmpty || g1a_raw > 0 || g1b_raw > 0 {
+        } else if !setHistory.isEmpty || g1a > 0 || g1b > 0 {
             status = "In Progress"
         } else {
             status = "Pre-Match"
@@ -3358,6 +3364,9 @@ final class AppViewModel: ObservableObject {
         let score = dict["score"] as? [String: Any]
         var home = score?["home"] as? Int ?? 0
         var away = score?["away"] as? Int ?? 0
+        let sanitizedScores = sanitizeDisplaySafeSetScores(team1: home, team2: away)
+        home = sanitizedScores.team1
+        away = sanitizedScores.team2
         
         var name1 = (dict["team1_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
             ?? (dict["homeTeam"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty()
@@ -3381,12 +3390,17 @@ final class AppViewModel: ObservableObject {
             swap(&team1Seed, &team2Seed)
         }
         
-        let statusStr = (dict["status"] as? String) ?? "Pre-Match"
+        let statusStr: String = {
+            if sanitizedScores.sanitized {
+                return (home > 0 || away > 0) ? "In Progress" : "Pre-Match"
+            }
+            return (dict["status"] as? String) ?? "Pre-Match"
+        }()
         let setNum = (dict["setNumber"] as? Int) ?? 1
         let inferredFormat = inferMatchFormat(from: currentMatch)
         let setsToWin = inferredFormat.setsToWin
 
-        let isComplete = statusStr.lowercased().contains("final")
+        let isComplete = !sanitizedScores.sanitized && statusStr.lowercased().contains("final")
         let setHistory = (home > 0 || away > 0)
             ? [SetScore(setNumber: setNum, team1Score: home, team2Score: away, isComplete: isComplete)]
             : [SetScore]()
@@ -3410,6 +3424,23 @@ final class AppViewModel: ObservableObject {
             timestamp: Date(),
             setsToWin: setsToWin
         )
+    }
+
+    private func sanitizeDisplaySafeSetScores(team1: Int, team2: Int) -> (team1: Int, team2: Int, sanitized: Bool) {
+        let sanitizedTeam1 = sanitizeDisplaySafeScore(team1)
+        let sanitizedTeam2 = sanitizeDisplaySafeScore(team2)
+        return (
+            team1: sanitizedTeam1.value,
+            team2: sanitizedTeam2.value,
+            sanitized: sanitizedTeam1.sanitized || sanitizedTeam2.sanitized
+        )
+    }
+
+    private func sanitizeDisplaySafeScore(_ score: Int) -> (value: Int, sanitized: Bool) {
+        guard score >= 60 else {
+            return (value: score, sanitized: false)
+        }
+        return (value: abs(score) % 10, sanitized: true)
     }
     
     // MARK: - Configuration Persistence
@@ -3937,10 +3968,14 @@ extension AppViewModel: SignalRDelegate {
               activeIdx < courts[idx].queue.count else { return }
 
         let matchItem = courts[idx].queue[activeIdx]
-        let homeScore = payload["home"] as? Int ?? 0
-        let awayScore = payload["away"] as? Int ?? 0
+        let sanitizedScores = sanitizeDisplaySafeSetScores(
+            team1: payload["home"] as? Int ?? 0,
+            team2: payload["away"] as? Int ?? 0
+        )
+        let homeScore = sanitizedScores.team1
+        let awayScore = sanitizedScores.team2
         let gameNumber = payload["number"] as? Int ?? 0  // 0-indexed
-        let isFinal = payload["isFinal"] as? Bool ?? false
+        let isFinal = (payload["isFinal"] as? Bool ?? false) && !sanitizedScores.sanitized
         let winner = payload["_winner"] as? String
 
         // Build updated snapshot from current state
