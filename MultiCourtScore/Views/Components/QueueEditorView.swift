@@ -574,6 +574,32 @@ struct QueueEditorView: View {
                 } label: {
                     Label("Broadcast Transitions", systemImage: "sparkles.tv")
                 }
+
+                Divider()
+                    .frame(height: 20)
+
+                Menu {
+                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: nil) } label: {
+                        Text("Default (Live Countdown)")
+                        if court.broadcastIntermissionIndicatorMode == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "countdown") } label: {
+                        Text("Live Countdown")
+                        if court.broadcastIntermissionIndicatorMode == "countdown" {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "status") } label: {
+                        Text("Match Starting Soon")
+                        if court.broadcastIntermissionIndicatorMode == "status" {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                } label: {
+                    Label("Broadcast Preview Indicator", systemImage: "timer")
+                }
             }
 
             Spacer()

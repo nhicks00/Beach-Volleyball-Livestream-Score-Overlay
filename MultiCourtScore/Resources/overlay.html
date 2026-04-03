@@ -1034,6 +1034,7 @@ let POST_MATCH_HOLD_MS = 180000; // 3 minutes hold after match ends (updated fro
 const SCORING_WIDTH = '100%';
 const TRAD_LAYOUT_SHIFT_MS = 420;
 var broadcastTransitionsEnabled = false;
+var broadcastIntermissionIndicatorMode = 'countdown';
 var scheduledStartEpochMs = null;
 
 // Overlay State Machine: 'scoring' | 'postmatch' | 'intermission'
@@ -1130,9 +1131,7 @@ function scheduleStatusBubbleShow(token, delayMs) {
   bubblePhaseTimers.statusShow = setTimeout(function() {
     bubblePhaseTimers.statusShow = null;
     if (!bubbleCallbacksAreCurrent(token)) return;
-    intStatusBar.classList.remove('hidden-up');
-    intStatusBar.classList.add('visible');
-    fitBubbleToBoard(intStatusBar);
+    showIntermissionIndicatorImmediate();
   }, delayMs);
 }
 
@@ -1863,12 +1862,9 @@ function animateMatchChange(newTeam1, newTeam2, newData) {
   if (shouldEndInIntermission) {
     // END IN INTERMISSION MODE - show status bubble, stay in intermission
     setTimeout(function() {
-      intStatusBar.classList.remove('hidden-up');
-      intStatusBar.classList.add('visible');
-      fitBubbleToBoard(intStatusBar);
-
       overlayState = 'intermission';
       syncBroadcastCenterPreviewPosition();
+      showIntermissionIndicatorImmediate();
       endTransition();
       matchFinishedAt = null;
       postMatchTimer = null;
@@ -2050,19 +2046,41 @@ function formatBroadcastCountdown(msRemaining) {
   return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
 }
 
-function syncBroadcastCountdown() {
-  if (!broadcastCountdownBar || !broadcastCountdownValue) return;
+function shouldShowBroadcastCountdown() {
   var hasFutureStart = typeof scheduledStartEpochMs === 'number' && scheduledStartEpochMs > Date.now();
-  var shouldShow = broadcastTransitionsEnabled
+  return broadcastTransitionsEnabled
+    && broadcastIntermissionIndicatorMode === 'countdown'
     && currentLayout === 'center'
     && overlayState === 'intermission'
     && hasFutureStart;
+}
+
+function hideIntermissionStatusBubble() {
+  if (!intStatusBar) return;
+  intStatusBar.classList.remove('visible');
+  intStatusBar.classList.add('hidden-up');
+}
+
+function showIntermissionIndicatorImmediate() {
+  syncBroadcastCountdown();
+  if (shouldShowBroadcastCountdown() || !intStatusBar) {
+    return;
+  }
+  intStatusBar.classList.remove('hidden-up');
+  intStatusBar.classList.add('visible');
+  fitBubbleToBoard(intStatusBar);
+}
+
+function syncBroadcastCountdown() {
+  if (!broadcastCountdownBar || !broadcastCountdownValue) return;
+  var shouldShow = shouldShowBroadcastCountdown();
 
   if (!shouldShow) {
     broadcastCountdownBar.style.display = 'none';
     return;
   }
 
+  hideIntermissionStatusBubble();
   broadcastCountdownValue.textContent = formatBroadcastCountdown(scheduledStartEpochMs - Date.now());
   broadcastCountdownBar.style.display = 'inline-flex';
 }
@@ -2134,13 +2152,9 @@ function transitionToIntermission(nextTeam1, nextTeam2) {
 
   // Phase 6 (2100-2500ms): Status bubble drops down
   setTimeout(function() {
-    intStatusBar.classList.remove('hidden-up');
-    intStatusBar.classList.add('visible');
-    fitBubbleToBoard(intStatusBar);
-
     overlayState = 'intermission';
     syncBroadcastCenterPreviewPosition();
-    syncBroadcastCountdown();
+    showIntermissionIndicatorImmediate();
     endTransition();
     console.log('[Overlay] Transitioned to intermission');
   }, 2100);
@@ -2752,6 +2766,7 @@ async function tick() {
     // Update dynamic hold duration from server settings
     POST_MATCH_HOLD_MS = d.holdDuration || 180000;
     broadcastTransitionsEnabled = d.broadcastTransitionsEnabled === true;
+    broadcastIntermissionIndicatorMode = d.broadcastIntermissionIndicatorMode === 'status' ? 'status' : 'countdown';
     scheduledStartEpochMs = typeof d.scheduledStartEpochMs === 'number' ? d.scheduledStartEpochMs : null;
     syncBroadcastCenterPreviewPosition();
     syncBroadcastCountdown();

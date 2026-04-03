@@ -445,6 +445,15 @@ final class AppViewModel: ObservableObject {
         court.nextMatchBarEnabled ?? appSettings.showNextMatchBar
     }
 
+    func effectiveBroadcastIntermissionIndicatorMode(for court: Court) -> String {
+        switch court.broadcastIntermissionIndicatorMode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "status":
+            return "status"
+        default:
+            return "countdown"
+        }
+    }
+
     func effectiveBroadcastTransitionsEnabled(for court: Court) -> Bool {
         court.broadcastTransitionsEnabled ?? appSettings.broadcastTransitionsEnabled
     }
@@ -534,6 +543,22 @@ final class AppViewModel: ObservableObject {
         }
         saveConfigurationNow()
         runtimeLog.log(.info, subsystem: "operator", message: "set broadcast transitions for court \(courtId) to \(isEnabled.map(String.init) ?? "default")")
+    }
+
+    func setCourtBroadcastIntermissionIndicatorMode(_ courtId: Int, mode: String?) {
+        guard let idx = courtIndex(for: courtId) else { return }
+        let normalizedMode: String?
+        switch mode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "status":
+            normalizedMode = "status"
+        case "countdown":
+            normalizedMode = "countdown"
+        default:
+            normalizedMode = nil
+        }
+        courts[idx].broadcastIntermissionIndicatorMode = normalizedMode
+        saveConfigurationNow()
+        runtimeLog.log(.info, subsystem: "operator", message: "set broadcast preview indicator for court \(courtId) to \(normalizedMode ?? "default")")
     }
     
     func replaceQueue(_ courtId: Int, with items: [MatchItem], startIndex: Int? = 0) {

@@ -297,6 +297,7 @@ struct Court: Identifiable, Codable, Equatable {
     var socialBarEnabled: Bool? = nil    // nil = inherit from app default
     var nextMatchBarEnabled: Bool? = nil // nil = inherit from app default
     var broadcastTransitionsEnabled: Bool? = nil // nil = inherit from app default
+    var broadcastIntermissionIndicatorMode: String? = nil // nil/default = "countdown"; "status" = Match Starting Soon
     
     // MARK: Computed Properties
     
@@ -355,7 +356,8 @@ struct Court: Identifiable, Codable, Equatable {
             scoreboardLayout: nil,
             socialBarEnabled: nil,
             nextMatchBarEnabled: nil,
-            broadcastTransitionsEnabled: nil
+            broadcastTransitionsEnabled: nil,
+            broadcastIntermissionIndicatorMode: nil
         )
     }
 }

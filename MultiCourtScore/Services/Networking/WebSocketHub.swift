@@ -463,6 +463,7 @@ final class WebSocketHub {
                 let socialBarEnabled = court.socialBarEnabled ?? vm.appSettings.showSocialBar
                 let nextMatchBarEnabled = court.nextMatchBarEnabled ?? vm.appSettings.showNextMatchBar
                 let broadcastTransitionsEnabled = vm.effectiveBroadcastTransitionsEnabled(for: court)
+                let broadcastIntermissionIndicatorMode = vm.effectiveBroadcastIntermissionIndicatorMode(for: court)
                 let scheduledStart = vm.scheduledStartDate(for: currentMatch)
                 let overlayStatus: String = {
                     guard isOverlayScoring else { return "Pre-Match" }
@@ -516,6 +517,7 @@ final class WebSocketHub {
                     "showSocialBar": socialBarEnabled,
                     "showNextMatchBar": nextMatchBarEnabled,
                     "broadcastTransitionsEnabled": broadcastTransitionsEnabled,
+                    "broadcastIntermissionIndicatorMode": broadcastIntermissionIndicatorMode,
                     "liveLayout": vm.effectiveLiveScoreboardLayout(for: court),
                     "scheduledTime": currentMatch?.scheduledTime ?? "",
                     "scheduledStartEpochMs": scheduledStart.map { Int64($0.timeIntervalSince1970 * 1000) } as Any,
