@@ -2952,7 +2952,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func scheduledStartDate(for match: MatchItem?, referenceDate: Date = Date()) -> Date? {
-        guard let scheduledTime = match?.scheduledTime else { return nil }
+        guard let match, let scheduledTime = match.scheduledTime else { return nil }
         let regex = Self.timeRegex
         guard let timeMatch = regex.firstMatch(in: scheduledTime, range: NSRange(scheduledTime.startIndex..., in: scheduledTime)) else {
             return nil
@@ -2963,11 +2963,50 @@ final class AppViewModel: ObservableObject {
         let ampm = (scheduledTime as NSString).substring(with: timeMatch.range(at: 3)).uppercased()
         let hour24 = (ampm == "PM" && hour != 12 ? hour + 12 : (ampm == "AM" && hour == 12 ? 0 : hour))
 
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: referenceDate)
+        let calendar = Calendar.current
+        let startOfReferenceDay = calendar.startOfDay(for: referenceDate)
+        var components = calendar.dateComponents([.year, .month, .day], from: startOfReferenceDay)
+
+        if let rawStartDate = match.startDate?.trimmingCharacters(in: .whitespacesAndNewlines), !rawStartDate.isEmpty {
+            let normalizedStartDate = rawStartDate.lowercased()
+            let weekdayMap: [String: Int] = [
+                "sun": 1, "sunday": 1,
+                "mon": 2, "monday": 2,
+                "tue": 3, "tues": 3, "tuesday": 3,
+                "wed": 4, "wednesday": 4,
+                "thu": 5, "thur": 5, "thurs": 5, "thursday": 5,
+                "fri": 6, "friday": 6,
+                "sat": 7, "saturday": 7
+            ]
+
+            if let weekday = weekdayMap[normalizedStartDate] {
+                let currentWeekday = calendar.component(.weekday, from: startOfReferenceDay)
+                let dayOffset = (weekday - currentWeekday + 7) % 7
+                if let resolvedDay = calendar.date(byAdding: .day, value: dayOffset, to: startOfReferenceDay) {
+                    components = calendar.dateComponents([.year, .month, .day], from: resolvedDay)
+                }
+            } else if let monthDayMatch = try? NSRegularExpression(pattern: #"^\s*(\d{1,2})\/(\d{1,2})\s*$"#).firstMatch(
+                in: rawStartDate,
+                range: NSRange(rawStartDate.startIndex..., in: rawStartDate)
+            ) {
+                let nsString = rawStartDate as NSString
+                let month = Int(nsString.substring(with: monthDayMatch.range(at: 1))) ?? components.month ?? 1
+                let day = Int(nsString.substring(with: monthDayMatch.range(at: 2))) ?? components.day ?? 1
+                components.month = month
+                components.day = day
+                if let year = components.year,
+                   let candidate = calendar.date(from: components),
+                   candidate < startOfReferenceDay,
+                   let nextYearDate = calendar.date(byAdding: .year, value: 1, to: candidate) {
+                    components = calendar.dateComponents([.year, .month, .day], from: nextYearDate)
+                }
+            }
+        }
+
         components.hour = hour24
         components.minute = minute
         components.second = 0
-        return Calendar.current.date(from: components)
+        return calendar.date(from: components)
     }
 
     func scheduledStartHasArrived(for match: MatchItem?, referenceDate: Date = Date()) -> Bool {
