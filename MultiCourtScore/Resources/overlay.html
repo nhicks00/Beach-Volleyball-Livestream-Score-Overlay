@@ -2063,7 +2063,13 @@ function hideIntermissionStatusBubble() {
 
 function showIntermissionIndicatorImmediate() {
   syncBroadcastCountdown();
-  if (shouldShowBroadcastCountdown() || !intStatusBar) {
+  if (!intStatusBar) {
+    return;
+  }
+  if (broadcastTransitionsEnabled
+    && broadcastIntermissionIndicatorMode === 'countdown'
+    && currentLayout === 'center'
+    && overlayState === 'intermission') {
     return;
   }
   intStatusBar.classList.remove('hidden-up');
