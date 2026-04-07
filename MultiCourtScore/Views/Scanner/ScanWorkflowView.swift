@@ -490,13 +490,7 @@ struct ScanWorkflowView: View {
         }
 
         for (overlayId, matches) in matchesByOverlay {
-            let sortedMatches = matches.sorted { a, b in
-                let aIsPool = a.matchType?.lowercased().contains("pool") ?? false
-                let bIsPool = b.matchType?.lowercased().contains("pool") ?? false
-                if aIsPool && !bIsPool { return true }
-                if !aIsPool && bIsPool { return false }
-                return a.index < b.index
-            }
+            let sortedMatches = viewModel.sortMatchesForQueueImport(matches)
 
             let droppedCount = sortedMatches.filter { $0.apiURL == nil || $0.apiURL?.isEmpty == true }.count
             let matchItems = viewModel.createMatchItems(from: sortedMatches)

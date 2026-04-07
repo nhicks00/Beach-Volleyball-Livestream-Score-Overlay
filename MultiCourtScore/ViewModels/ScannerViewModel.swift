@@ -200,37 +200,38 @@ class ScannerViewModel: ObservableObject {
 
         // Sort matches within each group by: DAY first, then TIME, then match number
         for (court, matches) in grouped {
-            grouped[court] = matches.sorted { a, b in
-                // FIRST: Compare by day (Sat before Sun, etc.)
-                let dayCompare = compareDayStrings(a.startDate, b.startDate)
-                if dayCompare != 0 { return dayCompare < 0 }
-
-                // SECOND: Compare by time (8:00AM before 9:00AM, etc.)
-                if let timeA = a.startTime, let timeB = b.startTime {
-                    let timeCompare = compareTimeStrings(timeA, timeB)
-                    if timeCompare != 0 { return timeCompare < 0 }
-                } else if a.startTime != nil {
-                    return true  // a has time, b doesn't - a comes first
-                } else if b.startTime != nil {
-                    return false // b has time, a doesn't - b comes first
-                }
-
-                // THIRD: Compare by match number
-                if let numA = a.matchNumber, let numB = b.matchNumber,
-                   let intA = Int(numA), let intB = Int(numB) {
-                    if intA != intB { return intA < intB }
-                } else if a.matchNumber != nil {
-                    return true
-                } else if b.matchNumber != nil {
-                    return false
-                }
-
-                // Finally by discovery order (index)
-                return a.index < b.index
-            }
+            grouped[court] = sortMatchesForQueueImport(matches)
         }
 
         return grouped
+    }
+
+    func sortMatchesForQueueImport(_ matches: [VBLMatch]) -> [VBLMatch] {
+        matches.sorted { a, b in
+            let dayCompare = compareDayStrings(a.startDate, b.startDate)
+            if dayCompare != 0 { return dayCompare < 0 }
+
+            if let timeA = a.startTime, let timeB = b.startTime {
+                let timeCompare = compareTimeStrings(timeA, timeB)
+                if timeCompare != 0 { return timeCompare < 0 }
+            } else if a.startTime != nil {
+                return true
+            } else if b.startTime != nil {
+                return false
+            }
+
+            if let intA = extractMatchNumber(from: a.matchNumber),
+               let intB = extractMatchNumber(from: b.matchNumber),
+               intA != intB {
+                return intA < intB
+            } else if a.matchNumber != nil, b.matchNumber == nil {
+                return true
+            } else if a.matchNumber == nil, b.matchNumber != nil {
+                return false
+            }
+
+            return a.index < b.index
+        }
     }
     
     /// Compare two time strings like "8:00AM" and "11:00AM"
@@ -309,6 +310,12 @@ class ScannerViewModel: ObservableObject {
         // Then compare by time
         guard let timeA = a.startTime, let timeB = b.startTime else { return 0 }
         return compareTimeStrings(timeA, timeB)
+    }
+
+    private func extractMatchNumber(from value: String?) -> Int? {
+        guard let value else { return nil }
+        let digits = value.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        return Int(digits)
     }
     
     // MARK: - Actions
