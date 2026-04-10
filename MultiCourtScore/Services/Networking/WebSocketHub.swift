@@ -446,17 +446,22 @@ final class WebSocketHub {
                 let seed1 = snapshot?.team1Seed ?? currentMatch?.team1Seed ?? ""
                 let seed2 = snapshot?.team2Seed ?? currentMatch?.team2Seed ?? ""
 
-                // Force scores to 0-0 when court is not actively live or finished
-                // This prevents stale scores from a previous match lingering during auto-advance
+                // Force scores to 0-0 when the overlay is not showing active scoring data
+                // from the current match yet.
+                // Broadcast mode can intentionally move into the live layout at scheduled
+                // start time before any scoring begins; in that state the court is still
+                // waiting, and we must not leak the previous match's set history/current
+                // game into the warm-up overlay.
                 let overlayState = vm.effectiveOverlayState(for: court)
                 let isOverlayScoring = overlayState == "scoring"
+                let shouldUseSnapshotScoringData = isOverlayScoring && (court.status == .live || court.status == .finished)
 
                 let currentGame = snapshot?.setHistory.last
-                let rawGameScore1 = isOverlayScoring ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
-                let rawGameScore2 = isOverlayScoring ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
+                let rawGameScore1 = shouldUseSnapshotScoringData ? (currentGame?.team1Score ?? currentMatch?.team1_score ?? 0) : 0
+                let rawGameScore2 = shouldUseSnapshotScoringData ? (currentGame?.team2Score ?? currentMatch?.team2_score ?? 0) : 0
                 let gameScore1 = rawGameScore1 >= 60 ? abs(rawGameScore1) % 10 : rawGameScore1
                 let gameScore2 = rawGameScore2 >= 60 ? abs(rawGameScore2) % 10 : rawGameScore2
-                let scoreSafetySanitized = isOverlayScoring && (rawGameScore1 != gameScore1 || rawGameScore2 != gameScore2)
+                let scoreSafetySanitized = shouldUseSnapshotScoringData && (rawGameScore1 != gameScore1 || rawGameScore2 != gameScore2)
 
                 // Determine effective layout
                 let effectiveLayout = vm.effectiveOverlayLayout(for: court)
@@ -489,14 +494,14 @@ final class WebSocketHub {
                     "score1": gameScore1,
                     "score2": gameScore2,
                     "scoreSafetySanitized": scoreSafetySanitized,
-                    "set": isOverlayScoring ? (snapshot?.setNumber ?? 1) : 1,
+                    "set": shouldUseSnapshotScoringData ? (snapshot?.setNumber ?? 1) : 1,
                     "status": overlayStatus,
                     "courtStatus": court.status.rawValue,
                     "overlayState": overlayState,
-                    "setsA": isOverlayScoring ? (snapshot?.totalSetsWon.team1 ?? 0) : 0,
-                    "setsB": isOverlayScoring ? (snapshot?.totalSetsWon.team2 ?? 0) : 0,
-                    "serve": isOverlayScoring ? (snapshot?.serve ?? "none") : "none",
-                    "setHistory": isOverlayScoring ? (snapshot?.setHistory.map { $0.displayString } ?? []) : [] as [String],
+                    "setsA": shouldUseSnapshotScoringData ? (snapshot?.totalSetsWon.team1 ?? 0) : 0,
+                    "setsB": shouldUseSnapshotScoringData ? (snapshot?.totalSetsWon.team2 ?? 0) : 0,
+                    "serve": shouldUseSnapshotScoringData ? (snapshot?.serve ?? "none") : "none",
+                    "setHistory": shouldUseSnapshotScoringData ? (snapshot?.setHistory.map { $0.displayString } ?? []) : [] as [String],
 
                     "seed1": seed1,
                     "seed2": seed2,

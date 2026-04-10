@@ -3235,7 +3235,7 @@ final class AppViewModel: ObservableObject {
         }
 
         return (
-            setsToWin: max(1, setsToWin ?? 2),
+            setsToWin: min(2, max(1, setsToWin ?? 2)),
             pointsPerSet: max(1, pointsPerSet ?? 21),
             pointCap: pointCap
         )
