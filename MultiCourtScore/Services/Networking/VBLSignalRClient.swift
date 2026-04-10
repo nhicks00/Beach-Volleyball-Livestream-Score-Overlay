@@ -125,6 +125,7 @@ actor VBLSignalRClient {
 
     // MARK: - State
     private weak var delegate: (any SignalRDelegate)?
+    private let urlSession: URLSession
     private var storedCredentials: ConfigStore.VBLCredentials?
     private var jwtToken: String?
     private var cookies: [HTTPCookie] = []
@@ -140,6 +141,16 @@ actor VBLSignalRClient {
 
     init(delegate: any SignalRDelegate) {
         self.delegate = delegate
+        let configuration = URLSessionConfiguration.default
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        self.urlSession = URLSession(configuration: configuration)
+    }
+
+    deinit {
+        urlSession.invalidateAndCancel()
     }
 
     // MARK: - Public API
@@ -148,6 +159,14 @@ actor VBLSignalRClient {
         storedCredentials = credentials
         isRunning = true
         reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        receiveTask?.cancel()
+        receiveTask = nil
+        pingTask?.cancel()
+        pingTask = nil
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
         Task { await internalConnect() }
     }
 
@@ -355,8 +374,7 @@ actor VBLSignalRClient {
             throw SignalRError.negotiateFailed
         }
 
-        let session = URLSession(configuration: .default)
-        let task = session.webSocketTask(with: wsURL)
+        let task = urlSession.webSocketTask(with: wsURL)
         task.resume()
         webSocketTask = task
 
