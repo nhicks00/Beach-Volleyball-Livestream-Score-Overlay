@@ -446,184 +446,230 @@ struct QueueEditorView: View {
         HStack(spacing: 16) {
             // Navigation buttons
             if let court = court {
-                HStack(spacing: 8) {
-                    Button {
-                        appViewModel.skipToPrevious(courtId)
-                    } label: {
-                        Label("Previous", systemImage: "backward.fill")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled((court.activeIndex ?? 0) <= 0)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        HStack(spacing: 8) {
+                            let isPreviousDisabled = (court.activeIndex ?? 0) <= 0
+                            Button {
+                                appViewModel.skipToPrevious(courtId)
+                            } label: {
+                                OverlayActionChip(
+                                    title: "Previous",
+                                    systemImage: "backward.fill",
+                                    isDisabled: isPreviousDisabled
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isPreviousDisabled)
 
-                    Text("\((court.activeIndex ?? 0) + 1) / \(court.queue.count)")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundColor(AppColors.textSecondary)
-                        .padding(.horizontal, 8)
+                            Text("\((court.activeIndex ?? 0) + 1) / \(court.queue.count)")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(AppColors.textPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 9)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(AppColors.surfaceElevated)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(AppColors.border, lineWidth: 1)
+                                )
+                                .fixedSize()
 
-                    Button {
-                        appViewModel.skipToNext(courtId)
-                    } label: {
-                        Label("Next", systemImage: "forward.fill")
-                            .font(.system(size: 12, weight: .medium))
+                            let isNextDisabled = (court.activeIndex ?? 0) >= court.queue.count - 1
+                            Button {
+                                appViewModel.skipToNext(courtId)
+                            } label: {
+                                OverlayActionChip(
+                                    title: "Next",
+                                    systemImage: "forward.fill",
+                                    isDisabled: isNextDisabled
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isNextDisabled)
+                        }
+
+                        Divider()
+                            .frame(height: 28)
+
+                        HStack(spacing: 10) {
+                            OverlayMenuChip(
+                                title: "Scoreboard Layout",
+                                value: OverlayControlDisplay.layout(court.scoreboardLayout),
+                                systemImage: "rectangle.on.rectangle"
+                            )
+                            .overlay(alignment: .center) {
+                                Picker("", selection: Binding(
+                                    get: { court.scoreboardLayout ?? "" },
+                                    set: { newValue in
+                                        appViewModel.setScoreboardLayout(courtId, layout: newValue.isEmpty ? nil : newValue)
+                                    }
+                                )) {
+                                    Text("Default").tag("")
+                                    Text("Center").tag("center")
+                                    Text("Top-Left").tag("top-left")
+                                    Text("Bottom-Left").tag("bottom-left")
+                                }
+                                .pickerStyle(.segmented)
+                                .labelsHidden()
+                                .padding(.leading, 112)
+                                .padding(.trailing, 8)
+                                .frame(width: 344)
+                            }
+                            .frame(width: 344)
+                        }
+
+                        Divider()
+                            .frame(height: 28)
+
+                        Menu {
+                            Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: nil) } label: {
+                                Text("Default")
+                                if court.socialBarEnabled == nil {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: true) } label: {
+                                Text("Show")
+                                if court.socialBarEnabled == true {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: false) } label: {
+                                Text("Hide")
+                                if court.socialBarEnabled == false {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        } label: {
+                            OverlayMenuChip(
+                                title: "Social Bubble",
+                                value: OverlayControlDisplay.bubbleOverride(court.socialBarEnabled),
+                                systemImage: "bubble.left.and.bubble.right"
+                            )
+                        }
+                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
+
+                        Menu {
+                            Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: nil) } label: {
+                                Text("Default")
+                                if court.nextMatchBarEnabled == nil {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: true) } label: {
+                                Text("Show")
+                                if court.nextMatchBarEnabled == true {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: false) } label: {
+                                Text("Hide")
+                                if court.nextMatchBarEnabled == false {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        } label: {
+                            OverlayMenuChip(
+                                title: "Next Match Bubble",
+                                value: OverlayControlDisplay.bubbleOverride(court.nextMatchBarEnabled),
+                                systemImage: "bubble.right"
+                            )
+                        }
+                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
+
+                        Menu {
+                            Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: nil) } label: {
+                                Text("Default")
+                                if court.broadcastTransitionsEnabled == nil {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: true) } label: {
+                                Text("Enable")
+                                if court.broadcastTransitionsEnabled == true {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: false) } label: {
+                                Text("Disable")
+                                if court.broadcastTransitionsEnabled == false {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        } label: {
+                            OverlayMenuChip(
+                                title: "Broadcast Mode",
+                                value: OverlayControlDisplay.toggleOverride(court.broadcastTransitionsEnabled),
+                                systemImage: "sparkles.tv"
+                            )
+                        }
+                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
+
+                        Menu {
+                            Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: nil) } label: {
+                                Text("Default (Live Countdown)")
+                                if court.broadcastIntermissionIndicatorMode == nil {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "countdown") } label: {
+                                Text("Live Countdown")
+                                if court.broadcastIntermissionIndicatorMode == "countdown" {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "status") } label: {
+                                Text("Match Starting Soon")
+                                if court.broadcastIntermissionIndicatorMode == "status" {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        } label: {
+                            OverlayMenuChip(
+                                title: "Preview Badge",
+                                value: OverlayControlDisplay.broadcastPreview(court.broadcastIntermissionIndicatorMode),
+                                systemImage: "timer"
+                            )
+                        }
+                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled((court.activeIndex ?? 0) >= court.queue.count - 1)
+                    .padding(.vertical, 2)
                 }
-
-                Divider()
-                    .frame(height: 20)
-
-                // Per-court layout picker
-                HStack(spacing: 8) {
-                    Image(systemName: "rectangle.on.rectangle")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppColors.textMuted)
-                    Text("Layout")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(AppColors.textMuted)
-                    Picker("", selection: Binding(
-                        get: { court.scoreboardLayout ?? "" },
-                        set: { newValue in
-                            appViewModel.setScoreboardLayout(courtId, layout: newValue.isEmpty ? nil : newValue)
-                        }
-                    )) {
-                        Text("Default").tag("")
-                        Text("Center").tag("center")
-                        Text("Top-Left").tag("top-left")
-                        Text("Bottom-Left").tag("bottom-left")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 280)
-                }
-
-                Divider()
-                    .frame(height: 20)
-
-                Menu {
-                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: nil) } label: {
-                        Text("Default")
-                        if court.socialBarEnabled == nil {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: true) } label: {
-                        Text("Show")
-                        if court.socialBarEnabled == true {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtSocialBarEnabled(courtId, isEnabled: false) } label: {
-                        Text("Hide")
-                        if court.socialBarEnabled == false {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                } label: {
-                    Label("Social Bubble", systemImage: "bubble.left.and.bubble.right")
-                }
-
-                Divider()
-                    .frame(height: 20)
-
-                Menu {
-                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: nil) } label: {
-                        Text("Default")
-                        if court.nextMatchBarEnabled == nil {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: true) } label: {
-                        Text("Show")
-                        if court.nextMatchBarEnabled == true {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtNextMatchBarEnabled(courtId, isEnabled: false) } label: {
-                        Text("Hide")
-                        if court.nextMatchBarEnabled == false {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                } label: {
-                    Label("Next Match Bubble", systemImage: "bubble.right")
-                }
-
-                Divider()
-                    .frame(height: 20)
-
-                Menu {
-                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: nil) } label: {
-                        Text("Default")
-                        if court.broadcastTransitionsEnabled == nil {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: true) } label: {
-                        Text("Enable")
-                        if court.broadcastTransitionsEnabled == true {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtBroadcastTransitionsEnabled(courtId, isEnabled: false) } label: {
-                        Text("Disable")
-                        if court.broadcastTransitionsEnabled == false {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                } label: {
-                    Label("Broadcast Transitions", systemImage: "sparkles.tv")
-                }
-
-                Divider()
-                    .frame(height: 20)
-
-                Menu {
-                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: nil) } label: {
-                        Text("Default (Live Countdown)")
-                        if court.broadcastIntermissionIndicatorMode == nil {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "countdown") } label: {
-                        Text("Live Countdown")
-                        if court.broadcastIntermissionIndicatorMode == "countdown" {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    Button { appViewModel.setCourtBroadcastIntermissionIndicatorMode(courtId, mode: "status") } label: {
-                        Text("Match Starting Soon")
-                        if court.broadcastIntermissionIndicatorMode == "status" {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                } label: {
-                    Label("Broadcast Preview Indicator", systemImage: "timer")
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.hidden)
             }
-
-            Spacer()
 
             // Status
-            if let error = errorMessage {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(AppColors.error)
-                    Text(error)
-                        .foregroundColor(AppColors.error)
+            VStack(alignment: .trailing, spacing: 6) {
+                if let error = errorMessage {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(AppColors.error)
+                        Text(error)
+                            .foregroundColor(AppColors.error)
+                    }
+                    .font(.system(size: 13))
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                .font(.system(size: 13))
-            }
 
-            let validCount = rows.filter { $0.isValid }.count
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(validCount == rows.count ? AppColors.success : AppColors.warning)
-                    .frame(width: 8, height: 8)
-                Text("\(validCount)/\(rows.count) valid")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(AppColors.textSecondary)
+                let validCount = rows.filter { $0.isValid }.count
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(validCount == rows.count ? AppColors.success : AppColors.warning)
+                        .frame(width: 8, height: 8)
+                    Text("\(validCount)/\(rows.count) valid")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(AppColors.textSecondary)
+                }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(16)
         .background(AppColors.surface)

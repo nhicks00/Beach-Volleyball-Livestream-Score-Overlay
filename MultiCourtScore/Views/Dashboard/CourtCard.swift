@@ -287,8 +287,14 @@ struct CourtCard: View {
                     Label("Bottom-Left", systemImage: court.scoreboardLayout == "bottom-left" ? "checkmark" : "")
                 }
             } label: {
-                Label("Scoreboard Layout", systemImage: "rectangle.on.rectangle")
+                OverlayMenuChip(
+                    title: "Scoreboard Layout",
+                    value: OverlayControlDisplay.layout(court.scoreboardLayout),
+                    systemImage: "rectangle.on.rectangle"
+                )
             }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
 
             Menu {
                 Button { onSetSocialBarEnabled(nil) } label: {
@@ -301,8 +307,14 @@ struct CourtCard: View {
                     Label("Hide", systemImage: court.socialBarEnabled == false ? "checkmark" : "")
                 }
             } label: {
-                Label("Social Bubble", systemImage: "bubble.left.and.bubble.right")
+                OverlayMenuChip(
+                    title: "Social Bubble",
+                    value: OverlayControlDisplay.bubbleOverride(court.socialBarEnabled),
+                    systemImage: "bubble.left.and.bubble.right"
+                )
             }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
 
             Menu {
                 Button { onSetNextMatchBarEnabled(nil) } label: {
@@ -315,8 +327,14 @@ struct CourtCard: View {
                     Label("Hide", systemImage: court.nextMatchBarEnabled == false ? "checkmark" : "")
                 }
             } label: {
-                Label("Next Match Bubble", systemImage: "bubble.right")
+                OverlayMenuChip(
+                    title: "Next Match Bubble",
+                    value: OverlayControlDisplay.bubbleOverride(court.nextMatchBarEnabled),
+                    systemImage: "bubble.right"
+                )
             }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
 
             Menu {
                 Button { onSetBroadcastTransitionsEnabled(nil) } label: {
@@ -329,8 +347,14 @@ struct CourtCard: View {
                     Label("Disable", systemImage: court.broadcastTransitionsEnabled == false ? "checkmark" : "")
                 }
             } label: {
-                Label("Broadcast Transitions", systemImage: "sparkles.tv")
+                OverlayMenuChip(
+                    title: "Broadcast Mode",
+                    value: OverlayControlDisplay.toggleOverride(court.broadcastTransitionsEnabled),
+                    systemImage: "sparkles.tv"
+                )
             }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
         }
     }
 
