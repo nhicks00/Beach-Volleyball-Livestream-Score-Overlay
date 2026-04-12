@@ -31,6 +31,8 @@ actor APIClient {
         for attempt in 0..<maxRetries {
             do {
                 var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                request.httpBody = nil
                 request.cachePolicy = .reloadIgnoringLocalCacheData
                 request.timeoutInterval = NetworkConstants.requestTimeout
                 

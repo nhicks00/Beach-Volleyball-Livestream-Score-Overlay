@@ -2063,32 +2063,39 @@ function hideIntermissionStatusBubble() {
 
 function showIntermissionIndicatorImmediate() {
   syncBroadcastCountdown();
-  if (!intStatusBar) {
-    return;
-  }
-  if (broadcastTransitionsEnabled
-    && broadcastIntermissionIndicatorMode === 'countdown'
-    && currentLayout === 'center'
-    && overlayState === 'intermission') {
-    return;
-  }
-  intStatusBar.classList.remove('hidden-up');
-  intStatusBar.classList.add('visible');
-  fitBubbleToBoard(intStatusBar);
 }
 
 function syncBroadcastCountdown() {
-  if (!broadcastCountdownBar || !broadcastCountdownValue) return;
-  var shouldShow = shouldShowBroadcastCountdown();
+  var shouldShowCountdown = shouldShowBroadcastCountdown();
 
-  if (!shouldShow) {
-    broadcastCountdownBar.style.display = 'none';
+  if (broadcastCountdownBar) {
+    if (shouldShowCountdown && broadcastCountdownValue) {
+      broadcastCountdownValue.textContent = formatBroadcastCountdown(scheduledStartEpochMs - Date.now());
+      broadcastCountdownBar.style.display = 'inline-flex';
+    } else {
+      broadcastCountdownBar.style.display = 'none';
+    }
+  }
+
+  if (!intStatusBar) return;
+
+  if (shouldShowCountdown) {
+    hideIntermissionStatusBubble();
     return;
   }
 
-  hideIntermissionStatusBubble();
-  broadcastCountdownValue.textContent = formatBroadcastCountdown(scheduledStartEpochMs - Date.now());
-  broadcastCountdownBar.style.display = 'inline-flex';
+  var suppressStatusBubble = broadcastTransitionsEnabled
+    && broadcastIntermissionIndicatorMode === 'countdown'
+    && currentLayout === 'center'
+    && overlayState === 'intermission';
+
+  if (overlayState === 'intermission' && !suppressStatusBubble) {
+    intStatusBar.classList.remove('hidden-up');
+    intStatusBar.classList.add('visible');
+    fitBubbleToBoard(intStatusBar);
+  } else {
+    hideIntermissionStatusBubble();
+  }
 }
 
 // Transition from Scoring → Intermission (animated)
@@ -2182,6 +2189,17 @@ function transitionToScoring(data) {
   const sc2El = document.getElementById('sc2');
   if (sc1El) sc1El.textContent = '0';
   if (sc2El) sc2El.textContent = '0';
+
+  var enteringWarmupScoring = data
+    && (data.score1 || 0) === 0
+    && (data.score2 || 0) === 0
+    && (!Array.isArray(data.setHistory) || data.setHistory.length === 0);
+  if (enteringWarmupScoring) {
+    clearTradWarmupState();
+    window.prevScore1 = 0;
+    window.prevScore2 = 0;
+    window.lastServe = undefined;
+  }
 
   // Phase 1 (0-400ms): Retract status bubble
   intStatusBar.classList.remove('visible');
@@ -2544,6 +2562,12 @@ function applyTradData(d) {
 
   var score1 = d.score1 || 0;
   var score2 = d.score2 || 0;
+  var setHistory = Array.isArray(d.setHistory) ? d.setHistory : [];
+  var isCleanWarmupState = score1 === 0 && score2 === 0 && setHistory.length === 0;
+
+  if (isCleanWarmupState) {
+    clearTradWarmupState();
+  }
 
   // Team names
   var displayNames = buildTeamDisplayPair(d.team1 || '', d.team2 || '');
@@ -2627,7 +2651,7 @@ function equalizeTradNameWidths(force) {
 }
 
 function rebuildSetColumns(d) {
-  var setHistory = d.setHistory || [];
+  var setHistory = Array.isArray(d.setHistory) ? d.setHistory : [];
   // Build a key to avoid unnecessary DOM rebuilds
   var key = setHistory.join(',');
   if (key === lastSetHistoryKey) return;
@@ -2655,6 +2679,21 @@ function rebuildSetColumns(d) {
   if (tradSets2) tradSets2.innerHTML = html2;
 
   // Board size changed — update CSS variable for bubble positioning
+  updateTradBoardHeight();
+}
+
+function clearTradWarmupState() {
+  if (tradSets1 && tradSets1.innerHTML !== '') tradSets1.innerHTML = '';
+  if (tradSets2 && tradSets2.innerHTML !== '') tradSets2.innerHTML = '';
+  lastSetHistoryKey = '';
+
+  if (tradSc1) tradSc1.textContent = '0';
+  if (tradSc2) tradSc2.textContent = '0';
+
+  if (tradServe1) tradServe1.classList.remove('active');
+  if (tradServe2) tradServe2.classList.remove('active');
+
+  clearTradCelebration();
   updateTradBoardHeight();
 }
 
